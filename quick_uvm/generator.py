@@ -74,6 +74,8 @@ class Generator:
             "agents":   cfg.agents,
             "tests":    cfg.tests,
             "analysis": cfg.analysis,
+            "register_model": cfg.register_model,
+            "reg_bus_agent":  cfg.reg_bus_agent,
         }
 
         specs: list[FileSpec] = []
@@ -126,6 +128,13 @@ class Generator:
         for test in cfg.tests:
             ctx = {**base_ctx, "test": test}
             specs.append(FileSpec("test.svh.j2", f"{test.name}.svh", ctx))
+
+        # ---- register model (optional, front-door) -----------------------
+        if cfg.register_model is not None:
+            specs.append(FileSpec("reg_adapter.svh.j2",
+                                  f"{cfg.register_model.adapter}.svh", base_ctx))
+            if cfg.register_model.reg_test:
+                specs.append(FileSpec("reg_test.svh.j2", "reg_test.svh", base_ctx))
 
         # ---- extern function body ----------------------------------------
         specs.append(FileSpec("sb_calc_exp.svh.j2", "sb_calc_exp.svh", base_ctx))

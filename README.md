@@ -120,6 +120,18 @@ analysis:
   coverage: [reg]                 # one <agent>_cover per listed agent
   scoreboards:
     - {name: sbd, source: reg}    # tb_scoreboard fed by <source>.ap
+
+# Optional — front-door register model (RAL). The uvm_reg_block is generated
+# externally (e.g. reggen/SystemRDL); QuickUVM generates the adapter skeleton
+# (reg2bus/bus2reg = pragma sections you fill), env/test wiring, and a reg test.
+register_model:
+  package: angle_sensor_regs_uvm_pkg   # external uvm_reg package to import
+  block:   angle_sensor_regs_c         # uvm_reg_block class
+  map:     default_map
+  bus_agent: reg                       # agent whose sequencer drives front-door
+  adapter:   reg_adapter
+  use_predictor: true                  # explicit prediction via the agent ap
+  reg_test:      true                  # generate hw_reset + bit_bash test
 ```
 
 See [`examples/simple_reg/`](examples/simple_reg/) for a working example.

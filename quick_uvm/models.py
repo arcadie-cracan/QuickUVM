@@ -91,6 +91,24 @@ class AnalysisConfig(BaseModel):
     scoreboards: list[ScoreboardSpec] = Field(default_factory=list)
 
 
+class RegisterModelConfig(BaseModel):
+    """Opt-in front-door register-model (RAL) integration (C4a).
+
+    The uvm_reg_block itself is generated externally (e.g. by reggen/SystemRDL)
+    and named here; QuickUVM generates the adapter skeleton, the env/test wiring
+    (set_sequencer + optional explicit-prediction predictor) and an optional
+    register test. The reg2bus/bus2reg protocol mapping is user code (pragmas).
+    """
+
+    package: str                       # external uvm_reg package to import
+    block: str                         # uvm_reg_block subclass name
+    map: str = "default_map"           # register map name within the block
+    bus_agent: str                     # agent whose sequencer drives front-door access
+    adapter: str = "reg_adapter"       # generated uvm_reg_adapter class name
+    use_predictor: bool = True         # explicit prediction via the bus agent's ap
+    reg_test: bool = True              # generate a hw_reset/bit_bash register test
+
+
 class ProjectMeta(BaseModel):
     name: str
     author: str = ""
@@ -104,6 +122,7 @@ class ProjectConfig(BaseModel):
     agents: list[AgentConfig] = Field(default_factory=list)
     tests: list[TestConfig] = Field(default_factory=lambda: [TestConfig(name="test1")])
     analysis: AnalysisConfig | None = None
+    register_model: RegisterModelConfig | None = None
 
     @model_validator(mode="after")
     def validate_agents(self) -> "ProjectConfig":
@@ -128,7 +147,22 @@ class ProjectConfig(BaseModel):
                         f"analysis.scoreboards '{s.name}' references unknown "
                         f"source agent '{s.source}'."
                     )
+        if self.register_model is not None:
+            if self.register_model.bus_agent not in {a.name for a in self.agents}:
+                raise ValueError(
+                    f"register_model.bus_agent references unknown agent "
+                    f"'{self.register_model.bus_agent}'."
+                )
         return self
+
+    @property
+    def reg_bus_agent(self) -> "AgentConfig | None":
+        """The agent whose sequencer drives front-door register access."""
+        if self.register_model is None:
+            return None
+        return next(
+            (a for a in self.agents if a.name == self.register_model.bus_agent), None
+        )
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "ProjectConfig":

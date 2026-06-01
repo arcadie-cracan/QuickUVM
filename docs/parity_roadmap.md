@@ -65,10 +65,19 @@ Accept: a vseq coordinating ≥2 agents.
 `parameters:` at interface/agent/env/bench; param refs in widths; `#(...)` threaded
 via Jinja macros. Accept: one agent reused at two widths.
 
-### C4 — Register model (RAL) — top project value
-Consume `spi/reggen` (SystemRDL); generate reg block import, reg2bus adapter,
-uvm_reg_predictor, map wiring (config flags), reg test sequences.
-Accept: RAL compiles; hw_reset/bit-bash runs on the SPI register space.
+### C4a — Register model (RAL), front-door — DONE (v0.5.0)
+Opt-in `register_model:` block. The uvm_reg_block is generated externally (reggen);
+QuickUVM generates: the `<adapter>` (uvm_reg_adapter skeleton — reg2bus/bus2reg are
+pragmas, the protocol/paging mapping is user code), env/test wiring (test_base builds +
+locks the model into env_config; env does `map.set_sequencer` + an optional
+`uvm_reg_predictor` for explicit prediction), the reg-package import, and an optional
+`reg_test` (uvm_reg_hw_reset_seq + uvm_reg_bit_bash_seq). Omitting the block is
+byte-identical (verified). Covered by `tests/test_register_model.py` (+ `with_regmodel`
+marker/idempotency variant); 98 green.
+
+### C4b — Register model, backdoor (hdl_path) — deferred
+Add `register_model.backdoor` (hdl_root + per-reg paths) for peek/poke without the
+SPI protocol. Follow-up once the front-door path is proven in `spi/quickuvm_tb`.
 
 ### H1 — Sub-environments
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.

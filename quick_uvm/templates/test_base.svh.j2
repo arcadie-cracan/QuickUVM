@@ -31,6 +31,12 @@ class test_base extends uvm_test;
     if (!uvm_config_db#(virtual {{ agent.interface }})::get(this, "", "{{ agent.interface }}_vif", env_cfg.{{ agent.name }}_cfg.vif))
       `uvm_fatal("NOVIF", "No virtual {{ agent.interface }} set as '{{ agent.interface }}_vif' in the config DB (see top.sv)")
 {% endfor %}
+{% if register_model %}
+    // Build the register model (block generated externally, e.g. by reggen)
+    env_cfg.reg_model = {{ register_model.block }}::type_id::create("reg_model");
+    env_cfg.reg_model.build();
+    env_cfg.reg_model.lock_model();
+{% endif %}
     uvm_config_db#(env_config)::set(this, "e", "env_cfg", env_cfg);
 
     e = env::type_id::create("e", this);

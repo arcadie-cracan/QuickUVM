@@ -20,6 +20,7 @@ from quick_uvm.models import (
     AnalysisConfig,
     ProjectConfig,
     ProjectMeta,
+    RegisterModelConfig,
     ScoreboardSpec,
     TestConfig as TConf,  # aliased so pytest doesn't try to collect it
 )
@@ -68,6 +69,13 @@ CONFIGS = {
         analysis=AnalysisConfig(
             coverage=["a0", "a1"],
             scoreboards=[ScoreboardSpec(name="sbd", source="a0")],
+        ),
+    ),
+    "with_regmodel": _cfg(
+        agents=[_agent("a0")],
+        register_model=RegisterModelConfig(
+            package="my_reg_uvm_pkg", block="my_reg_block_c",
+            bus_agent="a0", adapter="a0_reg_adapter",
         ),
     ),
 }

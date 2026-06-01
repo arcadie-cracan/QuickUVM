@@ -56,6 +56,8 @@ Empty fences (write custom code here):
 |---|---|
 | `<trans>.svh` | `class_item_additional`, `do_copy_additional`, `do_compare_additional`, `convert2string_additional` |
 | `<agent>_config.svh` / `env_config.svh` | `config_var_additional` |
+| `<adapter>.svh` (register_model) | `class_item_additional`, `new_additional`, `reg2bus`, `bus2reg` |
+| `reg_test.svh` (register_model) | `reg_test_pre`, `reg_test_post` |
 | `<if>.sv` | `signals_additional`, `clocking_block_additional` |
 | `<agent>_driver.svh` | `class_item_additional`, `initialize_additional`, `drive_item_additional` |
 | `<agent>_monitor.svh` | `class_item_additional`, `sample_dut_additional` |

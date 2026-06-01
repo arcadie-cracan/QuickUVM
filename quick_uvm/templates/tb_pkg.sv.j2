@@ -14,6 +14,9 @@
 
 package tb_pkg;
   import uvm_pkg::*;
+{% if register_model %}
+  import {{ register_model.package }}::*;
+{% endif %}
   // pragma quickuvm custom imports begin
   // pragma quickuvm custom imports end
 
@@ -43,6 +46,9 @@ package tb_pkg;
 
   // Environment
   `include "env_config.svh"
+{% if register_model %}
+  `include "{{ register_model.adapter }}.svh"
+{% endif %}
   `include "env.svh"
 
   // Sequences (per agent)
@@ -57,6 +63,9 @@ package tb_pkg;
 {% for test in tests %}
   `include "{{ test.name }}.svh"
 {% endfor %}
+{% if register_model and register_model.reg_test %}
+  `include "reg_test.svh"
+{% endif %}
 
   // Scoreboard expected-value calculator (extern function body)
   `include "sb_calc_exp.svh"
