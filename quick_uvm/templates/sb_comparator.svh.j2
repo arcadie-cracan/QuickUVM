@@ -59,14 +59,19 @@ class sb_comparator extends uvm_component;
 
   function void report_phase(uvm_phase phase);
     super.report_phase(phase);
-    if (VECT_CNT && !ERROR_CNT)
-      `uvm_info("PASSED",
-        $sformatf("\n\n\n*** TEST PASSED - Vectors: %0d Ran / %0d Passed ***\n",
-                   VECT_CNT, PASS_CNT), UVM_LOW)
-    else
+    if (ERROR_CNT)
       `uvm_error("FAILED",
         $sformatf("\n\n\n*** TEST FAILED - Vectors: %0d Ran / %0d Passed / %0d Failed ***\n",
                    VECT_CNT, PASS_CNT, ERROR_CNT))
+    else if (VECT_CNT == 0)
+      // No transactions compared — e.g. a backdoor-only or register test that
+      // drives no bus traffic. Warn rather than fail the data-path scoreboard.
+      `uvm_warning("NOVEC",
+        "scoreboard compared 0 transactions (no front-door bus traffic)")
+    else
+      `uvm_info("PASSED",
+        $sformatf("\n\n\n*** TEST PASSED - Vectors: %0d Ran / %0d Passed ***\n",
+                   VECT_CNT, PASS_CNT), UVM_LOW)
   endfunction
 
   function string get_vector_str();

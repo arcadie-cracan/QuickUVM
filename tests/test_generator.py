@@ -112,3 +112,13 @@ def test_config_load_validation():
     assert len(cfg.agents) == 1
     assert cfg.agents[0].name == "reg"
     assert cfg.primary_agent.transaction == "reg_trans"
+
+
+def test_scoreboard_report_warns_on_zero_vectors(generated_tb):
+    """Comparator fails only on real mismatches; 0 vectors -> warning (e.g. a
+    backdoor-only register test drives no bus traffic)."""
+    c = (generated_tb / "sb_comparator.svh").read_text()
+    assert 'if (ERROR_CNT)' in c
+    assert '`uvm_error("FAILED"' in c
+    assert 'VECT_CNT == 0' in c
+    assert '`uvm_warning("NOVEC"' in c
