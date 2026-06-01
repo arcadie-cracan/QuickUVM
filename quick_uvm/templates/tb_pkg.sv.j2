@@ -22,6 +22,11 @@ package tb_pkg;
   `include "{{ agent.transaction }}.svh"
 {% endfor %}
 
+  // Agent configuration objects
+{% for agent in agents %}
+  `include "{{ agent.name }}_config.svh"
+{% endfor %}
+
   // Testbench components (per agent)
 {% for agent in agents %}
   `include "{{ agent.name }}_cover.svh"
@@ -37,6 +42,7 @@ package tb_pkg;
   `include "tb_scoreboard.svh"
 
   // Environment
+  `include "env_config.svh"
   `include "env.svh"
 
   // Sequences (per agent)

@@ -9,9 +9,8 @@
 class {{ agent.name }}_agent extends uvm_agent;
   `uvm_component_utils({{ agent.name }}_agent)
 
-  // is_active flag declaration inherited from uvm_agent
-  // uvm_active_passive_enum is_active = UVM_{{ "ACTIVE" if agent.active else "PASSIVE" }};
-
+  // is_active is inherited from uvm_agent; set from cfg in build_phase
+  {{ agent.name }}_config  cfg;
   virtual {{ agent.interface }} vif;
 
   uvm_analysis_port #({{ agent.transaction }}) ap;
@@ -28,13 +27,16 @@ class {{ agent.name }}_agent extends uvm_agent;
 
   virtual function void build_phase(uvm_phase phase);
     super.build_phase(phase);
+    if (!uvm_config_db#({{ agent.name }}_config)::get(this, "", "cfg", cfg))
+      `uvm_fatal("NOCFG", {"No {{ agent.name }}_config set for: ", get_full_name()})
+    is_active = cfg.is_active;
+    vif       = cfg.vif;
     if (is_active == UVM_ACTIVE) begin
       drv = {{ agent.name }}_driver::type_id::create("drv", this);
       sqr = {{ agent.name }}_sequencer::type_id::create("sqr", this);
     end
     mon = {{ agent.name }}_monitor::type_id::create("mon", this);
     ap  = new("ap", this);
-    get_vif();
     // pragma quickuvm custom build_phase_additional begin
     // pragma quickuvm custom build_phase_additional end
   endfunction
@@ -49,12 +51,6 @@ class {{ agent.name }}_agent extends uvm_agent;
     mon.vif = vif;
     // pragma quickuvm custom connect_phase_additional begin
     // pragma quickuvm custom connect_phase_additional end
-  endfunction
-
-  function void get_vif();
-    string passwd = get_full_name();
-    if(!uvm_resource_db#(virtual {{ agent.interface }})::read_by_name(passwd, "{{ agent.interface }}", vif, this))
-        `uvm_fatal("NOVIF",{"virtual interface must be set for: ", passwd, ".vif"})
   endfunction
 
 endclass

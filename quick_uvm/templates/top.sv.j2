@@ -39,7 +39,7 @@ module top;
 
   initial begin
 {% for agent in agents %}
-    uvm_resource_db#(virtual {{ agent.interface }})::set("*", "{{ agent.interface }}", {{ agent.interface }}_inst);
+    uvm_config_db#(virtual {{ agent.interface }})::set(null, "*", "{{ agent.interface }}_vif", {{ agent.interface }}_inst);
 {% endfor %}
     run_test();
   end

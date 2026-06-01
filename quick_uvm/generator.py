@@ -89,6 +89,8 @@ class Generator:
                                   f"{agent.interface}.sv",     ctx))
             specs.append(FileSpec("agent_trans.svh.j2",
                                   f"{agent.transaction}.svh",  ctx))
+            specs.append(FileSpec("agent_config.svh.j2",
+                                  f"{agent.name}_config.svh",  ctx))
             specs.append(FileSpec("agent_sequencer.svh.j2",
                                   f"{agent.name}_sequencer.svh", ctx))
             specs.append(FileSpec("agent_driver.svh.j2",
@@ -106,6 +108,7 @@ class Generator:
         specs.append(FileSpec("tb_scoreboard.svh.j2", "tb_scoreboard.svh", base_ctx))
 
         # ---- environment -------------------------------------------------
+        specs.append(FileSpec("env_config.svh.j2", "env_config.svh", base_ctx))
         specs.append(FileSpec("env.svh.j2", "env.svh", base_ctx))
 
         # ---- per-agent sequences -----------------------------------------

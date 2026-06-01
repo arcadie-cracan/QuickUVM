@@ -26,6 +26,8 @@ EXPECTED_FILES = [
     "simple_reg.sv",
     "reg_if.sv",
     "reg_trans.svh",
+    "reg_config.svh",
+    "env_config.svh",
     "reg_sequencer.svh",
     "reg_driver.svh",
     "reg_monitor.svh",

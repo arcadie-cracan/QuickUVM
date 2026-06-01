@@ -11,6 +11,7 @@ class test_base extends uvm_test;
 
   uvm_factory factory = uvm_factory::get();
   env e;
+  env_config env_cfg;
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -21,6 +22,17 @@ class test_base extends uvm_test;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
+
+    // Build and populate the environment configuration
+    env_cfg = env_config::type_id::create("env_cfg");
+{% for agent in agents %}
+    env_cfg.{{ agent.name }}_cfg = {{ agent.name }}_config::type_id::create("{{ agent.name }}_cfg");
+    env_cfg.{{ agent.name }}_cfg.is_active = UVM_{{ "ACTIVE" if agent.active else "PASSIVE" }};
+    if (!uvm_config_db#(virtual {{ agent.interface }})::get(this, "", "{{ agent.interface }}_vif", env_cfg.{{ agent.name }}_cfg.vif))
+      `uvm_fatal("NOVIF", "No virtual {{ agent.interface }} set as '{{ agent.interface }}_vif' in the config DB (see top.sv)")
+{% endfor %}
+    uvm_config_db#(env_config)::set(this, "e", "env_cfg", env_cfg);
+
     e = env::type_id::create("e", this);
     // pragma quickuvm custom build_phase_additional begin
     // pragma quickuvm custom build_phase_additional end

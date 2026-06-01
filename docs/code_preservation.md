@@ -55,6 +55,7 @@ Empty fences (write custom code here):
 | File | Sections |
 |---|---|
 | `<trans>.svh` | `class_item_additional`, `do_copy_additional`, `do_compare_additional`, `convert2string_additional` |
+| `<agent>_config.svh` / `env_config.svh` | `config_var_additional` |
 | `<if>.sv` | `signals_additional`, `clocking_block_additional` |
 | `<agent>_driver.svh` | `class_item_additional`, `initialize_additional`, `drive_item_additional` |
 | `<agent>_monitor.svh` | `class_item_additional`, `sample_dut_additional` |
