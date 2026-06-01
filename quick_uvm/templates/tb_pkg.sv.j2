@@ -14,20 +14,22 @@
 
 package tb_pkg;
   import uvm_pkg::*;
+  // pragma quickuvm custom imports begin
+  // pragma quickuvm custom imports end
 
   // Transaction classes
-{%- for agent in agents %}
+{% for agent in agents %}
   `include "{{ agent.transaction }}.svh"
-{%- endfor %}
+{% endfor %}
 
   // Testbench components (per agent)
-{%- for agent in agents %}
+{% for agent in agents %}
   `include "{{ agent.name }}_cover.svh"
   `include "{{ agent.name }}_driver.svh"
   `include "{{ agent.name }}_sequencer.svh"
   `include "{{ agent.name }}_monitor.svh"
   `include "{{ agent.name }}_agent.svh"
-{%- endfor %}
+{% endfor %}
 
   // Scoreboard
   `include "sb_predictor.svh"
@@ -38,15 +40,17 @@ package tb_pkg;
   `include "env.svh"
 
   // Sequences (per agent)
-{%- for agent in agents %}
+{% for agent in agents %}
   `include "{{ agent.name }}_sequence.svh"
-{%- endfor %}
+{% endfor %}
+  // pragma quickuvm custom sequences_additional begin
+  // pragma quickuvm custom sequences_additional end
 
   // Tests
   `include "test_base.svh"
-{%- for test in tests %}
+{% for test in tests %}
   `include "{{ test.name }}.svh"
-{%- endfor %}
+{% endfor %}
 
   // Scoreboard expected-value calculator (extern function body)
   `include "sb_calc_exp.svh"

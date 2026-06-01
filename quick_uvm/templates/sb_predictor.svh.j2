@@ -11,12 +11,15 @@
 //   - calls sb_calc_exp() to predict the expected output
 //   - writes the predicted transaction to results_ap
 //----------------------------------------------------------------------
-{%- set pa = agents[0] %}
+{% set pa = agents[0] %}
 
 class sb_predictor extends uvm_subscriber #({{ pa.transaction }});
   `uvm_component_utils(sb_predictor)
 
   uvm_analysis_port #({{ pa.transaction }}) results_ap;
+
+  // pragma quickuvm custom class_item_additional begin
+  // pragma quickuvm custom class_item_additional end
 
   function new(string name, uvm_component parent);
     super.new(name, parent);

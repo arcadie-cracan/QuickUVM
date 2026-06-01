@@ -13,6 +13,14 @@ inspired by the Siemens UVMF framework:
 // pragma quickuvm custom prediction_logic end
 ```
 
+Preservation is **fail-closed**: if a regeneration would orphan code you wrote (a
+section the new template no longer emits) or finds a malformed marker, `generate`
+aborts before writing anything, and a rolling `<file>.bak.<N>` backup is taken on every
+overwrite (existing backups are never overwritten).
+See [`docs/code_preservation.md`](docs/code_preservation.md) for the full contract, the
+list of available sections, and the `status` command; a comparison against UVMF, Doulos
+Easier UVM, icdk uvmgen and gen_uvm is in [`docs/comparison.md`](docs/comparison.md).
+
 ---
 
 ## Installation
@@ -54,11 +62,11 @@ quick-uvm generate --config my_dut.yaml --output tb/
 
 | Command | Description |
 |---|---|
-| `quick-uvm generate` | Generate (or regenerate) all testbench files |
+| `quick-uvm generate` | Generate (or regenerate) all files. Fail-closed; `--allow-drop` / `--no-backup` to override |
 | `quick-uvm init` | Scaffold a starter YAML config |
 | `quick-uvm list` | List files that would be generated (dry-run table) |
 | `quick-uvm add-test` | Append a new test to the config and regenerate test files |
-| `quick-uvm status` | Show which user pragma sections have been modified |
+| `quick-uvm status` | Classify each file: user-modified / orphaned / out-of-band / malformed markers |
 
 Run `quick-uvm <command> --help` for full option details.
 

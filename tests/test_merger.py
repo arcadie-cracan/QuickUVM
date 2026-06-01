@@ -62,7 +62,7 @@ def test_merge_non_existent_file(tmp_path):
     dest = tmp_path / "new_file.svh"
     generated = "generated content\n"
     result = merge(dest, generated)
-    assert result == generated
+    assert result.text == generated
 
 
 def test_merge_preserves_user_sections(tmp_path):
@@ -70,8 +70,9 @@ def test_merge_preserves_user_sections(tmp_path):
     dest.write_text(SAMPLE_WITH_USER_CODE, encoding="utf-8")
     # Regenerate from clean template
     result = merge(dest, SAMPLE)
-    assert "my_var" in result
-    assert "my_var = 42" in result
+    assert "my_var" in result.text
+    assert "my_var = 42" in result.text
+    assert "class_item_additional" in result.preserved
 
 
 def test_merge_ignores_empty_existing_sections(tmp_path):
@@ -80,7 +81,8 @@ def test_merge_ignores_empty_existing_sections(tmp_path):
     new_generated = SAMPLE.replace("class foo", "class foo_v2")
     result = merge(dest, new_generated)
     # No user sections to preserve — should get fresh generated content
-    assert "foo_v2" in result
+    assert "foo_v2" in result.text
+    assert result.preserved == []
 
 
 def test_round_trip(tmp_path):
@@ -95,8 +97,8 @@ def test_round_trip(tmp_path):
 
     # Second generation (fresh template, same pragma structure)
     result = merge(dest, SAMPLE)
-    assert "my_var" in result
-    assert "my_var = 42" in result
+    assert "my_var" in result.text
+    assert "my_var = 42" in result.text
     # Structural content from fresh template is preserved
-    assert "class foo" in result
-    assert "function void bar" in result
+    assert "class foo" in result.text
+    assert "function void bar" in result.text

@@ -18,29 +18,29 @@ module top;
   clkgen ck (clk);
 
   // Instantiate interfaces
-{%- for agent in agents %}
+{% for agent in agents %}
   {{ agent.interface }} {{ agent.interface }}_inst (clk);
-{%- endfor %}
+{% endfor %}
 
   // pragma quickuvm custom dut_connections begin
   // Instantiate DUT — connect to interface signals hierarchically
   {{ dut.name }} dut_inst (
-{%- set primary = agents[0] %}
-{%- for port in primary.output_ports %}
+{% set primary = agents[0] %}
+{% for port in primary.output_ports %}
     .{{ port.name }}({{ primary.interface }}_inst.{{ port.name }}),
-{%- endfor %}
-{%- for port in primary.input_ports %}
+{% endfor %}
+{% for port in primary.input_ports %}
     .{{ port.name }}({{ primary.interface }}_inst.{{ port.name }}),
-{%- endfor %}
+{% endfor %}
     .{{ dut.clock }}(clk){% if dut.reset %},
     .{{ dut.reset }}({{ primary.interface }}_inst.{{ dut.reset }}){% endif %}
   );
   // pragma quickuvm custom dut_connections end
 
   initial begin
-{%- for agent in agents %}
+{% for agent in agents %}
     uvm_resource_db#(virtual {{ agent.interface }})::set("*", "{{ agent.interface }}", {{ agent.interface }}_inst);
-{%- endfor %}
+{% endfor %}
     run_test();
   end
 endmodule

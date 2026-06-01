@@ -26,15 +26,16 @@ class {{ agent.name }}_sequence extends uvm_sequence #({{ agent.transaction }});
     `uvm_info("do_item", "executing", UVM_FULL)
     start_item(tr);
     if (!(tr.randomize() with {
-{%- set ns = namespace(has_reset=false) %}
-{%- for port in agent.input_ports %}
-{%- if port.name == dut.reset %}
-{%- set ns.has_reset = true %}
-{%- endif %}
-{%- endfor %}
-{%- if ns.has_reset %}
+{% set ns = namespace(has_reset=false) %}
+{% for port in agent.input_ports %}
+{% if port.name == dut.reset %}
+{% set ns.has_reset = true %}
+{% endif %}
+{% endfor %}
+{% if ns.has_reset %}
       tr.{{ dut.reset }}=='1;
-{%- endif %}
+{% endif %}
+
       // pragma quickuvm custom do_item_constraints begin
       // pragma quickuvm custom do_item_constraints end
     })) `uvm_fatal("{{ agent.name | upper }}_SEQ", "{{ agent.name }}_sequence randomization failed")

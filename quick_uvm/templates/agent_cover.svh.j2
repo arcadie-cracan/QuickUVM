@@ -18,17 +18,18 @@ class {{ agent.name }}_cover extends uvm_subscriber #({{ agent.transaction }});
   covergroup cg;
     option.per_instance = 1;
     option.at_least     = 10;
-{%- for port in agent.output_ports %}
+{% for port in agent.output_ports %}
     {{ port.name }}_cp : coverpoint tr.{{ port.name }} {bins {{ port.name }}_bins[8] = {[0:$]};}
-{%- endfor %}
-{%- for port in agent.input_ports %}
-{%- if port.name == dut.reset %}
+{% endfor %}
+{% for port in agent.input_ports %}
+{% if port.name == dut.reset %}
     dorst   : coverpoint tr.{{ port.name }} {bins dorst  = {'0};}
     norst   : coverpoint tr.{{ port.name }} {bins norst  = {'1};}
-{%- else %}
+{% else %}
     {{ port.name }}_cp : coverpoint tr.{{ port.name }} {bins {{ port.name }}_bins[8] = {[0:$]};}
-{%- endif %}
-{%- endfor %}
+{% endif %}
+{% endfor %}
+
     // pragma quickuvm custom coverpoints_additional begin
     // pragma quickuvm custom coverpoints_additional end
   endgroup

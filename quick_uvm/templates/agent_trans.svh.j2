@@ -7,37 +7,37 @@
 //----------------------------------------------------------------------
 
 class {{ agent.transaction }} extends uvm_sequence_item;
-{%- if agent.trans_style == 'field_macros' %}
+{% if agent.trans_style == 'field_macros' %}
   // Field macro style (transy.svh pattern)
   `uvm_object_utils_begin({{ agent.transaction }})
-{%- for port in agent.output_ports %}
+{% for port in agent.output_ports %}
     `uvm_field_int({{ port.name }}, UVM_ALL_ON | UVM_NOCOMPARE)
-{%- endfor %}
-{%- for port in agent.input_ports %}
-{%- if not port.randomize %}
+{% endfor %}
+{% for port in agent.input_ports %}
+{% if not port.randomize %}
     `uvm_field_int({{ port.name }}, UVM_ALL_ON | UVM_NOCOMPARE)
-{%- else %}
+{% else %}
     `uvm_field_int({{ port.name }}, UVM_ALL_ON)
-{%- endif %}
-{%- endfor %}
+{% endif %}
+{% endfor %}
   `uvm_object_utils_end
-{%- else %}
+{% else %}
   `uvm_object_utils({{ agent.transaction }})
-{%- endif %}
+{% endif %}
 
   // Output fields (not randomized — sampled from DUT)
-{%- for port in agent.output_ports %}
+{% for port in agent.output_ports %}
        logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
-{%- endfor %}
+{% endfor %}
 
   // Input fields (driven to DUT)
-{%- for port in agent.input_ports %}
-{%- if port.randomize %}
+{% for port in agent.input_ports %}
+{% if port.randomize %}
   rand bit {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
-{%- else %}
+{% else %}
        bit {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
-{%- endif %}
-{%- endfor %}
+{% endif %}
+{% endfor %}
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -46,18 +46,18 @@ class {{ agent.transaction }} extends uvm_sequence_item;
     super.new(name);
   endfunction
 
-{%- if agent.trans_style == 'manual' %}
-
+{% if agent.trans_style == 'manual' %}
   function void do_copy(uvm_object rhs);
     {{ agent.transaction }} tr;
     if(!$cast(tr, rhs)) `uvm_fatal("{{ agent.transaction }}", "ILLEGAL do_copy() cast")
     super.do_copy(rhs);
-{%- for port in agent.output_ports %}
+{% for port in agent.output_ports %}
     {{ port.name }} = tr.{{ port.name }};
-{%- endfor %}
-{%- for port in agent.input_ports %}
+{% endfor %}
+{% for port in agent.input_ports %}
     {{ port.name }} = tr.{{ port.name }};
-{%- endfor %}
+{% endfor %}
+
     // pragma quickuvm custom do_copy_additional begin
     // pragma quickuvm custom do_copy_additional end
   endfunction
@@ -67,15 +67,16 @@ class {{ agent.transaction }} extends uvm_sequence_item;
     bit eq;
     if(!$cast(tr, rhs)) `uvm_fatal("{{ agent.transaction }}", "ILLEGAL do_compare() cast")
     eq  = super.do_compare(rhs, comparer);
-{%- for port in agent.output_ports %}
+{% for port in agent.output_ports %}
     eq &= ({{ port.name }} === tr.{{ port.name }});
-{%- endfor %}
+{% endfor %}
+
     // pragma quickuvm custom do_compare_additional begin
     // pragma quickuvm custom do_compare_additional end
     return(eq);
   endfunction
 
-{%- endif %}
+{% endif %}
 
   function void do_print(uvm_printer printer);
     $display("\n\n\t\t*** print() and sprint() are not implemented for this transaction type ***\n\n");
@@ -83,25 +84,25 @@ class {{ agent.transaction }} extends uvm_sequence_item;
 
   virtual function string input2string();
     string s = "";
-{%- for port in agent.input_ports %}
-{%- if port.width <= 4 %}
+{% for port in agent.input_ports %}
+{% if port.width <= 4 %}
     s = {s, $sformatf("{{ port.name }}=%b  ", {{ port.name }})};
-{%- else %}
+{% else %}
     s = {s, $sformatf("{{ port.name }}=%0h  ", {{ port.name }})};
-{%- endif %}
-{%- endfor %}
+{% endif %}
+{% endfor %}
     return(s);
   endfunction
 
   virtual function string output2string();
     string s = "";
-{%- for port in agent.output_ports %}
-{%- if port.width <= 4 %}
+{% for port in agent.output_ports %}
+{% if port.width <= 4 %}
     s = {s, $sformatf("{{ port.name }}=%b  ", {{ port.name }})};
-{%- else %}
+{% else %}
     s = {s, $sformatf("{{ port.name }}=%0h  ", {{ port.name }})};
-{%- endif %}
-{%- endfor %}
+{% endif %}
+{% endfor %}
     return(s);
   endfunction
 

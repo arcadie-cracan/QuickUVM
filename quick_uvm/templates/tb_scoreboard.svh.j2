@@ -7,7 +7,7 @@
 //----------------------------------------------------------------------
 // The scoreboard wires sub-components only; no write() methods needed.
 //----------------------------------------------------------------------
-{%- set pa = agents[0] %}
+{% set pa = agents[0] %}
 
 class tb_scoreboard extends uvm_scoreboard;
   `uvm_component_utils(tb_scoreboard)

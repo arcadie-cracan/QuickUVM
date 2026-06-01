@@ -5,13 +5,19 @@
 // Author:   {{ project.author }}
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
-{%- set pa = agents[0] %}
+{% set pa = agents[0] %}
 
 class {{ test.name }} extends test_base;
   `uvm_component_utils({{ test.name }})
 
   function new (string name, uvm_component parent);
     super.new(name, parent);
+  endfunction
+
+  function void build_phase(uvm_phase phase);
+    // pragma quickuvm custom build_phase_additional begin
+    // pragma quickuvm custom build_phase_additional end
+    super.build_phase(phase);
   endfunction
 
   task run_phase(uvm_phase phase);

@@ -12,7 +12,7 @@ import yaml
 
 from . import __version__
 from .generator import Generator
-from .merger import list_modified_sections
+from .merger import MergeError, analyze
 from .models import AgentConfig, PortConfig, ProjectConfig, TestConfig
 
 
@@ -61,7 +61,19 @@ def main() -> None:
               help="Show what would be written without writing.")
 @click.option("--only", default=None, metavar="FILENAME",
               help="Generate only the specified output filename.")
-def generate(config: str, output: str | None, dry_run: bool, only: str | None) -> None:
+@click.option("--allow-drop", is_flag=True,
+              help="Proceed even if user code would be lost (orphaned pragma "
+                   "sections). Default: fail closed.")
+@click.option("--no-backup", is_flag=True,
+              help="Do not write <file>.bak copies before overwriting.")
+def generate(
+    config: str,
+    output: str | None,
+    dry_run: bool,
+    only: str | None,
+    allow_drop: bool,
+    no_backup: bool,
+) -> None:
     """Generate (or regenerate) the testbench files."""
     cfg = _load_config(config)
     out_dir = Path(output) if output else Path("tb")
@@ -71,7 +83,16 @@ def generate(config: str, output: str | None, dry_run: bool, only: str | None) -
     if dry_run:
         click.echo("  (dry-run mode — no files written)\n")
 
-    results = gen.generate_all(out_dir, dry_run=dry_run, only=only)
+    try:
+        results = gen.generate_all(
+            out_dir, dry_run=dry_run, only=only,
+            allow_drop=allow_drop, backup=not no_backup,
+        )
+    except MergeError as exc:
+        raise click.ClickException(
+            f"{exc}\n\nRefusing to overwrite to avoid losing hand-written code. "
+            "Fix the markers, or re-run with --allow-drop to proceed."
+        )
 
     for status, path in results:
         click.echo(f"  {_status_icon(status)}  {path}")
@@ -224,21 +245,37 @@ def add_test(config: str, name: str, num_items: int, output: str | None) -> None
 @click.option("-o", "--output", default=None, metavar="DIR",
               help="Directory to inspect (default: ./tb).")
 def status(config: str, output: str | None) -> None:
-    """Show which user code sections have been modified."""
+    """Show how on-disk files differ from what a regen would produce.
+
+    Distinguishes preserved user edits from code that would be LOST (orphaned),
+    malformed markers, and out-of-band edits to generated regions that a regen
+    would overwrite.
+    """
     cfg = _load_config(config)
     out_dir = Path(output) if output else Path("tb")
     gen = Generator(cfg)
-    specs = gen.files_to_generate()
 
-    any_modified = False
-    click.echo(f"{'File':<35}  {'Modified sections'}")
-    click.echo("-" * 72)
-    for spec in specs:
+    any_findings = False
+    for spec in gen.files_to_generate():
         dest = out_dir / spec.output
-        modified = list_modified_sections(dest)
-        if modified:
-            any_modified = True
-            click.echo(f"  {spec.output:<33}  {', '.join(modified)}")
+        if not dest.exists():
+            continue
+        st = analyze(dest, gen.render(spec))
+        if st is None or st.clean:
+            continue
+        any_findings = True
+        notes: list[str] = []
+        if st.marker_errors:
+            notes.append(f"MALFORMED MARKERS ({len(st.marker_errors)}) — run will fail closed")
+        if st.orphaned:
+            notes.append(f"ORPHANED (will be LOST): {', '.join(st.orphaned)}")
+        if st.user_modified:
+            notes.append(f"user-modified: {', '.join(st.user_modified)}")
+        if st.structure_changed:
+            notes.append("out-of-band edits to generated region (regen will overwrite)")
+        click.echo(f"  {spec.output}")
+        for n in notes:
+            click.echo(f"      - {n}")
 
-    if not any_modified:
-        click.echo("  No modified user sections found.")
+    if not any_findings:
+        click.echo("  Clean: every file matches the generator (no user edits, no drift).")

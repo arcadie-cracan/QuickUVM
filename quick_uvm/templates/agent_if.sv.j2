@@ -14,24 +14,25 @@
 
 interface {{ agent.interface }} (input clk);
   // Generated signals from config
-{%- for port in agent.output_ports %}
+{% for port in agent.output_ports %}
   logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
-{%- endfor %}
-{%- for port in agent.input_ports %}
+{% endfor %}
+{% for port in agent.input_ports %}
   logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
-{%- endfor %}
+{% endfor %}
 
   // pragma quickuvm custom signals_additional begin
   // pragma quickuvm custom signals_additional end
 
   clocking cb1 @(posedge clk);
     default input #1step output `Tdrive;
-{%- for port in agent.output_ports %}
+{% for port in agent.output_ports %}
     input  {{ port.name }};
-{%- endfor %}
-{%- for port in agent.input_ports %}
+{% endfor %}
+{% for port in agent.input_ports %}
     output {{ port.name }};
-{%- endfor %}
+{% endfor %}
+
     // pragma quickuvm custom clocking_block_additional begin
     // pragma quickuvm custom clocking_block_additional end
   endclocking

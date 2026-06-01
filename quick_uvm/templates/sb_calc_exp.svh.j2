@@ -12,7 +12,7 @@
 //
 // Edit the "prediction_logic" user section below.
 //----------------------------------------------------------------------
-{%- set pa = agents[0] %}
+{% set pa = agents[0] %}
 
 function {{ pa.transaction }} sb_predictor::sb_calc_exp({{ pa.transaction }} t);
   // Declare static state variables needed between calls
@@ -28,21 +28,22 @@ function {{ pa.transaction }} sb_predictor::sb_calc_exp({{ pa.transaction }} t);
   // pragma quickuvm custom prediction_logic begin
   // TODO: Replace this stub with the actual DUT prediction.
   // Example for a simple register (din → dout):
-{%- if dut.reset %}
+{% if dut.reset %}
   // if (!extr.{{ dut.reset }}) begin
-{%- for port in pa.output_ports %}
+{% for port in pa.output_ports %}
   //   extr.{{ port.name }} = '0;
-{%- endfor %}
+{% endfor %}
   // end else begin
-{%- for out in pa.output_ports %}
-{%- for inp in pa.input_ports %}
-{%- if inp.name != dut.reset %}
+{% for out in pa.output_ports %}
+{% for inp in pa.input_ports %}
+{% if inp.name != dut.reset %}
   //   extr.{{ out.name }} = extr.{{ inp.name }};
-{%- endif %}
-{%- endfor %}
-{%- endfor %}
+{% endif %}
+{% endfor %}
+{% endfor %}
   // end
-{%- endif %}
+{% endif %}
+
   // pragma quickuvm custom prediction_logic end
 
   `uvm_info("CALC #2", extr.convert2string(), UVM_FULL)

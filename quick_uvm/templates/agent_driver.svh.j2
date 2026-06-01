@@ -32,15 +32,15 @@ class {{ agent.name }}_driver extends uvm_driver #({{ agent.transaction }});
 
   virtual task initialize (); // @0 - Does not use clocking block
     `uvm_info("INIT", "{{ agent.name }}_driver: Initialize (time @0)", UVM_HIGH)
-{%- for port in agent.input_ports %}
-{%- if port.name == dut.reset %}
+{% for port in agent.input_ports %}
+{% if port.name == dut.reset %}
     vif.{{ port.name }} <= '0;
-{%- elif port.width > 1 %}
+{% elif port.width > 1 %}
     vif.{{ port.name }} <= '1;
-{%- else %}
+{% else %}
     vif.{{ port.name }} <= '0;
-{%- endif %}
-{%- endfor %}
+{% endif %}
+{% endfor %}
     @vif.cb1;
     // pragma quickuvm custom initialize_additional begin
     // pragma quickuvm custom initialize_additional end
@@ -48,9 +48,9 @@ class {{ agent.name }}_driver extends uvm_driver #({{ agent.transaction }});
 
   virtual task drive_item ({{ agent.transaction }} tr);
     `uvm_info("drive_item", tr.input2string(), UVM_FULL)
-{%- for port in agent.input_ports %}
+{% for port in agent.input_ports %}
     vif.cb1.{{ port.name }} <= tr.{{ port.name }};
-{%- endfor %}
+{% endfor %}
     @vif.cb1;
     // pragma quickuvm custom drive_item_additional begin
     // pragma quickuvm custom drive_item_additional end

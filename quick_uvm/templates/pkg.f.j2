@@ -1,5 +1,9 @@
 CYCLE.sv
 tb_pkg.sv
-{%- for agent in agents %}
+{% for agent in agents %}
 {{ agent.interface }}.sv
-{%- endfor %}
+{% endfor %}
+
+// Add extra package/source files below (preserved across regeneration):
+// pragma quickuvm custom extra_pkg_files begin
+// pragma quickuvm custom extra_pkg_files end

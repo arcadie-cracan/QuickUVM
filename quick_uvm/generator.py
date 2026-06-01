@@ -4,6 +4,7 @@ Generator — orchestrates Jinja2 rendering and output file management.
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +36,20 @@ class FileSpec:
     template: str       # name inside quick_uvm/templates/
     output:   str       # filename to write in output_dir
     context:  dict      # extra context variables for this file
+
+
+def _next_backup_path(path: Path) -> Path:
+    """Return the first free rolling backup path ``<file>.bak.<N>``.
+
+    Existing backups are never overwritten: ``N`` increments until an unused
+    name is found, so the full history of pre-regeneration versions is kept.
+    """
+    n = 0
+    while True:
+        candidate = path.with_name(f"{path.name}.bak.{n}")
+        if not candidate.exists():
+            return candidate
+        n += 1
 
 
 # ---------------------------------------------------------------------------
@@ -136,12 +151,21 @@ class Generator:
         output_path: Path,
         content: str,
         dry_run: bool = False,
+        allow_drop: bool = False,
+        backup: bool = True,
     ) -> tuple[str, str]:
         """Write *content* to *output_path*, merging user sections if the
         file already exists.  Returns (status, output_path_str) where
         status is one of 'created', 'updated', 'unchanged'.
+
+        Before overwriting an existing file a rolling ``<file>.bak.<N>`` copy is
+        written (unless *backup* is False), keeping every prior version so any
+        regen mishap is recoverable.  Raises
+        :class:`~quick_uvm.merger.MergeError` if the merge would be unsafe and
+        *allow_drop* is False.
         """
-        merged = merge(output_path, content)
+        result = merge(output_path, content, allow_drop=allow_drop)
+        merged = result.text
 
         if dry_run:
             return ("dry-run", str(output_path))
@@ -152,6 +176,8 @@ class Generator:
             return ("unchanged", str(output_path))
 
         existed = output_path.exists()
+        if existed and backup:
+            shutil.copy2(output_path, _next_backup_path(output_path))
         output_path.write_text(merged, encoding="utf-8")
         return ("updated" if existed else "created", str(output_path))
 
@@ -164,13 +190,22 @@ class Generator:
         output_dir: Path,
         dry_run: bool = False,
         only: str | None = None,
+        allow_drop: bool = False,
+        backup: bool = True,
     ) -> list[tuple[str, str]]:
-        """Render and write every file.  Returns list of (status, path)."""
+        """Render and write every file.  Returns list of (status, path).
+
+        Propagates :class:`~quick_uvm.merger.MergeError` from any file whose
+        merge would be unsafe (caller decides how to surface it).
+        """
         results: list[tuple[str, str]] = []
         for spec in self.files_to_generate():
             if only and spec.output != only:
                 continue
             content = self.render(spec)
-            status, path = self._write(output_dir / spec.output, content, dry_run)
+            status, path = self._write(
+                output_dir / spec.output, content, dry_run,
+                allow_drop=allow_drop, backup=backup,
+            )
             results.append((status, path))
         return results

@@ -9,48 +9,48 @@
 //----------------------------------------------------------------------
 
 module {{ dut.name }} (
-{%- set primary = agents[0] %}
-{%- for port in primary.output_ports %}
+{% set primary = agents[0] %}
+{% for port in primary.output_ports %}
   output logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }},
-{%- endfor %}
-{%- for port in primary.input_ports %}
-  input  {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }}{% if not loop.last or dut.clock %},{% endif %}
-{%- endfor %}
+{% endfor %}
+{% for port in primary.input_ports %}
+  input  {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }},
+{% endfor %}
   input               {{ dut.clock }}{% if dut.reset %},
   input               {{ dut.reset }}{% endif %});
 
   // pragma quickuvm custom dut_logic begin
-{%- for port in primary.output_ports %}
+{% for port in primary.output_ports %}
   logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}r_{{ port.name }};
-{%- endfor %}
+{% endfor %}
 
-{%- for port in primary.output_ports %}
+{% for port in primary.output_ports %}
   assign {{ port.name }} = r_{{ port.name }};
-{%- endfor %}
+{% endfor %}
 
   always_ff @(posedge {{ dut.clock }}{% if dut.reset %}{% if dut.reset_active_low %}, negedge {{ dut.reset }}{% else %}, posedge {{ dut.reset }}{% endif %}{% endif %}) begin
-{%- if dut.reset %}
+{% if dut.reset %}
     if ({% if dut.reset_active_low %}!{% endif %}{{ dut.reset }}) begin
-{%- for port in primary.output_ports %}
+{% for port in primary.output_ports %}
       r_{{ port.name }} <= '0;
-{%- endfor %}
+{% endfor %}
     end else begin
-{%- for port in primary.output_ports %}
-{%- set ns = namespace(matched=false) %}
-{%- for inp in primary.input_ports %}
-{%- if inp.name == port.name or 'in' in inp.name %}
-{%- if not ns.matched %}
+{% for port in primary.output_ports %}
+{% set ns = namespace(matched=false) %}
+{% for inp in primary.input_ports %}
+{% if inp.name == port.name or 'in' in inp.name %}
+{% if not ns.matched %}
       r_{{ port.name }} <= {{ inp.name }};
-{%- set ns.matched = true %}
-{%- endif %}
-{%- endif %}
-{%- endfor %}
-{%- if not ns.matched %}
+{% set ns.matched = true %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if not ns.matched %}
       r_{{ port.name }} <= r_{{ port.name }};
-{%- endif %}
-{%- endfor %}
+{% endif %}
+{% endfor %}
     end
-{%- endif %}
+{% endif %}
   end
   // pragma quickuvm custom dut_logic end
 
