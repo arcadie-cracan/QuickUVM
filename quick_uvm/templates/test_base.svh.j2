@@ -36,6 +36,10 @@ class test_base extends uvm_test;
     env_cfg.reg_model = {{ register_model.block }}::type_id::create("reg_model");
     env_cfg.reg_model.build();
     env_cfg.reg_model.lock_model();
+{% if register_model.backdoor_root %}
+    // Backdoor root: lets uvm_reg peek/poke hit RTL storage via the model's hdl_path
+    env_cfg.reg_model.add_hdl_path("{{ register_model.backdoor_root }}");
+{% endif %}
 {% endif %}
     uvm_config_db#(env_config)::set(this, "e", "env_cfg", env_cfg);
 

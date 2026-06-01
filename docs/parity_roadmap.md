@@ -75,9 +75,12 @@ locks the model into env_config; env does `map.set_sequencer` + an optional
 byte-identical (verified). Covered by `tests/test_register_model.py` (+ `with_regmodel`
 marker/idempotency variant); 98 green.
 
-### C4b — Register model, backdoor (hdl_path) — deferred
-Add `register_model.backdoor` (hdl_root + per-reg paths) for peek/poke without the
-SPI protocol. Follow-up once the front-door path is proven in `spi/quickuvm_tb`.
+### C4b — Register model, backdoor (hdl_path) — DONE (v0.6.0)
+`register_model.backdoor_root` emits `model.add_hdl_path(<root>)` in test_base, and
+`reg_test_door: backdoor` makes `reg_test` run via `set_default_door(UVM_BACKDOOR)` —
+peek/poke straight to RTL storage, sidestepping SPI paging + pipelined reads. Relies on
+reggen emitting per-register `add_hdl_path_slice` (done in `tools/sysbus_reggen.py`).
+Front-door default unchanged (byte-identical). Covered by `tests/test_register_model.py`.
 
 ### H1 — Sub-environments
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.

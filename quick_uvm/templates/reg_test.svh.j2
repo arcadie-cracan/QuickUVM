@@ -20,6 +20,10 @@ class reg_test extends test_base;
     uvm_reg_hw_reset_seq hw_reset_seq;
     uvm_reg_bit_bash_seq bit_bash_seq;
     phase.raise_objection(this);
+{% if register_model.reg_test_door == "backdoor" %}
+    // Run the register sequences via backdoor (hdl_path peek/poke)
+    env_cfg.reg_model.set_default_door(UVM_BACKDOOR);
+{% endif %}
     // pragma quickuvm custom reg_test_pre begin
     // pragma quickuvm custom reg_test_pre end
 

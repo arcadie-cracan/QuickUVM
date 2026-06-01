@@ -107,8 +107,37 @@ def test_tb_pkg_imports_reg_package(tmp_path):
     assert "`include \"spi_reg_adapter.svh\"" in p
 
 
+# ---- backdoor (C4b) --------------------------------------------------------
+
+def test_backdoor_root_adds_hdl_path(tmp_path):
+    Generator(_cfg(_rm(backdoor_root="top.dut_inst.regs_inst"))).generate_all(tmp_path)
+    t = (tmp_path / "test_base.svh").read_text()
+    assert 'env_cfg.reg_model.add_hdl_path("top.dut_inst.regs_inst");' in t
+
+
+def test_no_backdoor_root_no_hdl_path(tmp_path):
+    Generator(_cfg(_rm())).generate_all(tmp_path)
+    assert "add_hdl_path(" not in (tmp_path / "test_base.svh").read_text()
+
+
+def test_backdoor_door_sets_default_door(tmp_path):
+    Generator(_cfg(_rm(backdoor_root="top.r", reg_test_door="backdoor"))).generate_all(tmp_path)
+    rt = (tmp_path / "reg_test.svh").read_text()
+    assert "set_default_door(UVM_BACKDOOR);" in rt
+
+
+def test_frontdoor_door_no_backdoor_call(tmp_path):
+    Generator(_cfg(_rm())).generate_all(tmp_path)
+    assert "set_default_door" not in (tmp_path / "reg_test.svh").read_text()
+
+
 # ---- validation ------------------------------------------------------------
 
 def test_unknown_bus_agent_rejected():
     with pytest.raises(Exception, match="register_model.bus_agent references unknown"):
         _cfg(_rm(bus_agent="nope"))
+
+
+def test_backdoor_door_requires_root():
+    with pytest.raises(Exception, match="requires backdoor_root"):
+        _rm(reg_test_door="backdoor")  # no backdoor_root

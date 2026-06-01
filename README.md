@@ -132,6 +132,11 @@ register_model:
   adapter:   reg_adapter
   use_predictor: true                  # explicit prediction via the agent ap
   reg_test:      true                  # generate hw_reset + bit_bash test
+  # Backdoor (optional): point at the regfile instance so peek/poke hit RTL
+  # storage (needs the reg block to carry hdl_path slices). reg_test_door=backdoor
+  # runs the register test via backdoor (sidesteps bus protocol quirks).
+  backdoor_root: top.dut_inst.regs_inst
+  reg_test_door: backdoor              # frontdoor (default) | backdoor
 ```
 
 See [`examples/simple_reg/`](examples/simple_reg/) for a working example.

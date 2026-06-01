@@ -107,6 +107,18 @@ class RegisterModelConfig(BaseModel):
     adapter: str = "reg_adapter"       # generated uvm_reg_adapter class name
     use_predictor: bool = True         # explicit prediction via the bus agent's ap
     reg_test: bool = True              # generate a hw_reset/bit_bash register test
+    backdoor_root: str | None = None   # absolute HDL path to the regfile instance;
+                                       # set to enable backdoor (model.add_hdl_path)
+    reg_test_door: Literal["frontdoor", "backdoor"] = "frontdoor"
+
+    @model_validator(mode="after")
+    def _check_backdoor(self) -> "RegisterModelConfig":
+        if self.reg_test_door == "backdoor" and not self.backdoor_root:
+            raise ValueError(
+                "register_model.reg_test_door='backdoor' requires backdoor_root "
+                "(the HDL path to the regfile, e.g. 'top.dut_inst.regs_inst')."
+            )
+        return self
 
 
 class ProjectMeta(BaseModel):
