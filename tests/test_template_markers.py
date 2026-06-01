@@ -76,6 +76,7 @@ CONFIGS = {
         register_model=RegisterModelConfig(
             package="my_reg_uvm_pkg", block="my_reg_block_c",
             bus_agent="a0", adapter="a0_reg_adapter",
+            frontdoor="a0_reg_frontdoor",
         ),
     ),
 }

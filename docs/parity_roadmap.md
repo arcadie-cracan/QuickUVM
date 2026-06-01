@@ -82,6 +82,12 @@ peek/poke straight to RTL storage, sidestepping SPI paging + pipelined reads. Re
 reggen emitting per-register `add_hdl_path_slice` (done in `tools/sysbus_reggen.py`).
 Front-door default unchanged (byte-identical). Covered by `tests/test_register_model.py`.
 
+### C4c — Register model, custom front-door — DONE (v0.8.0)
+`register_model.frontdoor: <class>` generates a `uvm_reg_frontdoor` skeleton (body is a
+`frontdoor_body` pragma) and installs it on every register via `set_frontdoor` in
+test_base. Lets a custom protocol access (address paging, pipelined reads, multi-byte)
+replace the 1:1 adapter path. Front-door default unchanged when unset (byte-identical).
+
 ### H1 — Sub-environments
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.
 

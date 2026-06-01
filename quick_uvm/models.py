@@ -110,6 +110,8 @@ class RegisterModelConfig(BaseModel):
     backdoor_root: str | None = None   # absolute HDL path to the regfile instance;
                                        # set to enable backdoor (model.add_hdl_path)
     reg_test_door: Literal["frontdoor", "backdoor"] = "frontdoor"
+    frontdoor: str | None = None       # custom uvm_reg_frontdoor class to generate +
+                                       # install on all registers (protocol body = pragma)
 
     @model_validator(mode="after")
     def _check_backdoor(self) -> "RegisterModelConfig":

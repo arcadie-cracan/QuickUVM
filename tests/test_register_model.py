@@ -145,6 +145,28 @@ def test_frontdoor_door_no_backdoor_call(tmp_path):
     assert "UVM_CHECK, UVM_BACKDOOR" not in rt
 
 
+# ---- custom front-door (C4c) -----------------------------------------------
+
+def test_frontdoor_generated_and_wired(tmp_path):
+    Generator(_cfg(_rm(frontdoor="spi_reg_frontdoor"))).generate_all(tmp_path)
+    fd = tmp_path / "spi_reg_frontdoor.svh"
+    assert fd.exists()
+    c = fd.read_text()
+    assert "extends uvm_reg_frontdoor" in c
+    assert "pragma quickuvm custom frontdoor_body begin" in c
+    assert "rg.get_address(rw_info.map)" in c
+    t = (tmp_path / "test_base.svh").read_text()
+    assert "spi_reg_frontdoor::type_id::create(\"reg_fd\")" in t
+    assert "set_frontdoor(reg_fd," in t
+    assert '`include "spi_reg_frontdoor.svh"' in (tmp_path / "tb_pkg.sv").read_text()
+
+
+def test_no_frontdoor_no_file(tmp_path):
+    Generator(_cfg(_rm())).generate_all(tmp_path)
+    assert not list(tmp_path.glob("*frontdoor*"))
+    assert "set_frontdoor" not in (tmp_path / "test_base.svh").read_text()
+
+
 # ---- validation ------------------------------------------------------------
 
 def test_unknown_bus_agent_rejected():

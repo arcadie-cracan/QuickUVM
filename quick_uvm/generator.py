@@ -133,6 +133,9 @@ class Generator:
         if cfg.register_model is not None:
             specs.append(FileSpec("reg_adapter.svh.j2",
                                   f"{cfg.register_model.adapter}.svh", base_ctx))
+            if cfg.register_model.frontdoor:
+                specs.append(FileSpec("reg_frontdoor.svh.j2",
+                                      f"{cfg.register_model.frontdoor}.svh", base_ctx))
             if cfg.register_model.reg_test:
                 specs.append(FileSpec("reg_test.svh.j2", "reg_test.svh", base_ctx))
 

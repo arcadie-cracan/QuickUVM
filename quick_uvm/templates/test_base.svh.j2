@@ -40,6 +40,16 @@ class test_base extends uvm_test;
     // Backdoor root: lets uvm_reg peek/poke hit RTL storage via the model's hdl_path
     env_cfg.reg_model.add_hdl_path("{{ register_model.backdoor_root }}");
 {% endif %}
+{% if register_model.frontdoor %}
+    // Install the custom front-door on every register
+    begin
+      {{ register_model.frontdoor }} reg_fd = {{ register_model.frontdoor }}::type_id::create("reg_fd");
+      uvm_reg fd_regs[$];
+      env_cfg.reg_model.get_registers(fd_regs);
+      foreach (fd_regs[i])
+        fd_regs[i].set_frontdoor(reg_fd, env_cfg.reg_model.{{ register_model.map }});
+    end
+{% endif %}
 {% endif %}
     uvm_config_db#(env_config)::set(this, "e", "env_cfg", env_cfg);
 

@@ -138,6 +138,7 @@ register_model:
   # runs the register test via backdoor (sidesteps bus protocol quirks).
   backdoor_root: top.dut_inst.regs_inst
   reg_test_door: backdoor              # frontdoor (default) | backdoor
+  frontdoor: reg_frontdoor             # generate+install a custom uvm_reg_frontdoor (body = pragma)
 ```
 
 See [`examples/simple_reg/`](examples/simple_reg/) for a working example.

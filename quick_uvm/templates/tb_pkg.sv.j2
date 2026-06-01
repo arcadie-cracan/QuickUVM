@@ -48,6 +48,9 @@ package tb_pkg;
   `include "env_config.svh"
 {% if register_model %}
   `include "{{ register_model.adapter }}.svh"
+{% if register_model.frontdoor %}
+  `include "{{ register_model.frontdoor }}.svh"
+{% endif %}
 {% endif %}
   `include "env.svh"
 
