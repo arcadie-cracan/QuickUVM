@@ -20,6 +20,13 @@ class reg_test extends test_base;
     super.new(name, parent);
   endfunction
 
+  function void build_phase(uvm_phase phase);
+    // The register model is the checker for this test; disable the data-path
+    // scoreboard so the protocol predictor isn't run on register-access traffic.
+    uvm_config_db#(bit)::set(this, "*", "sb_enable", 0);
+    super.build_phase(phase);
+  endfunction
+
   task run_phase(uvm_phase phase);
     phase.raise_objection(this);
     // pragma quickuvm custom reg_test_pre begin

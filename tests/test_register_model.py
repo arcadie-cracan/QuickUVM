@@ -177,3 +177,12 @@ def test_unknown_bus_agent_rejected():
 def test_backdoor_door_requires_root():
     with pytest.raises(Exception, match="requires backdoor_root"):
         _rm(reg_test_door="backdoor")  # no backdoor_root
+
+
+def test_reg_test_disables_datapath_scoreboard(tmp_path):
+    Generator(_cfg(_rm())).generate_all(tmp_path)
+    rt = (tmp_path / "reg_test.svh").read_text()
+    assert 'uvm_config_db#(bit)::set(this, "*", "sb_enable", 0);' in rt
+    cmp = (tmp_path / "sb_comparator.svh").read_text()
+    assert 'uvm_config_db#(bit)::get(this, "", "sb_enable", enabled)' in cmp
+    assert "if (!enabled) begin" in cmp

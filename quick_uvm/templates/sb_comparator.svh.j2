@@ -18,6 +18,11 @@ class sb_comparator extends uvm_component;
   uvm_tlm_analysis_fifo #({{ pa.transaction }}) expfifo;
   uvm_tlm_analysis_fifo #({{ pa.transaction }}) outfifo;
 
+  // Data-path scoreboard enable. A register test (RAL is the checker) clears this
+  // via uvm_config_db "sb_enable" so the protocol predictor isn't run on
+  // register-access traffic it doesn't model.
+  bit enabled = 1;
+
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
 
@@ -31,6 +36,7 @@ class sb_comparator extends uvm_component;
     out_ap  = new("out_ap",  this);
     expfifo = new("expfifo", this);
     outfifo = new("outfifo", this);
+    void'(uvm_config_db#(bit)::get(this, "", "sb_enable", enabled));
   endfunction
 
   function void connect_phase(uvm_phase phase);
@@ -40,6 +46,10 @@ class sb_comparator extends uvm_component;
   endfunction
 
   task run_phase(uvm_phase phase);
+    if (!enabled) begin
+      `uvm_info("SB_CMP", "data-path scoreboard disabled for this test (checked by RAL)", UVM_LOW)
+      return;
+    end
     //---------------------------------------------------------------------------
     // Uncomment repeat() block to flush pipeline / sync-reset transactions:
     // repeat (1) begin
