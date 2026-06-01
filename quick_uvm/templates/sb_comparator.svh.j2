@@ -23,6 +23,10 @@ class sb_comparator extends uvm_component;
   // register-access traffic it doesn't model.
   bit enabled = 1;
 
+  // Number of leading transactions to flush (DUT startup: pipeline fill + sync/
+  // reset frames that aren't meaningful). Set via uvm_config_db "sb_flush".
+  int unsigned flush_count = 0;
+
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
 
@@ -37,6 +41,7 @@ class sb_comparator extends uvm_component;
     expfifo = new("expfifo", this);
     outfifo = new("outfifo", this);
     void'(uvm_config_db#(bit)::get(this, "", "sb_enable", enabled));
+    void'(uvm_config_db#(int)::get(this, "", "sb_flush", flush_count));
   endfunction
 
   function void connect_phase(uvm_phase phase);
@@ -50,13 +55,15 @@ class sb_comparator extends uvm_component;
       `uvm_info("SB_CMP", "data-path scoreboard disabled for this test (checked by RAL)", UVM_LOW)
       return;
     end
-    //---------------------------------------------------------------------------
-    // Uncomment repeat() block to flush pipeline / sync-reset transactions:
-    // repeat (1) begin
-    //   expfifo.get(exp_tr);
-    //   outfifo.get(out_tr);
-    // end
-    //---------------------------------------------------------------------------
+    // Flush DUT-startup transactions (pipeline fill + sync/reset frames) that are
+    // not meaningful to compare. Count set per-DUT via uvm_config_db "sb_flush".
+    if (flush_count) begin
+      `uvm_info("SB_CMP", $sformatf("flushing %0d startup transaction(s)", flush_count), UVM_LOW)
+      repeat (flush_count) begin
+        expfifo.get(exp_tr);
+        outfifo.get(out_tr);
+      end
+    end
     forever begin
       `uvm_info("SB_CMP", "WAITING for expected output", UVM_FULL)
       expfifo.get(exp_tr);

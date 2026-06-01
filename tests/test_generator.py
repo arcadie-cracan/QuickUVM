@@ -122,3 +122,11 @@ def test_scoreboard_report_warns_on_zero_vectors(generated_tb):
     assert '`uvm_error("FAILED"' in c
     assert 'VECT_CNT == 0' in c
     assert '`uvm_warning("NOVEC"' in c
+
+
+def test_scoreboard_startup_flush(generated_tb):
+    """Comparator can flush leading startup (pipeline/reset) transactions via sb_flush."""
+    c = (generated_tb / "sb_comparator.svh").read_text()
+    assert "int unsigned flush_count = 0;" in c
+    assert 'uvm_config_db#(int)::get(this, "", "sb_flush", flush_count)' in c
+    assert "repeat (flush_count) begin" in c
