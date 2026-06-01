@@ -77,7 +77,7 @@ marker/idempotency variant); 98 green.
 
 ### C4b — Register model, backdoor (hdl_path) — DONE (v0.6.0)
 `register_model.backdoor_root` emits `model.add_hdl_path(<root>)` in test_base, and
-`reg_test_door: backdoor` makes `reg_test` run via `set_default_door(UVM_BACKDOOR)` —
+`reg_test_door: backdoor` runs `reg_test` via backdoor —
 peek/poke straight to RTL storage, sidestepping SPI paging + pipelined reads. Relies on
 reggen emitting per-register `add_hdl_path_slice` (done in `tools/sysbus_reggen.py`).
 Front-door default unchanged (byte-identical). Covered by `tests/test_register_model.py`.

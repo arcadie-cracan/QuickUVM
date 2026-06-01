@@ -79,6 +79,7 @@ project:
   name: simple_reg
   author: you
   year: 2026
+  uvm_version: "1.2"   # "1.2" (default) or "1.1d" — selects version-specific UVM APIs
 
 dut:
   name: simple_reg

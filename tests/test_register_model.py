@@ -35,8 +35,9 @@ def _rm(**over):
     return RegisterModelConfig(**base)
 
 
-def _cfg(register_model=None, agents=None):
-    return ProjectConfig(project=ProjectMeta(name="t"), dut=DutConfig(name="d"),
+def _cfg(register_model=None, agents=None, uvm_version="1.2"):
+    return ProjectConfig(project=ProjectMeta(name="t", uvm_version=uvm_version),
+                         dut=DutConfig(name="d"),
                          agents=agents or [_ag()], tests=[TConf(name="t1")],
                          register_model=register_model)
 
@@ -120,15 +121,28 @@ def test_no_backdoor_root_no_hdl_path(tmp_path):
     assert "add_hdl_path(" not in (tmp_path / "test_base.svh").read_text()
 
 
-def test_backdoor_door_sets_default_door(tmp_path):
+def test_backdoor_door_sets_default_door_uvm12(tmp_path):
+    # default uvm_version == "1.2"
     Generator(_cfg(_rm(backdoor_root="top.r", reg_test_door="backdoor"))).generate_all(tmp_path)
     rt = (tmp_path / "reg_test.svh").read_text()
     assert "set_default_door(UVM_BACKDOOR);" in rt
 
 
+def test_backdoor_uvm11d_uses_explicit_mirror(tmp_path):
+    Generator(_cfg(_rm(backdoor_root="top.r", reg_test_door="backdoor"),
+                   uvm_version="1.1d")).generate_all(tmp_path)
+    rt = (tmp_path / "reg_test.svh").read_text()
+    # 1.1d built-ins hardcode front-door -> explicit per-register backdoor mirror
+    assert "mirror(status, UVM_CHECK, UVM_BACKDOOR)" in rt
+    assert "set_default_door(UVM_BACKDOOR);" not in rt
+    assert "get_registers(regs)" in rt
+
+
 def test_frontdoor_door_no_backdoor_call(tmp_path):
     Generator(_cfg(_rm())).generate_all(tmp_path)
-    assert "set_default_door" not in (tmp_path / "reg_test.svh").read_text()
+    rt = (tmp_path / "reg_test.svh").read_text()
+    assert "set_default_door(UVM_BACKDOOR);" not in rt
+    assert "UVM_CHECK, UVM_BACKDOOR" not in rt
 
 
 # ---- validation ------------------------------------------------------------

@@ -125,6 +125,7 @@ class ProjectMeta(BaseModel):
     name: str
     author: str = ""
     year: int = 2026
+    uvm_version: Literal["1.1d", "1.2"] = "1.2"  # selects version-specific UVM APIs
 
 
 class ProjectConfig(BaseModel):
