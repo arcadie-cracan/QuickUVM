@@ -1,0 +1,5 @@
+CYCLE.sv
+tb_pkg.sv
+{%- for agent in agents %}
+{{ agent.interface }}.sv
+{%- endfor %}

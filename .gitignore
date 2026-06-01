@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environment
+.venv/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Distribution / packaging
+*.whl
+*.tar.gz
+
+# Editor / IDE
+.dvt/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+dvt_build.log
+
+# Generated testbench output (keep examples, ignore scratch)
+/tb/
+/tb_out/

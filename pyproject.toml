@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quick-uvm"
+version = "0.1.0"
+description = "UVM testbench generator based on Paradigm Works uvmtb_template style, with UVMF-style user code section preservation."
+requires-python = ">=3.10"
+dependencies = [
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+    "click>=8.0",
+    "pydantic>=2.0",
+]
+keywords = ["uvm", "verification", "testbench", "systemverilog", "generator"]
+
+[project.scripts]
+quick-uvm = "quick_uvm.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["quick_uvm*"]
+
+[tool.setuptools.package-data]
+quick_uvm = ["templates/**/*.j2"]

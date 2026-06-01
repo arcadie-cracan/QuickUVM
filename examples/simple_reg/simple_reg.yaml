@@ -1,0 +1,37 @@
+project:
+  name: simple_reg_tb
+  author: user@example.com
+  year: 2026
+
+dut:
+  name: simple_reg
+  clock: clk
+  reset: rst_n
+  reset_active_low: true
+
+clock:
+  period: 10
+  unit: ns
+  drive_offset_pct: 20
+
+agents:
+  - name: reg
+    interface: reg_if
+    transaction: reg_trans
+    trans_style: manual
+    active: true
+    ports:
+      outputs:
+        - name: dout
+          width: 16
+      inputs:
+        - name: din
+          width: 16
+          randomize: true
+        - name: rst_n
+          width: 1
+          randomize: true
+
+tests:
+  - name: test_rand
+    num_items: 100

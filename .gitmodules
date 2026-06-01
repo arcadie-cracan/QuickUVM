@@ -1,0 +1,3 @@
+[submodule "uvmtb_template"]
+	path = uvmtb_template
+	url = https://github.com/paradigm-works/uvmtb_template
