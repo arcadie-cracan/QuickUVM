@@ -68,11 +68,12 @@ class Generator:
     def files_to_generate(self) -> list[FileSpec]:
         cfg = self.config
         base_ctx = {
-            "project": cfg.project,
-            "dut":     cfg.dut,
-            "clock":   cfg.clock,
-            "agents":  cfg.agents,
-            "tests":   cfg.tests,
+            "project":  cfg.project,
+            "dut":      cfg.dut,
+            "clock":    cfg.clock,
+            "agents":   cfg.agents,
+            "tests":    cfg.tests,
+            "analysis": cfg.analysis,
         }
 
         specs: list[FileSpec] = []

@@ -46,9 +46,16 @@ must be regenerated** (vif passing changed from resource_db to config_db).
 `layout: packaged`: standalone `<agent>_pkg`, `<env>_pkg`, thin bench; per-package `.f`.
 Accept: `<agent>_pkg` compiles standalone.
 
-### C1 — Declarative analysis fabric + multiple scoreboards
-Schema: `analysis_components`, `scoreboards`, `tlm_connections`. Wire env connect_phase
-from YAML; remove hardwired `agents[0]`. Accept: 2-agent checker wired from YAML only.
+### C1 — Declarative analysis fabric (MVP per-agent routing) — DONE (v0.4.0)
+Opt-in `analysis:` block: `coverage: [<agent>...]` (one `<agent>_cover` per listed
+agent) and `scoreboards: [{name, source}]` (a `tb_scoreboard` bound to `<source>.ap`).
+When omitted, the env keeps the legacy single-stream wiring **byte-identical** (verified),
+so single-agent TBs (incl. `spi/quickuvm_tb`) need no migration. Fixes the
+unconnected-non-primary-agent bug for routed agents. Covered by
+`tests/test_analysis_fabric.py` (+ `with_analysis` marker/idempotency variant); 88 green.
+Kept single-stream `tb_scoreboard` (one transaction type). Deferred to a later step:
+full multi-predictor / `tlm_connections` fabric for "A drives → predictor → scoreboard
+← B monitors" topologies (and multi-transaction scoreboards).
 
 ### C2 — Virtual sequencer + env/bench sequences
 `env_vsqr` (agent sequencer handles), `env_vseq_base`; tests run vseqs.

@@ -75,6 +75,22 @@ class TestConfig(BaseModel):
         return v
 
 
+class ScoreboardSpec(BaseModel):
+    name: str = "sbd"
+    source: str  # name of the agent whose analysis port feeds this scoreboard
+
+
+class AnalysisConfig(BaseModel):
+    """Opt-in declarative analysis connectivity (C1, MVP per-agent routing).
+
+    When omitted, the environment keeps the legacy single-stream wiring
+    (one scoreboard + one coverage collector on the primary agent).
+    """
+
+    coverage: list[str] = Field(default_factory=list)  # agent names that get a cover
+    scoreboards: list[ScoreboardSpec] = Field(default_factory=list)
+
+
 class ProjectMeta(BaseModel):
     name: str
     author: str = ""
@@ -87,6 +103,7 @@ class ProjectConfig(BaseModel):
     clock: ClockConfig = Field(default_factory=ClockConfig)
     agents: list[AgentConfig] = Field(default_factory=list)
     tests: list[TestConfig] = Field(default_factory=lambda: [TestConfig(name="test1")])
+    analysis: AnalysisConfig | None = None
 
     @model_validator(mode="after")
     def validate_agents(self) -> "ProjectConfig":
@@ -95,6 +112,22 @@ class ProjectConfig(BaseModel):
             raise ValueError("Agent names must be unique.")
         if not self.agents:
             raise ValueError("At least one agent must be defined.")
+        if self.analysis is not None:
+            agent_names = set(names)
+            for ag in self.analysis.coverage:
+                if ag not in agent_names:
+                    raise ValueError(
+                        f"analysis.coverage references unknown agent '{ag}'."
+                    )
+            sb_names = [s.name for s in self.analysis.scoreboards]
+            if len(sb_names) != len(set(sb_names)):
+                raise ValueError("analysis.scoreboards names must be unique.")
+            for s in self.analysis.scoreboards:
+                if s.source not in agent_names:
+                    raise ValueError(
+                        f"analysis.scoreboards '{s.name}' references unknown "
+                        f"source agent '{s.source}'."
+                    )
         return self
 
     @classmethod

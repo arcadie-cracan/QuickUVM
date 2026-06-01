@@ -17,8 +17,10 @@ from quick_uvm.models import (
     ClockConfig,
     DutConfig,
     PortConfig,
+    AnalysisConfig,
     ProjectConfig,
     ProjectMeta,
+    ScoreboardSpec,
     TestConfig as TConf,  # aliased so pytest doesn't try to collect it
 )
 
@@ -61,6 +63,13 @@ CONFIGS = {
     ),
     "no_reset": _cfg(dut=DutConfig(name="nr", reset="")),
     "field_macros": _cfg(agents=[_agent("fm", trans_style="field_macros")]),
+    "with_analysis": _cfg(
+        agents=[_agent("a0"), _agent("a1")],
+        analysis=AnalysisConfig(
+            coverage=["a0", "a1"],
+            scoreboards=[ScoreboardSpec(name="sbd", source="a0")],
+        ),
+    ),
 }
 
 

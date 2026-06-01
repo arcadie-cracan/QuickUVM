@@ -113,6 +113,13 @@ agents:
 tests:
   - name: test_rand
     num_items: 100
+
+# Optional — declarative analysis routing (multi-agent). When omitted, a single
+# scoreboard + coverage collector are wired to the first agent (legacy behaviour).
+analysis:
+  coverage: [reg]                 # one <agent>_cover per listed agent
+  scoreboards:
+    - {name: sbd, source: reg}    # tb_scoreboard fed by <source>.ap
 ```
 
 See [`examples/simple_reg/`](examples/simple_reg/) for a working example.
