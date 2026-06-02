@@ -25,13 +25,19 @@ jobs:
         run: pytest -q
 
   # ── Generated SystemVerilog: must be Verible-lint-clean and formatted ─────
-  # This is the hard gate on the *product*: every release ships UVM that passes
-  # a standard public linter/formatter. See docs/style_systemverilog.md.
+  # Hard gate on the *product*: every release ships UVM that passes a standard
+  # public linter. See docs/style_systemverilog.md.
+  #
+  # NB: only verible-verilog-LINT is gated. verible-verilog-format is deliberately
+  # NOT used — it fights the Paradigm-Works column alignment we adopted as the
+  # baseline and (as of v0.0-4053) corrupts `uvm_*` macro calls lacking a trailing
+  # ';' (drops their arguments and emits unparseable output). Formatting style is
+  # enforced via the lint rules + docs/style_systemverilog.md instead.
   generated-sv:
     runs-on: ubuntu-latest
     env:
-      # Pin a known Verible release; bump deliberately.
-      VERIBLE_VERSION: v0.0-3724-gff63b22d
+      # Pin a known-good Verible release; bump deliberately.
+      VERIBLE_VERSION: v0.0-4053-g89d4d98a
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -51,7 +57,3 @@ jobs:
       - name: Verible lint (generated SV/SVH)
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_tb/*.sv gen_tb/*.svh
-
-      - name: Verible format check (100-col)
-        run: |
-          verible-verilog-format --column_limit=100 --verify gen_tb/*.sv gen_tb/*.svh

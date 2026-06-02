@@ -19,22 +19,28 @@ When the references disagree, Cummings wins for layout/idiom; lowRISC fills gaps
 
 ## Enforcement (the hard gate)
 
-Prose style guides rot. The product is gated in CI by **Verible** (open-source), so every
-release ships lint-clean, consistently-formatted UVM:
+Prose style guides rot. The product is gated in CI by **`verible-verilog-lint`**
+(open-source), so every release ships lint-clean UVM:
 
-- `verible-verilog-lint --rules_config .verible-lint.rules` — style lint.
-- `verible-verilog-format --column_limit=100 --verify` — formatting.
+- `verible-verilog-lint --rules_config .verible-lint.rules` — style lint (the **hard gate**).
 
-Both run against the generated example in the `generated-sv` CI job
+It runs against the generated example in the `generated-sv` CI job
 ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)). To silence a rule that
 doesn't fit generated UVM, edit [`.verible-lint.rules`](../.verible-lint.rules) with a
 one-line rationale — **never** weaken the generated code to appease a rule.
 [DVT](https://www.dvteclipse.com/) is great for interactive authoring lint locally, but
-Verible is the headless CI authority.
+Verible lint is the headless CI authority.
+
+> **Why not `verible-verilog-format`?** It is deliberately *not* used. Its formatting
+> fights the Paradigm-Works column alignment adopted as the baseline (it collapses aligned
+> `=`/port columns, explodes ANSI port lists, re-indents pragma markers), and — as of
+> Verible v0.0-4053 — it *corrupts* `uvm_*` macro calls that lack a trailing `;` (it drops
+> their arguments and emits unparseable output). So formatting is governed by the lint
+> rules + this document, not by an opinionated formatter that contradicts the house style.
 
 ## Formatting
 
-- **100-column** line limit (lint rule `line-length` + formatter `--column_limit=100`).
+- **100-column** line limit (enforced by the lint rule `line-length=length:100`).
 - Two-space indent; one statement per line (no run-on lines — see
   [`style_templates.md`](style_templates.md), the `{%-` lesson).
 - `lower_snake_case` for signals, variables, class names, file names; `UPPER_CASE` for

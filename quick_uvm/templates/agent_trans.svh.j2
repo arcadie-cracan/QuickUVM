@@ -79,7 +79,7 @@ class {{ agent.transaction }} extends uvm_sequence_item;
 {% endif %}
 
   function void do_print(uvm_printer printer);
-    $display("\n\n\t\t*** print() and sprint() are not implemented for this transaction type ***\n\n");
+    $display("\n\n\t\t*** print()/sprint() not implemented for this transaction type ***\n\n");
   endfunction
 
   virtual function string input2string();

@@ -16,33 +16,48 @@ from quick_uvm.models import (
     ProjectConfig,
     ProjectMeta,
     RegisterModelConfig,
+)
+from quick_uvm.models import (
     TestConfig as TConf,
 )
 
 
 def _ag(n="spi"):
     return AgentConfig(
-        name=n, interface=f"{n}_if", transaction=f"{n}_trans",
-        ports={"outputs": [PortConfig(name="rsp_data", width=8, randomize=False)],
-               "inputs": [PortConfig(name="cmd_addr", width=8)]},
+        name=n,
+        interface=f"{n}_if",
+        transaction=f"{n}_trans",
+        ports={
+            "outputs": [PortConfig(name="rsp_data", width=8, randomize=False)],
+            "inputs": [PortConfig(name="cmd_addr", width=8)],
+        },
     )
 
 
 def _rm(**over):
-    base = dict(package="angle_sensor_regs_uvm_pkg", block="angle_sensor_regs_c",
-                map="default_map", bus_agent="spi", adapter="spi_reg_adapter")
+    base = dict(
+        package="angle_sensor_regs_uvm_pkg",
+        block="angle_sensor_regs_c",
+        map="default_map",
+        bus_agent="spi",
+        adapter="spi_reg_adapter",
+    )
     base.update(over)
     return RegisterModelConfig(**base)
 
 
 def _cfg(register_model=None, agents=None, uvm_version="1.2"):
-    return ProjectConfig(project=ProjectMeta(name="t", uvm_version=uvm_version),
-                         dut=DutConfig(name="d"),
-                         agents=agents or [_ag()], tests=[TConf(name="t1")],
-                         register_model=register_model)
+    return ProjectConfig(
+        project=ProjectMeta(name="t", uvm_version=uvm_version),
+        dut=DutConfig(name="d"),
+        agents=agents or [_ag()],
+        tests=[TConf(name="t1")],
+        register_model=register_model,
+    )
 
 
 # ---- default: no register model => no reg artifacts ------------------------
+
 
 def test_no_register_model_emits_nothing(tmp_path):
     Generator(_cfg()).generate_all(tmp_path)
@@ -53,6 +68,7 @@ def test_no_register_model_emits_nothing(tmp_path):
 
 
 # ---- front-door RAL integration -------------------------------------------
+
 
 def test_adapter_and_reg_test_generated(tmp_path):
     Generator(_cfg(_rm())).generate_all(tmp_path)
@@ -71,7 +87,7 @@ def test_adapter_and_reg_test_generated(tmp_path):
 def test_model_built_and_locked_in_test_base(tmp_path):
     Generator(_cfg(_rm())).generate_all(tmp_path)
     t = (tmp_path / "test_base.svh").read_text()
-    assert "angle_sensor_regs_c::type_id::create(\"reg_model\")" in t
+    assert 'angle_sensor_regs_c::type_id::create("reg_model")' in t
     assert "env_cfg.reg_model.build();" in t
     assert "env_cfg.reg_model.lock_model();" in t
 
@@ -105,10 +121,11 @@ def test_tb_pkg_imports_reg_package(tmp_path):
     Generator(_cfg(_rm())).generate_all(tmp_path)
     p = (tmp_path / "tb_pkg.sv").read_text()
     assert "import angle_sensor_regs_uvm_pkg::*;" in p
-    assert "`include \"spi_reg_adapter.svh\"" in p
+    assert '`include "spi_reg_adapter.svh"' in p
 
 
 # ---- backdoor (C4b) --------------------------------------------------------
+
 
 def test_backdoor_root_adds_hdl_path(tmp_path):
     Generator(_cfg(_rm(backdoor_root="top.dut_inst.regs_inst"))).generate_all(tmp_path)
@@ -123,14 +140,17 @@ def test_no_backdoor_root_no_hdl_path(tmp_path):
 
 def test_backdoor_door_sets_default_door_uvm12(tmp_path):
     # default uvm_version == "1.2"
-    Generator(_cfg(_rm(backdoor_root="top.r", reg_test_door="backdoor"))).generate_all(tmp_path)
+    Generator(_cfg(_rm(backdoor_root="top.r", reg_test_door="backdoor"))).generate_all(
+        tmp_path
+    )
     rt = (tmp_path / "reg_test.svh").read_text()
     assert "set_default_door(UVM_BACKDOOR);" in rt
 
 
 def test_backdoor_uvm11d_uses_explicit_mirror(tmp_path):
-    Generator(_cfg(_rm(backdoor_root="top.r", reg_test_door="backdoor"),
-                   uvm_version="1.1d")).generate_all(tmp_path)
+    Generator(
+        _cfg(_rm(backdoor_root="top.r", reg_test_door="backdoor"), uvm_version="1.1d")
+    ).generate_all(tmp_path)
     rt = (tmp_path / "reg_test.svh").read_text()
     # 1.1d built-ins hardcode front-door -> explicit per-register backdoor mirror
     assert "mirror(status, UVM_CHECK, UVM_BACKDOOR)" in rt
@@ -147,6 +167,7 @@ def test_frontdoor_door_no_backdoor_call(tmp_path):
 
 # ---- custom front-door (C4c) -----------------------------------------------
 
+
 def test_frontdoor_generated_and_wired(tmp_path):
     Generator(_cfg(_rm(frontdoor="spi_reg_frontdoor"))).generate_all(tmp_path)
     fd = tmp_path / "spi_reg_frontdoor.svh"
@@ -156,7 +177,7 @@ def test_frontdoor_generated_and_wired(tmp_path):
     assert "pragma quickuvm custom frontdoor_body begin" in c
     assert "rg.get_address(rw_info.map)" in c
     t = (tmp_path / "test_base.svh").read_text()
-    assert "spi_reg_frontdoor::type_id::create(\"reg_fd\")" in t
+    assert 'spi_reg_frontdoor::type_id::create("reg_fd")' in t
     assert "set_frontdoor(reg_fd," in t
     assert '`include "spi_reg_frontdoor.svh"' in (tmp_path / "tb_pkg.sv").read_text()
 
@@ -168,6 +189,7 @@ def test_no_frontdoor_no_file(tmp_path):
 
 
 # ---- validation ------------------------------------------------------------
+
 
 def test_unknown_bus_agent_rejected():
     with pytest.raises(Exception, match="register_model.bus_agent references unknown"):

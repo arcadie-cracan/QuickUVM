@@ -17,10 +17,14 @@ from quick_uvm.models import (
     PortConfig,
     ProjectConfig,
     ProjectMeta,
+)
+from quick_uvm.models import (
     TestConfig as TConf,
 )
 
-EXAMPLE_CONFIG = Path(__file__).parent.parent / "examples" / "simple_reg" / "simple_reg.yaml"
+EXAMPLE_CONFIG = (
+    Path(__file__).parent.parent / "examples" / "simple_reg" / "simple_reg.yaml"
+)
 
 
 @pytest.fixture(scope="module")
@@ -32,18 +36,28 @@ def tb(tmp_path_factory):
 
 def _agent(name, active=True):
     return AgentConfig(
-        name=name, interface=f"{name}_if", transaction=f"{name}_trans", active=active,
-        ports={"outputs": [PortConfig(name="dout", width=8, randomize=False)],
-               "inputs": [PortConfig(name="din", width=8)]},
+        name=name,
+        interface=f"{name}_if",
+        transaction=f"{name}_trans",
+        active=active,
+        ports={
+            "outputs": [PortConfig(name="dout", width=8, randomize=False)],
+            "inputs": [PortConfig(name="din", width=8)],
+        },
     )
 
 
 def _cfg(agents):
-    return ProjectConfig(project=ProjectMeta(name="t"), dut=DutConfig(name="t_dut"),
-                         agents=agents, tests=[TConf(name="test1")])
+    return ProjectConfig(
+        project=ProjectMeta(name="t"),
+        dut=DutConfig(name="t_dut"),
+        agents=agents,
+        tests=[TConf(name="test1")],
+    )
 
 
 # ---- config object generation --------------------------------------------
+
 
 def test_agent_and_env_config_files_generated(tb):
     assert (tb / "reg_config.svh").exists()
@@ -65,15 +79,16 @@ def test_env_config_aggregates_agent_config(tb):
 
 # ---- config_db wiring (no more uvm_resource_db) ---------------------------
 
+
 def test_top_sets_vif_via_config_db(tb):
     t = (tb / "top.sv").read_text()
-    assert "uvm_config_db#(virtual reg_if)::set(null, \"*\", \"reg_if_vif\"" in t
+    assert 'uvm_config_db#(virtual reg_if)::set(null, "*", "reg_if_vif"' in t
     assert "uvm_resource_db" not in t
 
 
 def test_agent_gets_config_and_no_resource_db(tb):
     a = (tb / "reg_agent.svh").read_text()
-    assert "uvm_config_db#(reg_config)::get(this, \"\", \"cfg\", cfg)" in a
+    assert 'uvm_config_db#(reg_config)::get(this, "", "cfg", cfg)' in a
     assert "is_active = cfg.is_active;" in a
     assert "vif       = cfg.vif;" in a
     assert "uvm_resource_db" not in a
@@ -81,18 +96,21 @@ def test_agent_gets_config_and_no_resource_db(tb):
 
 def test_env_distributes_agent_config(tb):
     e = (tb / "env.svh").read_text()
-    assert "uvm_config_db#(env_config)::get(this, \"\", \"env_cfg\", env_cfg)" in e
-    assert "uvm_config_db#(reg_config)::set(this, \"reg_agnt\", \"cfg\", env_cfg.reg_cfg)" in e
+    assert 'uvm_config_db#(env_config)::get(this, "", "env_cfg", env_cfg)' in e
+    assert (
+        'uvm_config_db#(reg_config)::set(this, "reg_agnt", "cfg", env_cfg.reg_cfg)' in e
+    )
 
 
 def test_test_base_builds_and_sets_env_config(tb):
     t = (tb / "test_base.svh").read_text()
-    assert "env_cfg = env_config::type_id::create(\"env_cfg\")" in t
+    assert 'env_cfg = env_config::type_id::create("env_cfg")' in t
     assert "env_cfg.reg_cfg.is_active = UVM_ACTIVE" in t
-    assert "uvm_config_db#(env_config)::set(this, \"e\", \"env_cfg\", env_cfg)" in t
+    assert 'uvm_config_db#(env_config)::set(this, "e", "env_cfg", env_cfg)' in t
 
 
 # ---- the active/passive flag actually works now ---------------------------
+
 
 def test_active_flag_drives_is_active(tmp_path):
     Generator(_cfg([_agent("a0", active=False)])).generate_all(tmp_path)

@@ -37,9 +37,7 @@ _SECTION_RE = re.compile(
 )
 
 # Single-marker matcher used for line-by-line structural validation.
-_MARKER_RE = re.compile(
-    r"^\s*(?://|#) pragma quickuvm custom (\S+) (begin|end)\s*$"
-)
+_MARKER_RE = re.compile(r"^\s*(?://|#) pragma quickuvm custom (\S+) (begin|end)\s*$")
 
 
 class MergeError(Exception):
@@ -52,13 +50,14 @@ class MergeResult:
 
     text: str
     preserved: list[str] = field(default_factory=list)  # user code carried over
-    created: list[str] = field(default_factory=list)     # new sections (no saved code)
-    orphaned: list[str] = field(default_factory=list)     # saved code with no new home
+    created: list[str] = field(default_factory=list)  # new sections (no saved code)
+    orphaned: list[str] = field(default_factory=list)  # saved code with no new home
 
 
 # ---------------------------------------------------------------------------
 # Structural validation
 # ---------------------------------------------------------------------------
+
 
 def validate_markers(content: str) -> list[str]:
     """Return a list of human-readable errors describing malformed pragma markers.
@@ -118,6 +117,7 @@ def validate_markers(content: str) -> list[str]:
 # Extraction / injection
 # ---------------------------------------------------------------------------
 
+
 def _all_sections(content: str) -> dict[str, str]:
     """Return {section_name: body} for every pragma block, including empty ones."""
     return {m.group(2): m.group(3) for m in _SECTION_RE.finditer(content)}
@@ -149,6 +149,7 @@ def inject_user_sections(content: str, sections: dict[str, str]) -> str:
 # Merge
 # ---------------------------------------------------------------------------
 
+
 def merge(
     existing_path: Path,
     generated_content: str,
@@ -174,8 +175,7 @@ def merge(
     errors = validate_markers(existing)
     if errors:
         raise MergeError(
-            f"Malformed pragma markers in {existing_path}:\n  "
-            + "\n  ".join(errors)
+            f"Malformed pragma markers in {existing_path}:\n  " + "\n  ".join(errors)
         )
 
     existing_sections = _all_sections(existing)
@@ -201,13 +201,17 @@ def merge(
     if orphaned and not allow_drop:
         raise MergeError(
             f"Potential loss of hand edits in {existing_path}:\n  "
-            + "\n  ".join(f'section "{n}" has no home in the regenerated file' for n in orphaned)
+            + "\n  ".join(
+                f'section "{n}" has no home in the regenerated file' for n in orphaned
+            )
             + "\n  Rename/restore the section, or pass allow_drop=True "
             "(CLI: --allow-drop) to proceed. The previous file is backed up."
         )
 
     text = inject_user_sections(generated_content, inject)
-    return MergeResult(text=text, preserved=preserved, created=created, orphaned=orphaned)
+    return MergeResult(
+        text=text, preserved=preserved, created=created, orphaned=orphaned
+    )
 
 
 def list_modified_sections(existing_path: Path) -> list[str]:
@@ -222,19 +226,23 @@ def list_modified_sections(existing_path: Path) -> list[str]:
 # Status analysis
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FileStatus:
     """How an on-disk file relates to what the generator would now produce."""
 
-    marker_errors: list[str] = field(default_factory=list)   # malformed pragmas
-    user_modified: list[str] = field(default_factory=list)    # edited fenced sections
-    orphaned: list[str] = field(default_factory=list)          # user code with no new home
+    marker_errors: list[str] = field(default_factory=list)  # malformed pragmas
+    user_modified: list[str] = field(default_factory=list)  # edited fenced sections
+    orphaned: list[str] = field(default_factory=list)  # user code with no new home
     structure_changed: bool = False  # non-fenced content differs from a fresh render
 
     @property
     def clean(self) -> bool:
         return not (
-            self.marker_errors or self.user_modified or self.orphaned or self.structure_changed
+            self.marker_errors
+            or self.user_modified
+            or self.orphaned
+            or self.structure_changed
         )
 
 
@@ -265,12 +273,12 @@ def analyze(existing_path: Path, generated_content: str) -> FileStatus | None:
     new_sections = _all_sections(generated_content)
 
     user_modified = [
-        n for n, b in existing_sections.items()
+        n
+        for n, b in existing_sections.items()
         if b.strip() and n in new_sections and b != new_sections[n]
     ]
     orphaned = [
-        n for n, b in existing_sections.items()
-        if b.strip() and n not in new_sections
+        n for n, b in existing_sections.items() if b.strip() and n not in new_sections
     ]
     structure_changed = _skeleton(existing) != _skeleton(generated_content)
 

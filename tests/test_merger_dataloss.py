@@ -4,12 +4,13 @@ These tests pin the behaviours that protect user-written code from being lost
 during regeneration: orphan detection, marker validation, and backups.
 """
 
+from pathlib import Path
+
 import pytest
 
 from quick_uvm.generator import Generator
 from quick_uvm.merger import MergeError, analyze, merge, validate_markers
 from quick_uvm.models import ProjectConfig
-from pathlib import Path
 
 
 def _fenced(name: str, body: str = "") -> str:
@@ -24,9 +25,12 @@ def _fenced(name: str, body: str = "") -> str:
 # Orphan detection (the critical data-loss case)
 # ---------------------------------------------------------------------------
 
+
 def test_orphaned_user_code_raises_by_default(tmp_path):
     dest = tmp_path / "f.svh"
-    dest.write_text("class c;\n" + _fenced("gone", "  int user_field;\n") + "endclass\n")
+    dest.write_text(
+        "class c;\n" + _fenced("gone", "  int user_field;\n") + "endclass\n"
+    )
     # New template no longer emits the 'gone' section.
     new = "class c;\n" + _fenced("present") + "endclass\n"
     with pytest.raises(MergeError, match="gone"):
@@ -35,7 +39,9 @@ def test_orphaned_user_code_raises_by_default(tmp_path):
 
 def test_orphaned_user_code_proceeds_with_allow_drop(tmp_path):
     dest = tmp_path / "f.svh"
-    dest.write_text("class c;\n" + _fenced("gone", "  int user_field;\n") + "endclass\n")
+    dest.write_text(
+        "class c;\n" + _fenced("gone", "  int user_field;\n") + "endclass\n"
+    )
     new = "class c;\n" + _fenced("present") + "endclass\n"
     result = merge(dest, new, allow_drop=True)
     assert "gone" in result.orphaned
@@ -53,6 +59,7 @@ def test_empty_orphaned_section_is_not_an_error(tmp_path):
 # ---------------------------------------------------------------------------
 # Marker validation (malformed fences caught before any write)
 # ---------------------------------------------------------------------------
+
 
 def test_missing_end_marker_is_detected():
     content = "class c;\n// pragma quickuvm custom x begin\n  int a;\nendclass\n"
@@ -96,13 +103,16 @@ def test_wellformed_markers_have_no_errors():
 
 
 def test_hash_style_markers_supported():
-    content = "# pragma quickuvm custom extra begin\n# pragma quickuvm custom extra end\n"
+    content = (
+        "# pragma quickuvm custom extra begin\n# pragma quickuvm custom extra end\n"
+    )
     assert validate_markers(content) == []
 
 
 # ---------------------------------------------------------------------------
 # Default-stub vs user-code distinction
 # ---------------------------------------------------------------------------
+
 
 def test_unchanged_default_body_flows_through_not_preserved(tmp_path):
     dest = tmp_path / "f.svh"
@@ -127,7 +137,9 @@ def test_user_edit_overrides_new_default(tmp_path):
 # Backup safety net (generator)
 # ---------------------------------------------------------------------------
 
-EXAMPLE_CONFIG = Path(__file__).parent.parent / "examples" / "simple_reg" / "simple_reg.yaml"
+EXAMPLE_CONFIG = (
+    Path(__file__).parent.parent / "examples" / "simple_reg" / "simple_reg.yaml"
+)
 
 
 def test_backup_written_and_user_code_preserved_on_regen(tmp_path):
@@ -139,21 +151,24 @@ def test_backup_written_and_user_code_preserved_on_regen(tmp_path):
     original = target.read_text()
     # User edits a fenced section (should survive) AND an out-of-band region
     # (should be reverted on regen — which is what forces the rewrite + backup).
-    edited = original.replace(
-        "// pragma quickuvm custom class_item_additional begin\n",
-        "// pragma quickuvm custom class_item_additional begin\n  int my_extra;\n",
-        1,
-    ) + "// out-of-band edit\n"
+    edited = (
+        original.replace(
+            "// pragma quickuvm custom class_item_additional begin\n",
+            "// pragma quickuvm custom class_item_additional begin\n  int my_extra;\n",
+            1,
+        )
+        + "// out-of-band edit\n"
+    )
     target.write_text(edited)
 
     gen.generate_all(tmp_path)  # regenerate
 
     bak = tmp_path / "reg_seq_item.svh.bak.0"
     assert bak.exists(), "expected a .bak.0 backup of the pre-regen file"
-    assert bak.read_text() == edited                 # backup is the pre-regen content
+    assert bak.read_text() == edited  # backup is the pre-regen content
     new = target.read_text()
-    assert "my_extra" in new                          # fenced user code preserved
-    assert "// out-of-band edit" not in new           # non-fenced edit reverted
+    assert "my_extra" in new  # fenced user code preserved
+    assert "// out-of-band edit" not in new  # non-fenced edit reverted
 
 
 def test_backups_roll_and_never_overwrite(tmp_path):
@@ -179,6 +194,7 @@ def test_backups_roll_and_never_overwrite(tmp_path):
 # ---------------------------------------------------------------------------
 # Status analysis (analyze)
 # ---------------------------------------------------------------------------
+
 
 def test_analyze_clean_when_untouched(tmp_path):
     f = tmp_path / "f.svh"

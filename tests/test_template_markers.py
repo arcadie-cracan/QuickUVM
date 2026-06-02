@@ -14,18 +14,22 @@ from quick_uvm.generator import Generator
 from quick_uvm.merger import _MARKER_RE, validate_markers
 from quick_uvm.models import (
     AgentConfig,
+    AnalysisConfig,
     ClockConfig,
     DutConfig,
     PortConfig,
-    AnalysisConfig,
     ProjectConfig,
     ProjectMeta,
     RegisterModelConfig,
     ScoreboardSpec,
+)
+from quick_uvm.models import (
     TestConfig as TConf,  # aliased so pytest doesn't try to collect it
 )
 
-EXAMPLE_CONFIG = Path(__file__).parent.parent / "examples" / "simple_reg" / "simple_reg.yaml"
+EXAMPLE_CONFIG = (
+    Path(__file__).parent.parent / "examples" / "simple_reg" / "simple_reg.yaml"
+)
 
 
 def _agent(name, **kw):
@@ -74,8 +78,10 @@ CONFIGS = {
     "with_regmodel": _cfg(
         agents=[_agent("a0")],
         register_model=RegisterModelConfig(
-            package="my_reg_uvm_pkg", block="my_reg_block_c",
-            bus_agent="a0", adapter="a0_reg_adapter",
+            package="my_reg_uvm_pkg",
+            block="my_reg_block_c",
+            bus_agent="a0",
+            adapter="a0_reg_adapter",
             frontdoor="a0_reg_frontdoor",
         ),
     ),
@@ -86,7 +92,8 @@ def _bad_markers(text: str):
     """Return (validation_errors, glued_marker_lines) for *text*."""
     errors = validate_markers(text)
     glued = [
-        ln for ln in text.splitlines()
+        ln
+        for ln in text.splitlines()
         if "pragma quickuvm custom" in ln and not _MARKER_RE.match(ln)
     ]
     return errors, glued

@@ -4,7 +4,6 @@ QuickUVM CLI — entry point: quick-uvm
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import click
@@ -13,17 +12,20 @@ import yaml
 from . import __version__
 from .generator import Generator
 from .merger import MergeError, analyze
-from .models import AgentConfig, PortConfig, ProjectConfig, TestConfig
-
+from .models import ProjectConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _status_icon(status: str) -> str:
-    return {"created": "[+]", "updated": "[~]", "unchanged": "[ ]", "dry-run": "[?]"}.get(
-        status, status
-    )
+    return {
+        "created": "[+]",
+        "updated": "[~]",
+        "unchanged": "[ ]",
+        "dry-run": "[?]",
+    }.get(status, status)
 
 
 def _load_config(config: str) -> ProjectConfig:
@@ -39,6 +41,7 @@ def _load_config(config: str) -> ProjectConfig:
 # CLI root
 # ---------------------------------------------------------------------------
 
+
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, "-V", "--version")
 def main() -> None:
@@ -52,20 +55,42 @@ def main() -> None:
 # generate
 # ---------------------------------------------------------------------------
 
+
 @main.command()
-@click.option("-c", "--config", required=True, metavar="YAML",
-              help="Path to the project config file.")
-@click.option("-o", "--output", default=None, metavar="DIR",
-              help="Output directory (default: value of project.output_dir or ./tb).")
-@click.option("--dry-run", is_flag=True,
-              help="Show what would be written without writing.")
-@click.option("--only", default=None, metavar="FILENAME",
-              help="Generate only the specified output filename.")
-@click.option("--allow-drop", is_flag=True,
-              help="Proceed even if user code would be lost (orphaned pragma "
-                   "sections). Default: fail closed.")
-@click.option("--no-backup", is_flag=True,
-              help="Do not write <file>.bak copies before overwriting.")
+@click.option(
+    "-c",
+    "--config",
+    required=True,
+    metavar="YAML",
+    help="Path to the project config file.",
+)
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    metavar="DIR",
+    help="Output directory (default: value of project.output_dir or ./tb).",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be written without writing."
+)
+@click.option(
+    "--only",
+    default=None,
+    metavar="FILENAME",
+    help="Generate only the specified output filename.",
+)
+@click.option(
+    "--allow-drop",
+    is_flag=True,
+    help="Proceed even if user code would be lost (orphaned pragma "
+    "sections). Default: fail closed.",
+)
+@click.option(
+    "--no-backup",
+    is_flag=True,
+    help="Do not write <file>.bak copies before overwriting.",
+)
 def generate(
     config: str,
     output: str | None,
@@ -85,8 +110,11 @@ def generate(
 
     try:
         results = gen.generate_all(
-            out_dir, dry_run=dry_run, only=only,
-            allow_drop=allow_drop, backup=not no_backup,
+            out_dir,
+            dry_run=dry_run,
+            only=only,
+            allow_drop=allow_drop,
+            backup=not no_backup,
         )
     except MergeError as exc:
         raise click.ClickException(
@@ -98,25 +126,39 @@ def generate(
         click.echo(f"  {_status_icon(status)}  {path}")
 
     if not dry_run:
-        created  = sum(1 for s, _ in results if s == "created")
-        updated  = sum(1 for s, _ in results if s == "updated")
-        unchanged= sum(1 for s, _ in results if s == "unchanged")
-        click.echo(
-            f"\n  {created} created, {updated} updated, {unchanged} unchanged."
-        )
+        created = sum(1 for s, _ in results if s == "created")
+        updated = sum(1 for s, _ in results if s == "updated")
+        unchanged = sum(1 for s, _ in results if s == "unchanged")
+        click.echo(f"\n  {created} created, {updated} updated, {unchanged} unchanged.")
 
 
 # ---------------------------------------------------------------------------
 # init
 # ---------------------------------------------------------------------------
 
+
 @main.command("init")
-@click.option("-n", "--name", required=True, metavar="NAME",
-              help="Project name (used as the TB package prefix).")
-@click.option("-o", "--output", default=None, metavar="FILE",
-              help="Write config to FILE (default: <name>.yaml).")
-@click.option("--dut", "dut_name", default=None, metavar="MODULE",
-              help="DUT module name (default: same as project name).")
+@click.option(
+    "-n",
+    "--name",
+    required=True,
+    metavar="NAME",
+    help="Project name (used as the TB package prefix).",
+)
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    metavar="FILE",
+    help="Write config to FILE (default: <name>.yaml).",
+)
+@click.option(
+    "--dut",
+    "dut_name",
+    default=None,
+    metavar="MODULE",
+    help="DUT module name (default: same as project name).",
+)
 def init_cmd(name: str, output: str | None, dut_name: str | None) -> None:
     """Scaffold a starter YAML configuration file."""
     dut_name = dut_name or name
@@ -151,7 +193,7 @@ def init_cmd(name: str, output: str | None, dut_name: str | None) -> None:
                         {"name": "dout", "width": 16},
                     ],
                     "inputs": [
-                        {"name": "din",   "width": 16},
+                        {"name": "din", "width": 16},
                         {"name": "rst_n", "width": 1, "randomize": True},
                     ],
                 },
@@ -174,11 +216,22 @@ def init_cmd(name: str, output: str | None, dut_name: str | None) -> None:
 # list
 # ---------------------------------------------------------------------------
 
+
 @main.command("list")
-@click.option("-c", "--config", required=True, metavar="YAML",
-              help="Path to the project config file.")
-@click.option("-o", "--output", default=None, metavar="DIR",
-              help="Output directory used to check existence (default: ./tb).")
+@click.option(
+    "-c",
+    "--config",
+    required=True,
+    metavar="YAML",
+    help="Path to the project config file.",
+)
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    metavar="DIR",
+    help="Output directory used to check existence (default: ./tb).",
+)
 def list_cmd(config: str, output: str | None) -> None:
     """List files that would be generated without writing anything."""
     cfg = _load_config(config)
@@ -198,15 +251,31 @@ def list_cmd(config: str, output: str | None) -> None:
 # add-test
 # ---------------------------------------------------------------------------
 
+
 @main.command("add-test")
-@click.option("-c", "--config", required=True, metavar="YAML",
-              help="Path to the project config file.")
-@click.option("-n", "--name", required=True, metavar="NAME",
-              help="Name of the new test class.")
-@click.option("--num-items", default=100, show_default=True,
-              help="Number of sequence items the test will run.")
-@click.option("-o", "--output", default=None, metavar="DIR",
-              help="Output directory (default: ./tb).")
+@click.option(
+    "-c",
+    "--config",
+    required=True,
+    metavar="YAML",
+    help="Path to the project config file.",
+)
+@click.option(
+    "-n", "--name", required=True, metavar="NAME", help="Name of the new test class."
+)
+@click.option(
+    "--num-items",
+    default=100,
+    show_default=True,
+    help="Number of sequence items the test will run.",
+)
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    metavar="DIR",
+    help="Output directory (default: ./tb).",
+)
 def add_test(config: str, name: str, num_items: int, output: str | None) -> None:
     """Add a new test to the project config and regenerate test files."""
     cfg_path = Path(config)
@@ -239,11 +308,22 @@ def add_test(config: str, name: str, num_items: int, output: str | None) -> None
 # status
 # ---------------------------------------------------------------------------
 
+
 @main.command("status")
-@click.option("-c", "--config", required=True, metavar="YAML",
-              help="Path to the project config file.")
-@click.option("-o", "--output", default=None, metavar="DIR",
-              help="Directory to inspect (default: ./tb).")
+@click.option(
+    "-c",
+    "--config",
+    required=True,
+    metavar="YAML",
+    help="Path to the project config file.",
+)
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    metavar="DIR",
+    help="Directory to inspect (default: ./tb).",
+)
 def status(config: str, output: str | None) -> None:
     """Show how on-disk files differ from what a regen would produce.
 
@@ -266,7 +346,9 @@ def status(config: str, output: str | None) -> None:
         any_findings = True
         notes: list[str] = []
         if st.marker_errors:
-            notes.append(f"MALFORMED MARKERS ({len(st.marker_errors)}) — run will fail closed")
+            notes.append(
+                f"MALFORMED MARKERS ({len(st.marker_errors)}) — run will fail closed"
+            )
         if st.orphaned:
             notes.append(f"ORPHANED (will be LOST): {', '.join(st.orphaned)}")
         if st.user_modified:
@@ -278,4 +360,6 @@ def status(config: str, output: str | None) -> None:
             click.echo(f"      - {n}")
 
     if not any_findings:
-        click.echo("  Clean: every file matches the generator (no user edits, no drift).")
+        click.echo(
+            "  Clean: every file matches the generator (no user edits, no drift)."
+        )

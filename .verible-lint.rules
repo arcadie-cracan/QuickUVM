@@ -7,6 +7,7 @@
 # Enforce the project's 100-column choice (matches the formatter).
 +line-length=length:100
 
-# UVM/`uvm_*` macros are not always followed by ';' — keep Verible from
-# flagging the macro-call style the templates use.
--uvm-macro-semicolon
+# The generated scoreboard legitimately uses `uvm_warning (e.g. the "0 vectors"
+# case); Verible's default forbidden-macro set rejects it. We don't emit the
+# deprecated macros this rule otherwise guards ($psprintf), so disable it.
+-forbidden-macro

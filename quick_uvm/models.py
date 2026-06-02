@@ -15,15 +15,20 @@ class PortConfig(BaseModel):
     randomize: bool = True  # only meaningful for input ports
 
 
+PortMap = dict[Literal["inputs", "outputs"], list[PortConfig]]
+
+
+def _default_ports() -> PortMap:
+    return {"inputs": [], "outputs": []}
+
+
 class AgentConfig(BaseModel):
     name: str
     interface: str
     transaction: str
     trans_style: Literal["manual", "field_macros"] = "manual"
     active: bool = True
-    ports: dict[Literal["inputs", "outputs"], list[PortConfig]] = Field(
-        default_factory=lambda: {"inputs": [], "outputs": []}
-    )
+    ports: PortMap = Field(default_factory=_default_ports)
 
     @property
     def input_ports(self) -> list[PortConfig]:
@@ -35,7 +40,7 @@ class AgentConfig(BaseModel):
 
     @property
     def all_ports(self) -> list[tuple[Literal["input", "output"], PortConfig]]:
-        result = []
+        result: list[tuple[Literal["input", "output"], PortConfig]] = []
         for p in self.output_ports:
             result.append(("output", p))
         for p in self.input_ports:
@@ -100,21 +105,21 @@ class RegisterModelConfig(BaseModel):
     register test. The reg2bus/bus2reg protocol mapping is user code (pragmas).
     """
 
-    package: str                       # external uvm_reg package to import
-    block: str                         # uvm_reg_block subclass name
-    map: str = "default_map"           # register map name within the block
-    bus_agent: str                     # agent whose sequencer drives front-door access
-    adapter: str = "reg_adapter"       # generated uvm_reg_adapter class name
-    use_predictor: bool = True         # explicit prediction via the bus agent's ap
-    reg_test: bool = True              # generate a hw_reset/bit_bash register test
-    backdoor_root: str | None = None   # absolute HDL path to the regfile instance;
-                                       # set to enable backdoor (model.add_hdl_path)
+    package: str  # external uvm_reg package to import
+    block: str  # uvm_reg_block subclass name
+    map: str = "default_map"  # register map name within the block
+    bus_agent: str  # agent whose sequencer drives front-door access
+    adapter: str = "reg_adapter"  # generated uvm_reg_adapter class name
+    use_predictor: bool = True  # explicit prediction via the bus agent's ap
+    reg_test: bool = True  # generate a hw_reset/bit_bash register test
+    backdoor_root: str | None = None  # absolute HDL path to the regfile instance;
+    # set to enable backdoor (model.add_hdl_path)
     reg_test_door: Literal["frontdoor", "backdoor"] = "frontdoor"
-    frontdoor: str | None = None       # custom uvm_reg_frontdoor class to generate +
-                                       # install on all registers (protocol body = pragma)
+    frontdoor: str | None = None  # custom uvm_reg_frontdoor class to generate +
+    # install on all registers (protocol body = pragma)
 
     @model_validator(mode="after")
-    def _check_backdoor(self) -> "RegisterModelConfig":
+    def _check_backdoor(self) -> RegisterModelConfig:
         if self.reg_test_door == "backdoor" and not self.backdoor_root:
             raise ValueError(
                 "register_model.reg_test_door='backdoor' requires backdoor_root "
@@ -140,7 +145,7 @@ class ProjectConfig(BaseModel):
     register_model: RegisterModelConfig | None = None
 
     @model_validator(mode="after")
-    def validate_agents(self) -> "ProjectConfig":
+    def validate_agents(self) -> ProjectConfig:
         names = [a.name for a in self.agents]
         if len(names) != len(set(names)):
             raise ValueError("Agent names must be unique.")
@@ -171,7 +176,7 @@ class ProjectConfig(BaseModel):
         return self
 
     @property
-    def reg_bus_agent(self) -> "AgentConfig | None":
+    def reg_bus_agent(self) -> AgentConfig | None:
         """The agent whose sequencer drives front-door register access."""
         if self.register_model is None:
             return None
@@ -180,8 +185,8 @@ class ProjectConfig(BaseModel):
         )
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "ProjectConfig":
-        with open(path, "r") as fh:
+    def from_yaml(cls, path: str | Path) -> ProjectConfig:
+        with open(path) as fh:
             raw = yaml.safe_load(fh)
         return cls.model_validate(raw)
 

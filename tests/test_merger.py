@@ -1,9 +1,6 @@
 """Tests for the merger module."""
 
 from quick_uvm.merger import extract_user_sections, inject_user_sections, merge
-from pathlib import Path
-import tempfile
-
 
 SAMPLE = """\
 class foo;
