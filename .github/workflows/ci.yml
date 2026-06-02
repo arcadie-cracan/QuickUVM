@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # ── Generator codebase: lint, format, type-check, unit tests ──────────────
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -e ".[dev]"
+      - name: Ruff lint
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: mypy
+        run: mypy
+      - name: pytest
+        run: pytest -q
+
+  # ── Generated SystemVerilog: must be Verible-lint-clean and formatted ─────
+  # This is the hard gate on the *product*: every release ships UVM that passes
+  # a standard public linter/formatter. See docs/style_systemverilog.md.
+  generated-sv:
+    runs-on: ubuntu-latest
+    env:
+      # Pin a known Verible release; bump deliberately.
+      VERIBLE_VERSION: v0.0-3724-gff63b22d
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -e .
+
+      - name: Install Verible
+        run: |
+          url="https://github.com/chipsalliance/verible/releases/download/${VERIBLE_VERSION}/verible-${VERIBLE_VERSION}-linux-static-x86_64.tar.gz"
+          curl -fsSL "$url" | tar -xz
+          echo "$PWD/verible-${VERIBLE_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Generate the example testbench
+        run: quick-uvm generate -c examples/simple_reg/simple_reg.yaml -o gen_tb
+
+      - name: Verible lint (generated SV/SVH)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_tb/*.sv gen_tb/*.svh
+
+      - name: Verible format check (100-col)
+        run: |
+          verible-verilog-format --column_limit=100 --verify gen_tb/*.sv gen_tb/*.svh

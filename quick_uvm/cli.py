@@ -143,7 +143,7 @@ def init_cmd(name: str, output: str | None, dut_name: str | None) -> None:
             {
                 "name": f"{name}_agt",
                 "interface": f"{name}_if",
-                "transaction": f"{name}_trans",
+                "transaction": f"{name}_seq_item",
                 "trans_style": "manual",
                 "active": True,
                 "ports": {

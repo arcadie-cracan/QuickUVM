@@ -25,7 +25,7 @@ EXPECTED_FILES = [
     "clkgen.sv",
     "simple_reg.sv",
     "reg_if.sv",
-    "reg_trans.svh",
+    "reg_seq_item.svh",
     "reg_config.svh",
     "env_config.svh",
     "reg_sequencer.svh",
@@ -54,7 +54,7 @@ def test_file_exists(generated_tb, fname):
 
 
 def test_pragma_markers_in_trans(generated_tb):
-    content = (generated_tb / "reg_trans.svh").read_text()
+    content = (generated_tb / "reg_seq_item.svh").read_text()
     assert "// pragma quickuvm custom class_item_additional begin" in content
     assert "// pragma quickuvm custom class_item_additional end" in content
 
@@ -71,7 +71,7 @@ def test_pragma_markers_in_calc_exp(generated_tb):
 
 
 def test_trans_contains_dout(generated_tb):
-    content = (generated_tb / "reg_trans.svh").read_text()
+    content = (generated_tb / "reg_seq_item.svh").read_text()
     assert "dout" in content
 
 
@@ -79,7 +79,7 @@ def test_tb_pkg_includes_all_components(generated_tb):
     content = (generated_tb / "tb_pkg.svh").read_text() if (
         generated_tb / "tb_pkg.svh").exists() else (
         generated_tb / "tb_pkg.sv").read_text()
-    assert "reg_trans.svh" in content
+    assert "reg_seq_item.svh" in content
     assert "reg_agent.svh" in content
     assert "env.svh" in content
     assert "test_rand.svh" in content
@@ -92,7 +92,7 @@ def test_env_declares_all_agents(generated_tb):
 
 def test_scoreboard_uses_primary_transaction(generated_tb):
     content = (generated_tb / "sb_predictor.svh").read_text()
-    assert "reg_trans" in content
+    assert "reg_seq_item" in content
 
 
 def test_top_instantiates_interface(generated_tb):
@@ -111,7 +111,7 @@ def test_config_load_validation():
     assert cfg.project.name == "simple_reg_tb"
     assert len(cfg.agents) == 1
     assert cfg.agents[0].name == "reg"
-    assert cfg.primary_agent.transaction == "reg_trans"
+    assert cfg.primary_agent.transaction == "reg_seq_item"
 
 
 def test_scoreboard_report_warns_on_zero_vectors(generated_tb):

@@ -135,7 +135,7 @@ def test_backup_written_and_user_code_preserved_on_regen(tmp_path):
     gen = Generator(cfg)
     gen.generate_all(tmp_path)
 
-    target = tmp_path / "reg_trans.svh"
+    target = tmp_path / "reg_seq_item.svh"
     original = target.read_text()
     # User edits a fenced section (should survive) AND an out-of-band region
     # (should be reverted on regen — which is what forces the rewrite + backup).
@@ -148,7 +148,7 @@ def test_backup_written_and_user_code_preserved_on_regen(tmp_path):
 
     gen.generate_all(tmp_path)  # regenerate
 
-    bak = tmp_path / "reg_trans.svh.bak.0"
+    bak = tmp_path / "reg_seq_item.svh.bak.0"
     assert bak.exists(), "expected a .bak.0 backup of the pre-regen file"
     assert bak.read_text() == edited                 # backup is the pre-regen content
     new = target.read_text()
@@ -160,7 +160,7 @@ def test_backups_roll_and_never_overwrite(tmp_path):
     cfg = ProjectConfig.from_yaml(EXAMPLE_CONFIG)
     gen = Generator(cfg)
     gen.generate_all(tmp_path)
-    target = tmp_path / "reg_trans.svh"
+    target = tmp_path / "reg_seq_item.svh"
 
     # Two distinct out-of-band edits, each followed by a regen that rewrites.
     target.write_text(target.read_text() + "// edit ONE\n")
@@ -168,8 +168,8 @@ def test_backups_roll_and_never_overwrite(tmp_path):
     target.write_text(target.read_text() + "// edit TWO\n")
     gen.generate_all(tmp_path)
 
-    bak0 = tmp_path / "reg_trans.svh.bak.0"
-    bak1 = tmp_path / "reg_trans.svh.bak.1"
+    bak0 = tmp_path / "reg_seq_item.svh.bak.0"
+    bak1 = tmp_path / "reg_seq_item.svh.bak.1"
     assert bak0.exists() and bak1.exists()
     # bak.0 is the oldest (never overwritten); bak.1 is the more recent.
     assert "// edit ONE" in bak0.read_text() and "// edit TWO" not in bak0.read_text()
@@ -224,7 +224,7 @@ def test_no_backup_flag_suppresses_backup(tmp_path):
     cfg = ProjectConfig.from_yaml(EXAMPLE_CONFIG)
     gen = Generator(cfg)
     gen.generate_all(tmp_path)
-    target = tmp_path / "reg_trans.svh"
+    target = tmp_path / "reg_seq_item.svh"
     target.write_text(target.read_text() + "\n// touch\n")
     gen.generate_all(tmp_path, backup=False)
-    assert not list(tmp_path.glob("reg_trans.svh.bak.*"))
+    assert not list(tmp_path.glob("reg_seq_item.svh.bak.*"))

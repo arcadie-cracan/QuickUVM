@@ -15,6 +15,14 @@ dependencies = [
 ]
 keywords = ["uvm", "verification", "testbench", "systemverilog", "generator"]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pre-commit>=3.5",
+]
+
 [project.scripts]
 quick-uvm = "quick_uvm.cli:main"
 
@@ -24,3 +32,35 @@ include = ["quick_uvm*"]
 
 [tool.setuptools.package-data]
 quick_uvm = ["templates/**/*.j2"]
+
+# ── Tooling: see docs/style_python.md ───────────────────────────────────────
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+# Start with the high-value, mostly auto-fixable core; ratchet (B, SIM, C4, RUF)
+# per docs/style_python.md once the baseline is clean.
+select = ["E", "F", "W", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]   # long assertion strings in tests are fine
+
+[tool.ruff.format]
+# Black-compatible defaults.
+
+[tool.mypy]
+python_version = "3.10"
+plugins = ["pydantic.mypy"]
+files = ["quick_uvm"]          # tests excluded from type-checking for now
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unused_configs = true
+check_untyped_defs = true
+# Lenient start — ratchet these on (disallow_untyped_defs, etc.) per docs/style_python.md.
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_typed = true
+warn_required_dynamic_aliases = true

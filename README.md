@@ -95,7 +95,7 @@ clock:
 agents:
   - name: reg
     interface: reg_if
-    transaction: reg_trans
+    transaction: reg_seq_item
     trans_style: manual   # or field_macros
     active: true
     ports:
@@ -162,13 +162,22 @@ pkg.f             run.f
 
 ---
 
-## Template style
+## Coding standards
 
-Templates strictly follow the Paradigm Works flat-package style:
-- All components included in a single `tb_pkg.sv`
-- `uvm_resource_db` for interface passing
-- Clocking-block driven I/O
-- `extern` method bodies in separate `.svh` files
+QuickUVM has two codebases with different stakes, plus the Jinja bridge — each has a
+short, **tool-enforced** style guide (CI runs them on every PR):
+
+- [`docs/style_python.md`](docs/style_python.md) — the generator: **Ruff** (format + lint)
+  + **mypy** (lenient→ratchet), via `pre-commit` and CI.
+- [`docs/style_systemverilog.md`](docs/style_systemverilog.md) — the **generated UVM**
+  (the product): Cliff Cummings / Sunburst baseline, 100-column, `_seq_item` transaction
+  naming, gated by **Verible** lint + format in CI.
+- [`docs/style_templates.md`](docs/style_templates.md) — `*.j2` template hygiene
+  (no `{%-` strips, isolated pragma markers, deterministic output).
+
+The generated output follows the Paradigm Works flat-package style: all components in a
+single `tb_pkg.sv`, interface passing via `uvm_config_db`, clocking-block-driven I/O, and
+`extern` method bodies in separate `.svh` files.
 
 ---
 

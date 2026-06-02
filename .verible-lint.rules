@@ -1,0 +1,12 @@
+# Verible lint rule configuration for QuickUVM-generated SystemVerilog.
+# Syntax: one rule per line, `+rule` to enable, `-rule` to disable,
+# `+rule=param:value` to configure. Defaults are Verible's standard style set.
+# See docs/style_systemverilog.md. After the first CI run, disable any rule
+# here (with a one-line rationale) rather than weakening the generated style.
+
+# Enforce the project's 100-column choice (matches the formatter).
++line-length=length:100
+
+# UVM/`uvm_*` macros are not always followed by ';' — keep Verible from
+# flagging the macro-call style the templates use.
+-uvm-macro-semicolon
