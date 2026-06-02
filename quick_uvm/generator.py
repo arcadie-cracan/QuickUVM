@@ -11,11 +11,12 @@ from pathlib import Path
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from .merger import merge
-from .models import AgentConfig, ProjectConfig, TestConfig
+from .models import ProjectConfig, TestConfig
 
 # ---------------------------------------------------------------------------
 # Jinja2 environment
 # ---------------------------------------------------------------------------
+
 
 def _make_jinja_env() -> Environment:
     return Environment(
@@ -31,11 +32,12 @@ def _make_jinja_env() -> Environment:
 # FileSpec — describes one file to generate
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FileSpec:
-    template: str       # name inside quick_uvm/templates/
-    output:   str       # filename to write in output_dir
-    context:  dict      # extra context variables for this file
+    template: str  # name inside quick_uvm/templates/
+    output: str  # filename to write in output_dir
+    context: dict  # extra context variables for this file
 
 
 def _next_backup_path(path: Path) -> Path:
@@ -56,6 +58,7 @@ def _next_backup_path(path: Path) -> Path:
 # Generator
 # ---------------------------------------------------------------------------
 
+
 class Generator:
     def __init__(self, config: ProjectConfig) -> None:
         self.config = config
@@ -68,45 +71,46 @@ class Generator:
     def files_to_generate(self) -> list[FileSpec]:
         cfg = self.config
         base_ctx = {
-            "project":  cfg.project,
-            "dut":      cfg.dut,
-            "clock":    cfg.clock,
-            "agents":   cfg.agents,
-            "tests":    cfg.tests,
+            "project": cfg.project,
+            "dut": cfg.dut,
+            "clock": cfg.clock,
+            "agents": cfg.agents,
+            "tests": cfg.tests,
             "analysis": cfg.analysis,
             "register_model": cfg.register_model,
-            "reg_bus_agent":  cfg.reg_bus_agent,
+            "reg_bus_agent": cfg.reg_bus_agent,
         }
 
         specs: list[FileSpec] = []
 
         # ---- global files ------------------------------------------------
-        specs.append(FileSpec("CYCLE.sv.j2",   "CYCLE.sv",   base_ctx))
-        specs.append(FileSpec("clkgen.sv.j2",  "clkgen.sv",  base_ctx))
-        specs.append(FileSpec("dut.sv.j2",     f"{cfg.dut.name}.sv", base_ctx))
+        specs.append(FileSpec("clkgen.sv.j2", "clkgen.sv", base_ctx))
+        specs.append(FileSpec("dut.sv.j2", f"{cfg.dut.name}.sv", base_ctx))
 
         # ---- per-agent files (interface + TB components) -----------------
         for agent in cfg.agents:
             ctx = {**base_ctx, "agent": agent}
-            specs.append(FileSpec("agent_if.sv.j2",
-                                  f"{agent.interface}.sv",     ctx))
-            specs.append(FileSpec("agent_trans.svh.j2",
-                                  f"{agent.transaction}.svh",  ctx))
-            specs.append(FileSpec("agent_config.svh.j2",
-                                  f"{agent.name}_config.svh",  ctx))
-            specs.append(FileSpec("agent_sequencer.svh.j2",
-                                  f"{agent.name}_sequencer.svh", ctx))
-            specs.append(FileSpec("agent_driver.svh.j2",
-                                  f"{agent.name}_driver.svh",  ctx))
-            specs.append(FileSpec("agent_monitor.svh.j2",
-                                  f"{agent.name}_monitor.svh", ctx))
-            specs.append(FileSpec("agent_agent.svh.j2",
-                                  f"{agent.name}_agent.svh",   ctx))
-            specs.append(FileSpec("agent_cover.svh.j2",
-                                  f"{agent.name}_cover.svh",   ctx))
+            specs.append(FileSpec("agent_if.sv.j2", f"{agent.interface}.sv", ctx))
+            specs.append(
+                FileSpec("agent_trans.svh.j2", f"{agent.transaction}.svh", ctx)
+            )
+            specs.append(
+                FileSpec("agent_config.svh.j2", f"{agent.name}_config.svh", ctx)
+            )
+            specs.append(
+                FileSpec("agent_sequencer.svh.j2", f"{agent.name}_sequencer.svh", ctx)
+            )
+            specs.append(
+                FileSpec("agent_driver.svh.j2", f"{agent.name}_driver.svh", ctx)
+            )
+            specs.append(
+                FileSpec("agent_monitor.svh.j2", f"{agent.name}_monitor.svh", ctx)
+            )
+            specs.append(FileSpec("agent_agent.svh.j2", f"{agent.name}_agent.svh", ctx))
+            specs.append(FileSpec("agent_cover.svh.j2", f"{agent.name}_cover.svh", ctx))
 
         # ---- scoreboard --------------------------------------------------
-        specs.append(FileSpec("sb_predictor.svh.j2",  "sb_predictor.svh",  base_ctx))
+        specs.append(FileSpec("sb_predictor.svh.j2", "sb_predictor.svh", base_ctx))
         specs.append(FileSpec("sb_comparator.svh.j2", "sb_comparator.svh", base_ctx))
         specs.append(FileSpec("tb_scoreboard.svh.j2", "tb_scoreboard.svh", base_ctx))
 
@@ -120,8 +124,9 @@ class Generator:
             # per-test specialisation happens in the test .svh files.
             first_test = cfg.tests[0] if cfg.tests else TestConfig(name="test1")
             ctx = {**base_ctx, "agent": agent, "test": first_test}
-            specs.append(FileSpec("agent_sequence.svh.j2",
-                                  f"{agent.name}_sequence.svh", ctx))
+            specs.append(
+                FileSpec("agent_sequence.svh.j2", f"{agent.name}_sequence.svh", ctx)
+            )
 
         # ---- tests -------------------------------------------------------
         specs.append(FileSpec("test_base.svh.j2", "test_base.svh", base_ctx))
@@ -131,11 +136,19 @@ class Generator:
 
         # ---- register model (optional, front-door) -----------------------
         if cfg.register_model is not None:
-            specs.append(FileSpec("reg_adapter.svh.j2",
-                                  f"{cfg.register_model.adapter}.svh", base_ctx))
+            specs.append(
+                FileSpec(
+                    "reg_adapter.svh.j2", f"{cfg.register_model.adapter}.svh", base_ctx
+                )
+            )
             if cfg.register_model.frontdoor:
-                specs.append(FileSpec("reg_frontdoor.svh.j2",
-                                      f"{cfg.register_model.frontdoor}.svh", base_ctx))
+                specs.append(
+                    FileSpec(
+                        "reg_frontdoor.svh.j2",
+                        f"{cfg.register_model.frontdoor}.svh",
+                        base_ctx,
+                    )
+                )
             if cfg.register_model.reg_test:
                 specs.append(FileSpec("reg_test.svh.j2", "reg_test.svh", base_ctx))
 
@@ -143,10 +156,10 @@ class Generator:
         specs.append(FileSpec("sb_calc_exp.svh.j2", "sb_calc_exp.svh", base_ctx))
 
         # ---- top + package + filelists -----------------------------------
-        specs.append(FileSpec("top.sv.j2",    "top.sv",    base_ctx))
+        specs.append(FileSpec("top.sv.j2", "top.sv", base_ctx))
         specs.append(FileSpec("tb_pkg.sv.j2", "tb_pkg.sv", base_ctx))
-        specs.append(FileSpec("pkg.f.j2",     "pkg.f",     base_ctx))
-        specs.append(FileSpec("run.f.j2",     "run.f",     base_ctx))
+        specs.append(FileSpec("pkg.f.j2", "pkg.f", base_ctx))
+        specs.append(FileSpec("run.f.j2", "run.f", base_ctx))
 
         return specs
 
@@ -220,8 +233,11 @@ class Generator:
                 continue
             content = self.render(spec)
             status, path = self._write(
-                output_dir / spec.output, content, dry_run,
-                allow_drop=allow_drop, backup=backup,
+                output_dir / spec.output,
+                content,
+                dry_run,
+                allow_drop=allow_drop,
+                backup=backup,
             )
             results.append((status, path))
         return results

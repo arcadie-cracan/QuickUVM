@@ -150,8 +150,8 @@ See [`examples/simple_reg/`](examples/simple_reg/) for a working example.
 For each agent `<ag>` and test `<t>`, QuickUVM generates:
 
 ```
-CYCLE.sv          clkgen.sv         <dut>.sv (stub)
-<ag>_if.sv        <ag>_trans.svh    <ag>_sequencer.svh
+clkgen.sv         <dut>.sv (stub)
+<ag>_if.sv        <ag>_seq_item.svh <ag>_sequencer.svh
 <ag>_driver.svh   <ag>_monitor.svh  <ag>_agent.svh
 <ag>_cover.svh    <ag>_sequence.svh
 sb_predictor.svh  sb_comparator.svh tb_scoreboard.svh

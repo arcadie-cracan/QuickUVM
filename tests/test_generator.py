@@ -1,13 +1,15 @@
 """Integration tests for the generator."""
 
 from pathlib import Path
+
 import pytest
 
-from quick_uvm.models import ProjectConfig
 from quick_uvm.generator import Generator
+from quick_uvm.models import ProjectConfig
 
-
-EXAMPLE_CONFIG = Path(__file__).parent.parent / "examples" / "simple_reg" / "simple_reg.yaml"
+EXAMPLE_CONFIG = (
+    Path(__file__).parent.parent / "examples" / "simple_reg" / "simple_reg.yaml"
+)
 
 
 @pytest.fixture(scope="module")
@@ -21,7 +23,6 @@ def generated_tb(tmp_path_factory):
 
 
 EXPECTED_FILES = [
-    "CYCLE.sv",
     "clkgen.sv",
     "simple_reg.sv",
     "reg_if.sv",
@@ -76,9 +77,11 @@ def test_trans_contains_dout(generated_tb):
 
 
 def test_tb_pkg_includes_all_components(generated_tb):
-    content = (generated_tb / "tb_pkg.svh").read_text() if (
-        generated_tb / "tb_pkg.svh").exists() else (
-        generated_tb / "tb_pkg.sv").read_text()
+    content = (
+        (generated_tb / "tb_pkg.svh").read_text()
+        if (generated_tb / "tb_pkg.svh").exists()
+        else (generated_tb / "tb_pkg.sv").read_text()
+    )
     assert "reg_seq_item.svh" in content
     assert "reg_agent.svh" in content
     assert "env.svh" in content
@@ -118,9 +121,9 @@ def test_scoreboard_report_warns_on_zero_vectors(generated_tb):
     """Comparator fails only on real mismatches; 0 vectors -> warning (e.g. a
     backdoor-only register test drives no bus traffic)."""
     c = (generated_tb / "sb_comparator.svh").read_text()
-    assert 'if (ERROR_CNT)' in c
+    assert "if (ERROR_CNT)" in c
     assert '`uvm_error("FAILED"' in c
-    assert 'VECT_CNT == 0' in c
+    assert "VECT_CNT == 0" in c
     assert '`uvm_warning("NOVEC"' in c
 
 

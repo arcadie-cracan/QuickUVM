@@ -7,10 +7,9 @@
 //----------------------------------------------------------------------
 
 //----------------------------------------------------------------------
-// Drive stimulus {{ clock.drive_offset_pct }}% of the CYCLE time after posedge clk
+// Drive stimulus {{ clock.drive_offset_pct }}% of the clock period after posedge clk
+// (time units are set by the sim filelist's -timescale).
 //----------------------------------------------------------------------
-`include "CYCLE.sv"
-`define Tdrive #(0.{{ "%02d" | format(clock.drive_offset_pct) }}*`CYCLE)
 
 interface {{ agent.interface }} (input clk);
   // Generated signals from config
@@ -25,7 +24,7 @@ interface {{ agent.interface }} (input clk);
   // pragma quickuvm custom signals_additional end
 
   clocking cb1 @(posedge clk);
-    default input #1step output `Tdrive;
+    default input #1step output #{{ "%g" | format(clock.drive_offset_pct * clock.period / 100) }};
 {% for port in agent.output_ports %}
     input  {{ port.name }};
 {% endfor %}

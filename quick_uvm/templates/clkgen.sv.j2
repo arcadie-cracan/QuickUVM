@@ -6,12 +6,15 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-`include "CYCLE.sv"
 module clkgen (
   output logic clk);
 
+  // Clock period = {{ clock.period }} (time units set by the sim filelist's
+  // -timescale, i.e. {{ clock.unit }}). Customize the generator below as needed.
+  // pragma quickuvm custom clock_generator begin
   initial begin
     clk <= '0;
-    forever #(`CYCLE/2) clk = ~clk;
+    forever #{{ clock.period // 2 }} clk = ~clk;
   end
+  // pragma quickuvm custom clock_generator end
 endmodule
