@@ -20,9 +20,16 @@ most universally:
 - **Stimulus** modeling is too primitive for real protocols (flat `name+width+rand`
   fields; no constraints; one base sequence; no virtual sequences).
 
-So this revision leads with **stimulus richness + coverage**, then **reuse**, then
-**checking generality** and **infra/clocking**. RAL block *generation* is intentionally
-left to external tools (reggen/SystemRDL); QuickUVM owns the *wiring*, which is done.
+A third lever comes from MathWorks HDL Verifier (which UVMF/Easier UVM lack): it
+generates the **reference model / scoreboard checker** from an executable spec and bridges
+it into the SV scoreboard via **DPI-C**. The hand-written predictor is the biggest
+effort sink in a real bench (cf. the SPI bridge's `sb_calc_exp`), so a generated
+**predictor seam** (bring-your-own golden model over DPI-C) is high-leverage too.
+
+So this revision leads with **stimulus richness + coverage + a reference-model seam**,
+then **reuse**, then **checking generality** and **infra/clocking**. RAL block
+*generation* is intentionally left to external tools (reggen/SystemRDL); QuickUVM owns
+the *wiring*, which is done.
 
 ## What's already shipped (v0.4 → v0.9)
 
@@ -91,6 +98,21 @@ test → sequence selection (replace the bare `num_items`).
 multi-interface DUT (i.e. most DUTs).
 **Accept:** a vseq coordinating ≥2 agents.
 
+### K0 — Reference-model / DPI-C predictor seam  *(checker; inspired by HDL Verifier)*
+The scoreboard predictor is the biggest hand-written-effort sink in a real bench, and
+UVMF/Easier UVM leave it entirely to the user. Rather than synthesize a predictor,
+generate the **seam** so a golden model drops in:
+- a defined predictor interface — a `uvm_component` with one `predict(req) → exp` method —
+  so the scoreboard is checker-agnostic (replaces today's ad-hoc `sb_calc_exp` blob);
+- optional **DPI-C scaffolding** (`import "DPI-C"` decls + a C/C++ header & stub whose
+  signature is derived from the transaction fields) so the golden model can be written in
+  C/C++ instead of SystemVerilog, then called per transaction;
+- the scoreboard wiring that routes the monitored transaction through the predictor.
+
+The reference-model *body* stays user code (SV or C); QuickUVM owns the interface + bridge.
+This is the lever HDL Verifier exploits, minus the MATLAB/Simulink front-end (out of scope).
+**Accept:** a transaction round-trips through a DPI-C golden-model stub into the scoreboard.
+
 ## Priority tier 2 — reuse / architecture
 
 ### F2 — VIP package restructuring
@@ -110,9 +132,10 @@ via Jinja macros.
 ## Priority tier 3 — checking generality
 
 ### A2 — Scoreboard / comparison-strategy library
-In-order (today) **plus** out-of-order, latency-windowed, and multi-stream comparators;
-a predictor base for "A drives → predictor → scoreboard ← B monitors" topologies and
-multi-transaction-type scoreboards (the full fabric C1 deferred).
+Builds on the K0 predictor seam: in-order (today) **plus** out-of-order, latency-windowed,
+and multi-stream comparators; "A drives → predictor → scoreboard ← B monitors" topologies
+and multi-transaction-type scoreboards (the full fabric C1 deferred). K0 supplies the
+swappable predictor; A2 supplies the comparison strategies around it.
 **Accept:** an out-of-order scoreboard matches a reordering DUT model.
 
 ### K1 — Assertion / protocol-checker scaffolding
@@ -146,10 +169,10 @@ coverage-merge flow (coverage closure needs all of these).
 ```
 X0 template-default hardening (do first, cheap)
   │
-tier 1 (universal pillars):  S1 ─┬─ V1 ─┬─ S2 ─ C2
-                                 │       │
-tier 2 (reuse):            F2 ─ C3 ─ H1  │
-tier 3 (checking):              A2 ─ K1 ─┘
+tier 1 (universal pillars):  S1 ─┬─ V1 ─┬─ S2 ─ C2 ─ K0
+                                 │       │                │
+tier 2 (reuse):            F2 ─ C3 ─ H1  │                │
+tier 3 (checking):              A2 ◄──────────────────────┘ (A2 builds on K0) ─ K1
 tier 4 (infra):                 M1 ─ R1
 ```
 
@@ -157,11 +180,16 @@ tier 4 (infra):                 M1 ─ R1
 
 | Tier | Phases | Result |
 |---|---|---|
-| **General-DV MVP (recommended)** | X0 + S1 + V1 + S2 + C2 | real CRV stimulus, field-derived coverage, multi-agent coordination |
+| **General-DV MVP (recommended)** | X0 + S1 + V1 + S2 + C2 + K0 | real CRV stimulus, field-derived coverage, multi-agent coordination, a checker seam (golden model in SV/DPI-C) |
 | Reuse parity | + F2 + C3 + H1 | packaged, parameterized, hierarchical VIP |
 | Checking/infra parity | + A2 + K1 + M1 + R1 | multi-stream checking, assertions, multi-clock, regression |
 
+The General-DV MVP now closes the loop on all three things that make a generated bench
+actually *do* verification rather than just compile: **stimulus in** (S1/S2/C2),
+**coverage observing** (V1), and a **golden model checking** (K0).
+
 Recommendation: do **X0** immediately (cheap correctness win), then pursue the
-**General-DV MVP** (stimulus + coverage + virtual sequences) — these are the pillars that
-bite *every* project. Defer reuse/hierarchy/infra until a multi-block or closure-driven
-need forces them. QuickUVM's niche remains simplicity + best-in-class code preservation.
+**General-DV MVP** (stimulus + coverage + virtual sequences + reference-model seam) —
+these are the pillars that bite *every* project. Defer reuse/hierarchy/infra until a
+multi-block or closure-driven need forces them. QuickUVM's niche remains simplicity +
+best-in-class code preservation.
