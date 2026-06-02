@@ -23,6 +23,31 @@ Easier UVM, icdk uvmgen and gen_uvm is in [`docs/comparison.md`](docs/comparison
 
 ---
 
+## Design philosophy — simple by default, powerful when needed
+
+QuickUVM aims to keep the promise in its name — **quick adoption, low barrier to entry, a
+gentle learning curve** — while scaling up to complex, industrial-grade functional
+verification. Borrowing the KDE Community principle, it should be **simple by default and
+powerful when needed**: trivial for a student or a single-block bring-up, yet capable of
+growing into a full industrial environment.
+
+This is a design constraint on every feature, not just a slogan:
+
+- **The simple path stays simple.** A few lines of YAML produce a running bench; the flat,
+  single-package default is never harder to reach because advanced capability exists.
+- **Complexity is opt-in and additive.** New capabilities (multi-agent analysis, register
+  models, …) are off by default and leave output **byte-identical** when unused —
+  progressive disclosure, never a tax on the basic case.
+- **Sane defaults, with escape hatches.** Good defaults out of the box; the escape hatch
+  for arbitrary complexity is the pragma/user-code regions, not an ever-growing config.
+- **Useful in education *and* industry.** The teaching/small-block use case is a
+  first-class goal, not a stepping stone to be engineered away.
+
+Every roadmap phase (see [`docs/parity_roadmap.md`](docs/parity_roadmap.md)) is judged
+against this "simplicity budget."
+
+---
+
 ## Installation
 
 ```bash

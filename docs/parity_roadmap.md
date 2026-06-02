@@ -49,8 +49,19 @@ is delegated to reggen.
 
 ## Identity constraints (every phase)
 
-- **Opt-in & byte-identical when unused.** New config blocks must leave existing output
-  unchanged when omitted (as C1/C4 already do). Simplicity for small benches is the brand.
+Guiding principle: **simple by default, powerful when needed** (the KDE Community maxim).
+QuickUVM must stay quick to adopt and useful in education/small-block bring-up even as it
+grows toward industrial-grade capability. Each phase is judged against a **simplicity
+budget** — if it raises the entry barrier for the simple case, redesign it as
+opt-in/layered.
+
+- **Simple path stays simple.** The minimal config → running bench, and the flat
+  single-package default, must not get harder because an advanced feature exists.
+- **Opt-in & byte-identical when unused.** New config blocks leave existing output
+  unchanged when omitted (as C1/C4 already do) — progressive disclosure, not a tax on the
+  basic case.
+- **Sane defaults, escape hatches.** Good defaults out of the box; arbitrary complexity
+  goes through the pragma/user-code regions, not ever-growing config.
 - **Fail-closed preservation preserved.** Extend the marker-regression suite to each new
   config shape (rich transactions, params, vseqs, subenvs).
 - **Skeleton, not magic.** Generated logic that can't be inferred stays in pragma regions
