@@ -196,7 +196,7 @@ short, **tool-enforced** style guide (CI runs them on every PR):
   + **mypy** (lenient→ratchet), via `pre-commit` and CI.
 - [`docs/style_systemverilog.md`](docs/style_systemverilog.md) — the **generated UVM**
   (the product): Cliff Cummings / Sunburst baseline, 100-column, `_seq_item` transaction
-  naming, gated by **Verible** lint + format in CI.
+  naming, gated by **Verible** lint in CI.
 - [`docs/style_templates.md`](docs/style_templates.md) — `*.j2` template hygiene
   (no `{%-` strips, isolated pragma markers, deterministic output).
 
