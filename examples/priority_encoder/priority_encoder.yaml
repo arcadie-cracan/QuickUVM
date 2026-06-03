@@ -12,8 +12,8 @@ clock:
 agents:
   - name: pe
     interface: pe_if
-    transaction: pe_seq_item
-    trans_style: manual
+    sequence_item: pe_seq_item
+    seq_item_style: manual
     active: true
     ports:
       inputs:

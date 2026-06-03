@@ -38,7 +38,7 @@ def _agent(name, active=True):
     return AgentConfig(
         name=name,
         interface=f"{name}_if",
-        transaction=f"{name}_trans",
+        sequence_item=f"{name}_trans",
         active=active,
         ports={
             "outputs": [PortConfig(name="dout", width=8, randomize=False)],

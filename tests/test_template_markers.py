@@ -36,7 +36,7 @@ def _agent(name, **kw):
     return AgentConfig(
         name=name,
         interface=f"{name}_if",
-        transaction=f"{name}_trans",
+        sequence_item=f"{name}_trans",
         ports={
             "outputs": [PortConfig(name="dout", width=16, randomize=False)],
             "inputs": [
@@ -63,11 +63,11 @@ def _cfg(**over):
 CONFIGS = {
     "example": ProjectConfig.from_yaml(EXAMPLE_CONFIG),
     "two_agents_two_tests": _cfg(
-        agents=[_agent("a0"), _agent("a1", trans_style="field_macros")],
+        agents=[_agent("a0"), _agent("a1", seq_item_style="field_macros")],
         tests=[TConf(name="test1"), TConf(name="test2", num_items=5)],
     ),
     "no_reset": _cfg(dut=DutConfig(name="nr", reset="")),
-    "field_macros": _cfg(agents=[_agent("fm", trans_style="field_macros")]),
+    "field_macros": _cfg(agents=[_agent("fm", seq_item_style="field_macros")]),
     "with_analysis": _cfg(
         agents=[_agent("a0"), _agent("a1")],
         analysis=AnalysisConfig(

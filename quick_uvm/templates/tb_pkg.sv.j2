@@ -24,7 +24,7 @@ package tb_pkg;
 
   // Transaction classes
 {% for agent in agents %}
-  `include "{{ agent.transaction }}.svh"
+  `include "{{ agent.sequence_item }}.svh"
 {% endfor %}
 
   // Agent configuration objects
@@ -54,7 +54,7 @@ package tb_pkg;
   `include "{{ register_model.frontdoor }}.svh"
 {% endif %}
 {% endif %}
-{% if vsequences %}
+{% if virtual_sequences %}
   `include "env_vsqr.svh"
   `include "env_vseq_base.svh"
 {% endif %}
@@ -67,7 +67,7 @@ package tb_pkg;
   `include "{{ seq.name }}.svh"
 {% endfor %}
 {% endfor %}
-{% for vseq in vsequences %}
+{% for vseq in virtual_sequences %}
   `include "{{ vseq.name }}.svh"
 {% endfor %}
   // pragma quickuvm custom sequences_additional begin

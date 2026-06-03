@@ -17,8 +17,8 @@ clock:
 agents:
   - name: reg
     interface: reg_if
-    transaction: reg_seq_item
-    trans_style: manual
+    sequence_item: reg_seq_item
+    seq_item_style: manual
     active: true
     ports:
       outputs:

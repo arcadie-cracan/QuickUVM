@@ -1,6 +1,6 @@
-"""C2 — virtual sequencer + virtual sequences (opt-in vsequences).
+"""C2 — virtual sequencer + virtual sequences (opt-in virtual_sequences).
 
-Declaring `vsequences:` generates env_vsqr (handles to each active agent's
+Declaring `virtual_sequences:` generates env_vsqr (handles to each active agent's
 sequencer), env_vseq_base (p_sequencer = vsqr), and one class per vsequence whose
 body starts per-agent sub-sequences (sequential or fork/join). A test's `vseq:`
 selector runs a virtual sequence on e.vsqr. Byte-identical when absent.
@@ -28,7 +28,7 @@ def _two_agents():
     wr = AgentConfig(
         name="wr",
         interface="wr_if",
-        transaction="wr_seq_item",
+        sequence_item="wr_seq_item",
         ports={
             "inputs": [PortConfig(name="wr_data", width=8)],
             "outputs": [PortConfig(name="full", width=1)],
@@ -43,7 +43,7 @@ def _two_agents():
     rd = AgentConfig(
         name="rd",
         interface="rd_if",
-        transaction="rd_seq_item",
+        sequence_item="rd_seq_item",
         ports={
             "inputs": [PortConfig(name="rd_en", width=1)],
             "outputs": [PortConfig(name="rd_data", width=8)],
@@ -53,13 +53,13 @@ def _two_agents():
     return [wr, rd]
 
 
-def _cfg(vsequences=None, tests=None, agents=None):
+def _cfg(virtual_sequences=None, tests=None, agents=None):
     return ProjectConfig(
         project=ProjectMeta(name="t"),
         dut=DutConfig(name="fifo"),
         agents=agents or _two_agents(),
         tests=tests or [TConf(name="t1")],
-        vsequences=vsequences or [],
+        virtual_sequences=virtual_sequences or [],
     )
 
 
@@ -81,8 +81,8 @@ _STRESS = VseqConfig(
 )
 
 
-def _gen(tmp_path, vsequences=None, tests=None):
-    Generator(_cfg(vsequences, tests)).generate_all(tmp_path)
+def _gen(tmp_path, virtual_sequences=None, tests=None):
+    Generator(_cfg(virtual_sequences, tests)).generate_all(tmp_path)
     return tmp_path
 
 
@@ -149,7 +149,7 @@ def test_test_runs_vseq_on_vsqr(tmp_path):
 # ---- byte-identical when absent --------------------------------------------
 
 
-def test_no_vsequences_no_vsqr(tmp_path):
+def test_no_virtual_sequences_no_vsqr(tmp_path):
     _gen(tmp_path, [])
     assert not (tmp_path / "env_vsqr.svh").exists()
     assert not (tmp_path / "env_vseq_base.svh").exists()
@@ -217,7 +217,7 @@ def test_vseq_passive_agent_rejected():
     wr = AgentConfig(
         name="wr",
         interface="wr_if",
-        transaction="wr_seq_item",
+        sequence_item="wr_seq_item",
         active=False,
         ports={"inputs": [PortConfig(name="d", width=8)], "outputs": []},
         sequences=[SequenceConfig(name="wr_rand", kind="random")],
@@ -225,13 +225,13 @@ def test_vseq_passive_agent_rejected():
     rd = AgentConfig(
         name="rd",
         interface="rd_if",
-        transaction="rd_seq_item",
+        sequence_item="rd_seq_item",
         ports={"inputs": [PortConfig(name="d", width=8)], "outputs": []},
     )
     with pytest.raises(Exception, match="passive agent"):
         _cfg(
             agents=[wr, rd],
-            vsequences=[
+            virtual_sequences=[
                 VseqConfig(name="v", body=[VseqStep(agent="wr", sequence="wr_rand")])
             ],
         )

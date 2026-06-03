@@ -7,7 +7,7 @@
 //----------------------------------------------------------------------
 // S2 library sequence — kind '{{ sequence.kind }}' for agent '{{ agent.name }}'.
 
-class {{ sequence.name }} extends uvm_sequence #({{ agent.transaction }});
+class {{ sequence.name }} extends uvm_sequence #({{ agent.sequence_item }});
   `uvm_object_utils({{ sequence.name }})
 
   // pragma quickuvm custom class_item_additional begin
@@ -23,12 +23,12 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.transaction }});
 {% endfor %}
 {% if sequence.kind == 'random' %}
   task body;
-    {{ agent.transaction }} tr = {{ agent.transaction }}::type_id::create("tr");
+    {{ agent.sequence_item }} tr = {{ agent.sequence_item }}::type_id::create("tr");
     `uvm_info("body", "{{ sequence.name }} (random): starting", UVM_FULL)
     repeat({{ sequence.count }}) do_item(tr);
   endtask
 
-  task do_item ({{ agent.transaction }} tr);
+  task do_item ({{ agent.sequence_item }} tr);
     start_item(tr);
     if (!(tr.randomize() with {
 {% if ns.has_reset %}
@@ -44,12 +44,12 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.transaction }});
 {% elif sequence.kind == 'incrementing' %}
 {% set fld = agent.input_ports | selectattr('name', 'equalto', sequence.field) | first %}
   task body;
-    {{ agent.transaction }} tr = {{ agent.transaction }}::type_id::create("tr");
+    {{ agent.sequence_item }} tr = {{ agent.sequence_item }}::type_id::create("tr");
     `uvm_info("body", "{{ sequence.name }} (incrementing {{ sequence.field }}): starting", UVM_FULL)
     for (int unsigned i = 0; i < {{ sequence.count }}; i++) do_item(tr, i);
   endtask
 
-  task do_item ({{ agent.transaction }} tr, int unsigned i);
+  task do_item ({{ agent.sequence_item }} tr, int unsigned i);
     start_item(tr);
     if (!(tr.randomize() with {
       tr.{{ sequence.field }} == {{ fld.width }}'(i);
@@ -68,7 +68,7 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.transaction }});
   // drives {{ sequence.count }} randomized item(s); replace it with the
   // {{ sequence.kind }} stimulus.
   task body;
-    {{ agent.transaction }} tr = {{ agent.transaction }}::type_id::create("tr");
+    {{ agent.sequence_item }} tr = {{ agent.sequence_item }}::type_id::create("tr");
     `uvm_info("body", "{{ sequence.name }} ({{ sequence.kind }}): starting", UVM_FULL)
     // pragma quickuvm custom body begin
     repeat({{ sequence.count }}) begin

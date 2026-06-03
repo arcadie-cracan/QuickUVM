@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-class {{ agent.name }}_driver extends uvm_driver #({{ agent.transaction }});
+class {{ agent.name }}_driver extends uvm_driver #({{ agent.sequence_item }});
   `uvm_component_utils({{ agent.name }}_driver)
 
   virtual {{ agent.interface }} vif;
@@ -19,7 +19,7 @@ class {{ agent.name }}_driver extends uvm_driver #({{ agent.transaction }});
   endfunction
 
   task run_phase(uvm_phase phase);
-    {{ agent.transaction }} tr;
+    {{ agent.sequence_item }} tr;
     initialize();
     forever begin
       `uvm_info("DEBUG: {{ agent.name }}_driver Run", "... getting next item ...", UVM_FULL)
@@ -55,7 +55,7 @@ class {{ agent.name }}_driver extends uvm_driver #({{ agent.transaction }});
     // pragma quickuvm custom initialize_additional end
   endtask
 
-  virtual task drive_item ({{ agent.transaction }} tr);
+  virtual task drive_item ({{ agent.sequence_item }} tr);
     `uvm_info("drive_item", tr.input2string(), UVM_FULL)
 {% for port in agent.input_ports %}
     vif.cb1.{{ port.name }} <= tr.{{ port.name }};

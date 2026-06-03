@@ -67,7 +67,7 @@ Files/classes are `lower_snake_case` with a **role suffix**:
 | Register adapter | `_adapter` | `reg_adapter` |
 
 > **Transaction suffix: `_seq_item`** (project decision) — it names the UVM concept (a
-> `uvm_sequence_item`) precisely. The `transaction:` field in the YAML config sets it;
+> `uvm_sequence_item`) precisely. The `sequence_item:` field in the YAML config sets it;
 > `quick-uvm init` scaffolds `<agent>_seq_item`. (Historically the templates used
 > `_trans`; `_seq_item` is the convention going forward.)
 

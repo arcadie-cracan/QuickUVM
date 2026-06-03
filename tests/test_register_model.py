@@ -26,7 +26,7 @@ def _ag(n="spi"):
     return AgentConfig(
         name=n,
         interface=f"{n}_if",
-        transaction=f"{n}_trans",
+        sequence_item=f"{n}_trans",
         ports={
             "outputs": [PortConfig(name="rsp_data", width=8, randomize=False)],
             "inputs": [PortConfig(name="cmd_addr", width=8)],

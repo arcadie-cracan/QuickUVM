@@ -25,7 +25,7 @@ def _ag(name="bs"):
     return AgentConfig(
         name=name,
         interface=f"{name}_if",
-        transaction=f"{name}_seq_item",
+        sequence_item=f"{name}_seq_item",
         ports={
             "inputs": [
                 PortConfig(name="data_in", width=8),

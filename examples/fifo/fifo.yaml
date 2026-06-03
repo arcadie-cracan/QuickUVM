@@ -24,8 +24,8 @@ analysis:
 agents:
   - name: wr
     interface: wr_if
-    transaction: wr_seq_item
-    trans_style: manual
+    sequence_item: wr_seq_item
+    seq_item_style: manual
     active: true
     ports:
       inputs:
@@ -38,8 +38,8 @@ agents:
       - {name: wr_rand, kind: random, count: 32}
   - name: rd
     interface: rd_if
-    transaction: rd_seq_item
-    trans_style: manual
+    sequence_item: rd_seq_item
+    seq_item_style: manual
     active: true
     ports:
       inputs:
@@ -51,7 +51,7 @@ agents:
       - {name: rd_pop,  kind: random, count: 16}
       - {name: rd_rand, kind: random, count: 32}
 
-vsequences:
+virtual_sequences:
   # Sequential: fill the FIFO (16 incrementing writes), then drain it (16 reads).
   # Writes and reads are temporally separated, so the model check is exact.
   - name: smoke_vseq

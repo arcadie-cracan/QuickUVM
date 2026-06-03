@@ -31,7 +31,7 @@ def _agent(sequences=None):
     return AgentConfig(
         name="alu",
         interface="alu_if",
-        transaction="alu_seq_item",
+        sequence_item="alu_seq_item",
         ports={
             "inputs": [
                 PortConfig(name="a", width=8),
@@ -199,7 +199,7 @@ def test_incrementing_on_constrained_field_rejected():
         AgentConfig(
             name="alu",
             interface="alu_if",
-            transaction="alu_seq_item",
+            sequence_item="alu_seq_item",
             ports={
                 "inputs": [PortConfig(name="a", width=8, constraint="a < 100")],
                 "outputs": [PortConfig(name="result", width=8)],
@@ -212,7 +212,7 @@ def test_selector_on_passive_agent_rejected():
     agent = AgentConfig(
         name="mon",
         interface="mon_if",
-        transaction="mon_seq_item",
+        sequence_item="mon_seq_item",
         active=False,
         ports={
             "inputs": [PortConfig(name="a", width=8)],

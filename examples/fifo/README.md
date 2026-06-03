@@ -35,7 +35,7 @@ soak (completes, no `rd_data` X while non-empty).
 
 ## Layout
 - `rtl/fifo.sv` — clean MIT synchronous FIFO (registered read).
-- `fifo.yaml` — config: `external_reset`, two agents, S2 libraries, `vsequences`.
+- `fifo.yaml` — config: `external_reset`, two agents, S2 libraries, `virtual_sequences`.
 - `gen/` — generated TB; hand-filled pragmas: the two driver idle-deasserts, the
   `wr_push`/`rd_pop` enable constraints, the env analysis-fifo wiring, and the
   per-test check.

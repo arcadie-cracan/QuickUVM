@@ -31,7 +31,7 @@ def _agent():
     return AgentConfig(
         name="alu",
         interface="alu_if",
-        transaction="alu_seq_item",
+        sequence_item="alu_seq_item",
         ports={
             "inputs": [
                 PortConfig(name="a", width=8),
@@ -267,13 +267,13 @@ def test_coverage_model_on_uncovered_agent_rejected():
     a0 = AgentConfig(
         name="a0",
         interface="a0_if",
-        transaction="a0_seq_item",
+        sequence_item="a0_seq_item",
         ports={"inputs": [PortConfig(name="x", width=1)], "outputs": []},
     )
     a1 = AgentConfig(
         name="a1",
         interface="a1_if",
-        transaction="a1_seq_item",
+        sequence_item="a1_seq_item",
         ports={"inputs": [PortConfig(name="y", width=1)], "outputs": []},
     )
     with pytest.raises(Exception, match="not wired for coverage"):

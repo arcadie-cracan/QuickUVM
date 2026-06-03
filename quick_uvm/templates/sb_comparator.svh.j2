@@ -10,13 +10,13 @@
 class sb_comparator extends uvm_component;
   `uvm_component_utils(sb_comparator)
 
-  {{ pa.transaction }} exp_tr, out_tr;
+  {{ pa.sequence_item }} exp_tr, out_tr;
   static int VECT_CNT, PASS_CNT, ERROR_CNT;
 
-  uvm_analysis_export   #({{ pa.transaction }}) exp_ap;
-  uvm_analysis_export   #({{ pa.transaction }}) out_ap;
-  uvm_tlm_analysis_fifo #({{ pa.transaction }}) expfifo;
-  uvm_tlm_analysis_fifo #({{ pa.transaction }}) outfifo;
+  uvm_analysis_export   #({{ pa.sequence_item }}) exp_ap;
+  uvm_analysis_export   #({{ pa.sequence_item }}) out_ap;
+  uvm_tlm_analysis_fifo #({{ pa.sequence_item }}) expfifo;
+  uvm_tlm_analysis_fifo #({{ pa.sequence_item }}) outfifo;
 
   // Data-path scoreboard enable. A register test (RAL is the checker) clears this
   // via uvm_config_db "sb_enable" so the protocol predictor isn't run on

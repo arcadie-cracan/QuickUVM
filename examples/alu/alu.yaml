@@ -12,8 +12,8 @@ clock:
 agents:
   - name: alu
     interface: alu_if
-    transaction: alu_seq_item
-    trans_style: manual
+    sequence_item: alu_seq_item
+    seq_item_style: manual
     active: true
     ports:
       inputs:

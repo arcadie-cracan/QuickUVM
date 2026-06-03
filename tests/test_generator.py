@@ -114,7 +114,7 @@ def test_config_load_validation():
     assert cfg.project.name == "simple_reg_tb"
     assert len(cfg.agents) == 1
     assert cfg.agents[0].name == "reg"
-    assert cfg.primary_agent.transaction == "reg_seq_item"
+    assert cfg.primary_agent.sequence_item == "reg_seq_item"
 
 
 def test_scoreboard_report_warns_on_zero_vectors(generated_tb):

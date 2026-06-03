@@ -214,7 +214,7 @@ class VseqConfig(BaseModel):
 
     `mode: sequential` starts the steps in order; `parallel` starts them in a
     fork…join. Each step targets an active agent's sequencer through the
-    `env_vsqr` handles. Opt-in: declaring any `vsequences` generates env_vsqr +
+    `env_vsqr` handles. Opt-in: declaring any `virtual_sequences` generates env_vsqr +
     env_vseq_base; absent ⇒ no virtual-sequence layer (byte-identical).
     """
 
@@ -240,8 +240,8 @@ class VseqConfig(BaseModel):
 class AgentConfig(BaseModel):
     name: str
     interface: str
-    transaction: str
-    trans_style: Literal["manual", "field_macros"] = "manual"
+    sequence_item: str
+    seq_item_style: Literal["manual", "field_macros"] = "manual"
     active: bool = True
     ports: PortMap = Field(default_factory=_default_ports)
     sequences: list[SequenceConfig] = Field(default_factory=list)  # S2 library
@@ -263,7 +263,7 @@ class AgentConfig(BaseModel):
             result.append(("input", p))
         return result
 
-    @field_validator("name", "interface", "transaction")
+    @field_validator("name", "interface", "sequence_item")
     @classmethod
     def no_spaces(cls, v: str) -> str:
         if " " in v:
@@ -557,7 +557,7 @@ class ProjectConfig(BaseModel):
     analysis: AnalysisConfig | None = None
     register_model: RegisterModelConfig | None = None
     coverage_models: list[CoverageModel] = Field(default_factory=list)
-    vsequences: list[VseqConfig] = Field(default_factory=list)  # C2
+    virtual_sequences: list[VseqConfig] = Field(default_factory=list)  # C2
 
     @model_validator(mode="after")
     def validate_agents(self) -> ProjectConfig:
@@ -688,13 +688,15 @@ class ProjectConfig(BaseModel):
         # C2 — virtual sequences
         agents_by_name = {a.name: a for a in self.agents}
         vseq_names: set[str] = set()
-        for vs in self.vsequences:
+        for vs in self.virtual_sequences:
             if vs.name in vseq_names:
-                raise ValueError(f"vsequences: duplicate vsequence name '{vs.name}'.")
+                raise ValueError(
+                    f"virtual_sequences: duplicate vsequence name '{vs.name}'."
+                )
             vseq_names.add(vs.name)
             if vs.name == "env_vseq_base":
                 raise ValueError(
-                    "vsequences: name 'env_vseq_base' is reserved — choose another."
+                    "virtual_sequences: 'env_vseq_base' is a reserved name."
                 )
             for step in vs.body:
                 ag_obj = agents_by_name.get(step.agent)

@@ -188,7 +188,7 @@ multi-interface DUT (i.e. most DUTs).
 **Accept:** a vseq coordinating ≥2 agents.
 
 **Status — landed:**
-- `vsequences:` → QuickUVM generates `env_vsqr` (a handle to each active agent's
+- `virtual_sequences:` → QuickUVM generates `env_vsqr` (a handle to each active agent's
   sequencer, wired in `env.connect_phase`), `env_vseq_base`
   (`` `uvm_declare_p_sequencer(env_vsqr) ``), and one class per vsequence whose body
   starts per-agent sub-sequences `sequential` (in order) or `parallel` (`fork…join`).
