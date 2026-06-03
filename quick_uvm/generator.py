@@ -89,7 +89,11 @@ class Generator:
 
         # ---- per-agent files (interface + TB components) -----------------
         for agent in cfg.agents:
-            ctx = {**base_ctx, "agent": agent}
+            ctx = {
+                **base_ctx,
+                "agent": agent,
+                "coverage_model": cfg.coverage_model_for(agent.name),
+            }
             specs.append(FileSpec("agent_if.sv.j2", f"{agent.interface}.sv", ctx))
             specs.append(
                 FileSpec("agent_trans.svh.j2", f"{agent.transaction}.svh", ctx)

@@ -18,14 +18,20 @@ class alu_cover extends uvm_subscriber #(alu_seq_item);
   covergroup cg;
     option.per_instance = 1;
     option.at_least     = 10;
-    result_cp : coverpoint tr.result {bins result_bins[8] = {[0:$]};}
-    zero_cp : coverpoint tr.zero {bins zero_bins[8] = {[0:$]};}
-    carry_cp : coverpoint tr.carry {bins carry_bins[8] = {[0:$]};}
-    negative_cp : coverpoint tr.negative {bins negative_bins[8] = {[0:$]};}
-    overflow_cp : coverpoint tr.overflow {bins overflow_bins[8] = {[0:$]};}
-    a_cp : coverpoint tr.a {bins a_bins[8] = {[0:$]};}
-    b_cp : coverpoint tr.b {bins b_bins[8] = {[0:$]};}
     op_cp : coverpoint tr.op;
+    a_cp : coverpoint tr.a {
+      bins zero = {0};
+      bins max = {255};
+      bins mid = {[1:254]};
+    }
+    b_cp : coverpoint tr.b {
+      bins zero = {0};
+      bins max = {255};
+      bins mid = {[1:254]};
+    }
+    carry_cp : coverpoint tr.carry;
+    op_x_a : cross op_cp, a_cp;
+    op_x_b : cross op_cp, b_cp;
 
     // pragma quickuvm custom coverpoints_additional begin
     // pragma quickuvm custom coverpoints_additional end

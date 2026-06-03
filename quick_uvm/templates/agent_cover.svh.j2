@@ -18,6 +18,25 @@ class {{ agent.name }}_cover extends uvm_subscriber #({{ agent.transaction }});
   covergroup cg;
     option.per_instance = 1;
     option.at_least     = 10;
+{% if coverage_model %}
+{% for cp in coverage_model.coverpoints %}
+{% if cp.bins or cp.at_least %}
+    {{ cp.field }}_cp : coverpoint tr.{{ cp.field }} {
+{% if cp.at_least %}
+      option.at_least = {{ cp.at_least }};
+{% endif %}
+{% for b in cp.bins %}
+      bins {{ b.name }} = {{ b.sv_bin }};
+{% endfor %}
+    }
+{% else %}
+    {{ cp.field }}_cp : coverpoint tr.{{ cp.field }};
+{% endif %}
+{% endfor %}
+{% for cr in coverage_model.crosses %}
+    {{ cr | join('_x_') }} : cross {{ cr | join('_cp, ') }}_cp;
+{% endfor %}
+{% else %}
 {% for port in agent.output_ports %}
 {% if port.enum %}
     {{ port.name }}_cp : coverpoint tr.{{ port.name }};
@@ -35,6 +54,7 @@ class {{ agent.name }}_cover extends uvm_subscriber #({{ agent.transaction }});
     {{ port.name }}_cp : coverpoint tr.{{ port.name }} {bins {{ port.name }}_bins[8] = {[0:$]};}
 {% endif %}
 {% endfor %}
+{% endif %}
 
     // pragma quickuvm custom coverpoints_additional begin
     // pragma quickuvm custom coverpoints_additional end
