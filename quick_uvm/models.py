@@ -542,6 +542,15 @@ class ProjectMeta(BaseModel):
     author: str = ""
     year: int = 2026
     uvm_version: Literal["1.1d", "1.2"] = "1.2"  # selects version-specific UVM APIs
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        # project.name derives the auto virtual-sequence class name (<name>_vseq),
+        # so it must be a legal SV identifier.
+        _check_sv_identifier(v, "project name")
+        return v
+
     # Packages to import into tb_pkg (e.g. for PortConfig.type external references).
     # Prefer the black-box default (generated enums); use this only when the TB
     # genuinely must share a spec/DUT package.
@@ -558,6 +567,11 @@ class ProjectConfig(BaseModel):
     register_model: RegisterModelConfig | None = None
     coverage_models: list[CoverageModel] = Field(default_factory=list)
     virtual_sequences: list[VseqConfig] = Field(default_factory=list)  # C2
+    # Sane default for multi-agent subsystems: with >=2 active agents and no explicit
+    # virtual_sequences, auto-scaffold a vsqr + a default vseq that fires each agent's
+    # base sequence (the "add a vsqr as a habit" convention). Set false to opt out.
+    auto_virtual_sequences: bool = True
+    auto_vseq_mode: Literal["parallel", "sequential"] = "parallel"
 
     @model_validator(mode="after")
     def validate_agents(self) -> ProjectConfig:
@@ -719,8 +733,10 @@ class ProjectConfig(BaseModel):
                         f"not a library sequence of agent '{step.agent}' (nor its "
                         f"default '{ag_obj.name}_sequence')."
                     )
+        # A test may name an explicit vsequence or the auto-default (<project>_vseq).
+        valid_vseqs = vseq_names | ({self.auto_vseq_name} - {None})
         for t in self.tests:
-            if t.vseq is not None and t.vseq not in vseq_names:
+            if t.vseq is not None and t.vseq not in valid_vseqs:
                 raise ValueError(
                     f"test '{t.name}': vseq '{t.vseq}' is not a declared vsequence."
                 )
@@ -749,3 +765,39 @@ class ProjectConfig(BaseModel):
     def primary_agent(self) -> AgentConfig:
         """The first agent — used as default for scoreboard/coverage wiring."""
         return self.agents[0]
+
+    @property
+    def active_agents(self) -> list[AgentConfig]:
+        """Agents with a sequencer to drive (active)."""
+        return [a for a in self.agents if a.active]
+
+    @property
+    def auto_vseq_name(self) -> str | None:
+        """Name of the auto-generated default virtual sequence, or None if none
+        applies. Explicit `virtual_sequences` win; otherwise a default is
+        synthesized for >=2 active agents when `auto_virtual_sequences` is on."""
+        if self.virtual_sequences or not self.auto_virtual_sequences:
+            return None
+        if len(self.active_agents) < 2:
+            return None
+        return f"{self.project.name}_vseq"
+
+    @property
+    def effective_virtual_sequences(self) -> list[VseqConfig]:
+        """The virtual sequences the generator emits: the explicit ones, or the
+        auto-default (one base sequence per active agent) for a multi-agent bench."""
+        if self.virtual_sequences:
+            return self.virtual_sequences
+        name = self.auto_vseq_name
+        if name is None:
+            return []
+        return [
+            VseqConfig(
+                name=name,
+                mode=self.auto_vseq_mode,
+                body=[
+                    VseqStep(agent=a.name, sequence=f"{a.name}_sequence")
+                    for a in self.active_agents
+                ],
+            )
+        ]
