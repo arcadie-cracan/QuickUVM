@@ -85,7 +85,9 @@ def test_enum_output_field_uses_type(tmp_path):
 
 
 def test_enum_field_macro_uses_uvm_field_enum(tmp_path):
-    agent = _ag([PortConfig(name="op", width=4, enum=OPS)], seq_item_style="field_macros")
+    agent = _ag(
+        [PortConfig(name="op", width=4, enum=OPS)], seq_item_style="field_macros"
+    )
     txt = _trans(tmp_path, agent)
     assert "`uvm_field_enum(op_e, op, UVM_ALL_ON)" in txt
     assert "`uvm_field_int(op," not in txt  # not the int macro
