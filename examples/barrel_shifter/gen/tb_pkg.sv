@@ -40,12 +40,15 @@ package tb_pkg;
 
   // Sequences (per agent)
   `include "bs_sequence.svh"
+  `include "bs_rand.svh"
+  `include "bs_amt_walk.svh"
   // pragma quickuvm custom sequences_additional begin
   // pragma quickuvm custom sequences_additional end
 
   // Tests
   `include "test_base.svh"
   `include "rand_test.svh"
+  `include "amt_sweep.svh"
 
   // Scoreboard expected-value calculator (extern function body)
   `include "sb_calc_exp.svh"
