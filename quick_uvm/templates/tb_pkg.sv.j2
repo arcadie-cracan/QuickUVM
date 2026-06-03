@@ -59,6 +59,9 @@ package tb_pkg;
   // Sequences (per agent)
 {% for agent in agents %}
   `include "{{ agent.name }}_sequence.svh"
+{% for seq in agent.sequences %}
+  `include "{{ seq.name }}.svh"
+{% endfor %}
 {% endfor %}
   // pragma quickuvm custom sequences_additional begin
   // pragma quickuvm custom sequences_additional end

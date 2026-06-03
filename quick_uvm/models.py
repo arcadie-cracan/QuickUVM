@@ -158,6 +158,50 @@ def _default_ports() -> PortMap:
     return {"inputs": [], "outputs": []}
 
 
+class SequenceConfig(BaseModel):
+    """One generated sequence in an agent's library (S2).
+
+    Opt-in: an agent with no `sequences` keeps only the legacy `<agent>_sequence`
+    (byte-identical). `random` and `incrementing` generate working bodies;
+    `directed`/`reset`/`error` generate a skeleton with a pragma body for the user.
+    """
+
+    name: str
+    kind: Literal["random", "incrementing", "directed", "reset", "error"] = "random"
+    count: int = 100
+    field: str | None = None  # the input field to step — required by 'incrementing'
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        # name becomes `class <name>` and file <name>.svh — must be a legal identifier
+        _check_sv_identifier(v, "sequence name")
+        return v
+
+    @model_validator(mode="after")
+    def _check_kind(self) -> SequenceConfig:
+        if self.kind == "incrementing" and not self.field:
+            raise ValueError(
+                f"sequence '{self.name}': kind 'incrementing' requires a 'field' to "
+                f"step."
+            )
+        if self.field and self.kind != "incrementing":
+            raise ValueError(
+                f"sequence '{self.name}': 'field' only applies to kind "
+                f"'incrementing' (got '{self.kind}')."
+            )
+        if self.count < 1:
+            raise ValueError(f"sequence '{self.name}': count must be >= 1.")
+        return self
+
+
+class TestSeqSel(BaseModel):
+    """A test's selection of a single agent-library sequence to run (S2)."""
+
+    agent: str
+    name: str
+
+
 class AgentConfig(BaseModel):
     name: str
     interface: str
@@ -165,6 +209,7 @@ class AgentConfig(BaseModel):
     trans_style: Literal["manual", "field_macros"] = "manual"
     active: bool = True
     ports: PortMap = Field(default_factory=_default_ports)
+    sequences: list[SequenceConfig] = Field(default_factory=list)  # S2 library
 
     @property
     def input_ports(self) -> list[PortConfig]:
@@ -211,6 +256,38 @@ class AgentConfig(BaseModel):
                     f"agent '{self.name}': input port '{p.name}' has a constraint but "
                     f"randomize=false (non-rand). Set randomize=true or drop it."
                 )
+        seen: set[str] = set()
+        ports_by_name = {p.name: p for p in self.input_ports}
+        for s in self.sequences:
+            if s.name in seen:
+                raise ValueError(
+                    f"agent '{self.name}': duplicate sequence name '{s.name}'."
+                )
+            seen.add(s.name)
+            if s.name == f"{self.name}_sequence":
+                raise ValueError(
+                    f"agent '{self.name}': sequence '{s.name}' collides with the "
+                    f"generated default sequence — choose another name."
+                )
+            if s.kind == "incrementing":
+                fld = ports_by_name.get(s.field or "")
+                if fld is None or not fld.randomize:
+                    raise ValueError(
+                        f"agent '{self.name}': sequence '{s.name}' steps field "
+                        f"'{s.field}', which is not a randomizable input port."
+                    )
+                if fld.enum or fld.type:
+                    raise ValueError(
+                        f"agent '{self.name}': sequence '{s.name}' steps field "
+                        f"'{s.field}', which is enum/typed — 'incrementing' needs a "
+                        f"plain integral field."
+                    )
+                if fld.constraint:
+                    raise ValueError(
+                        f"agent '{self.name}': sequence '{s.name}' steps field "
+                        f"'{s.field}', which also has a per-field constraint — "
+                        f"stepping and constraining the same field conflict."
+                    )
         return self
 
 
@@ -245,6 +322,9 @@ class ClockConfig(BaseModel):
 class TestConfig(BaseModel):
     name: str
     num_items: int = 100
+    # S2 — run a selected agent-library sequence instead of the default
+    # <primary>_sequence. None ⇒ today's behavior (byte-identical).
+    sequence: TestSeqSel | None = None
 
     @field_validator("name")
     @classmethod
@@ -536,6 +616,28 @@ class ProjectConfig(BaseModel):
                                 f"'{cp.field}' has value {v} outside 0..{hi} "
                                 f"({port.width} bits)."
                             )
+        seqs_by_agent = {a.name: {s.name for s in a.sequences} for a in self.agents}
+        for t in self.tests:
+            if t.sequence is None:
+                continue
+            sel = t.sequence
+            if sel.agent not in agent_name_set:
+                raise ValueError(
+                    f"test '{t.name}': sequence selector references unknown agent "
+                    f"'{sel.agent}'."
+                )
+            if sel.name not in seqs_by_agent[sel.agent]:
+                raise ValueError(
+                    f"test '{t.name}': sequence '{sel.name}' is not a declared "
+                    f"sequence of agent '{sel.agent}' (add it to "
+                    f"agents[{sel.agent}].sequences)."
+                )
+            sel_agent = next(a for a in self.agents if a.name == sel.agent)
+            if not sel_agent.active:
+                raise ValueError(
+                    f"test '{t.name}': sequence selector targets passive agent "
+                    f"'{sel.agent}' — a passive agent builds no sequencer to run on."
+                )
         return self
 
     def coverage_model_for(self, agent_name: str) -> CoverageModel | None:

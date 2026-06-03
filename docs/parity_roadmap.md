@@ -165,6 +165,23 @@ reset and error-injection sequence skeletons, and a sequence-of-sequences. Confi
 test → sequence selection (replace the bare `num_items`).
 **Accept:** a test selects from ≥2 generated sequences + a reset sequence.
 
+**Status — first slice landed (per-agent library + test selection):**
+- `agents[].sequences:` → a library of sequence classes per agent. `kind: random`
+  (the do_item/randomize loop) and `incrementing` (steps a plain field via
+  `tr.<field> == <W>'(i)`) generate working bodies; `directed`/`reset`/`error`
+  generate a skeleton with a `// pragma quickuvm custom body` region.
+- `tests[].sequence: {agent, name}` → the test starts the selected library
+  sequence on that agent's sequencer instead of the default `<primary>_sequence`.
+- Fail-closed validation: sequence names must be legal, non-reserved SV identifiers
+  and unique (and must not collide with `<agent>_sequence`); `incrementing` needs a
+  plain (non-enum/typed, unconstrained) randomizable field; a selector must name a
+  declared sequence on an **active** agent.
+- Byte-identical when unused. Validated on `examples/barrel_shifter/` — `rand_test`
+  501/501 and `amt_sweep` (the incrementing `bs_amt_walk`) 33/33 on Xcelium;
+  verible-lint-clean; CI gates it.
+- *Remaining:* a `sequence-of-sequences` kind, concrete reset/error bodies (vs
+  skeletons), and per-test sequence *parameters*.
+
 ### C2 — Virtual sequencer + virtual sequences
 `env_vsqr` (agent sequencer handles) + `env_vseq_base`; tests run vseqs. Required for any
 multi-interface DUT (i.e. most DUTs).
