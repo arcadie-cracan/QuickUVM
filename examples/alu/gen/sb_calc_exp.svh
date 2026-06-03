@@ -25,14 +25,15 @@ function alu_seq_item sb_predictor::sb_calc_exp(alu_seq_item t);
   extr.copy(t);
 
   // pragma quickuvm custom prediction_logic begin
-  // Golden model (combinational ALU, W=8) — mirrors rtl/alu.sv, named opcodes.
+  // Golden model (combinational ALU, W=8) — the SPEC, by the TB's own op_e names.
+  // t.op is op_e (TB-owned, black box); the DUT's alu_pkg is never imported here.
   begin
     logic [8:0] add_ext, sub_ext;
     add_ext = {1'b0, t.a} + {1'b0, t.b};
     sub_ext = {1'b0, t.a} - {1'b0, t.b};
     extr.carry    = 1'b0;
     extr.overflow = 1'b0;
-    unique case (opcode_e'(t.op))
+    unique case (t.op)
       ADD: begin
         extr.result   = add_ext[7:0];
         extr.carry    = add_ext[8];

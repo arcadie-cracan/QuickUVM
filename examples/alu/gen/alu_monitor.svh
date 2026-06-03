@@ -48,7 +48,7 @@ class alu_monitor extends uvm_monitor;
     t.overflow = vif.mon_cb.overflow;
     t.a = vif.mon_cb.a;
     t.b = vif.mon_cb.b;
-    t.op = vif.mon_cb.op;
+    void'($cast(t.op, vif.mon_cb.op));
 
     // pragma quickuvm custom sample_dut_additional begin
     // pragma quickuvm custom sample_dut_additional end

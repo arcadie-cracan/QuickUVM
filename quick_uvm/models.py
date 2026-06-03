@@ -13,6 +13,67 @@ class PortConfig(BaseModel):
     name: str
     width: int = 1
     randomize: bool = True  # only meaningful for input ports
+    # S1 — typed fields + constraints (all opt-in; a plain field is byte-identical).
+    # BLACK BOX by default: declare named values and QuickUVM generates the
+    # testbench's OWN enum (<name>_e) for this field, which self-constrains to its
+    # legal values. The TB encodes the spec independently of the DUT's types.
+    enum: dict[str, int] | None = None  # {NAME: value} -> typedef enum { NAME=value }
+    # WHITE BOX escape hatch (powerful when needed): reference an EXTERNAL SV type
+    # (e.g. a DUT/spec package type). The package must be compiled (present in the
+    # filelist); a fully-qualified `pkg::type` works as-is, or add the package to
+    # project.imports to also use its names unqualified in tb_pkg.
+    type: str | None = None
+    # SystemVerilog constraint expression for this field, emitted in a transaction
+    # constraint block (e.g. "a != 0", "amt inside {[0:31]}", "a < b").
+    constraint: str | None = None
+
+    @model_validator(mode="after")
+    def _check_field_type(self) -> PortConfig:
+        if self.enum and self.type:
+            raise ValueError(
+                f"port '{self.name}': set either 'enum' (generate a TB enum) or "
+                f"'type' (reference an external type), not both."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_enum_values(self) -> PortConfig:
+        """Fail closed on enum mistakes that would emit illegal SystemVerilog.
+
+        The typedef renders each value as `<width>'d<value>`, so values must be
+        non-negative, fit in `width` bits, and be unique — otherwise SV truncates
+        or rejects the enum (a duplicate-value or `'d-1` compile error).
+        """
+        if self.enum is None:
+            return self
+        if not self.enum:
+            raise ValueError(
+                f"port '{self.name}': enum must declare at least one value."
+            )
+        hi = (1 << self.width) - 1
+        seen: dict[int, str] = {}
+        for label, val in self.enum.items():
+            if not (0 <= val <= hi):
+                raise ValueError(
+                    f"port '{self.name}': enum value {label}={val} does not fit in "
+                    f"{self.width} bit(s) (legal range 0..{hi})."
+                )
+            if val in seen:
+                raise ValueError(
+                    f"port '{self.name}': enum values must be unique — '{label}' and "
+                    f"'{seen[val]}' both = {val}."
+                )
+            seen[val] = label
+        return self
+
+    @property
+    def sv_type(self) -> str:
+        """The SystemVerilog type for this field's declaration."""
+        if self.enum:
+            return f"{self.name}_e"
+        if self.type:
+            return self.type
+        return f"bit [{self.width - 1}:0]" if self.width > 1 else "bit"
 
 
 PortMap = dict[Literal["inputs", "outputs"], list[PortConfig]]
@@ -53,6 +114,29 @@ class AgentConfig(BaseModel):
         if " " in v:
             raise ValueError(f"Name '{v}' must not contain spaces.")
         return v
+
+    @model_validator(mode="after")
+    def _check_constraints(self) -> AgentConfig:
+        """A per-field constraint only makes sense on a randomizable field.
+
+        Outputs are sampled from the DUT (non-rand), and a randomize=False input
+        is non-rand too — a constraint there would either be dead or make every
+        randomize() call fail at runtime, so reject it at config time.
+        """
+        for p in self.output_ports:
+            if p.constraint:
+                raise ValueError(
+                    f"agent '{self.name}': output port '{p.name}' has a constraint, "
+                    f"but outputs are sampled (non-rand). Constraints belong on rand "
+                    f"inputs."
+                )
+        for p in self.input_ports:
+            if p.constraint and not p.randomize:
+                raise ValueError(
+                    f"agent '{self.name}': input port '{p.name}' has a constraint but "
+                    f"randomize=false (non-rand). Set randomize=true or drop it."
+                )
+        return self
 
 
 class DutConfig(BaseModel):
@@ -148,6 +232,10 @@ class ProjectMeta(BaseModel):
     author: str = ""
     year: int = 2026
     uvm_version: Literal["1.1d", "1.2"] = "1.2"  # selects version-specific UVM APIs
+    # Packages to import into tb_pkg (e.g. for PortConfig.type external references).
+    # Prefer the black-box default (generated enums); use this only when the TB
+    # genuinely must share a spec/DUT package.
+    imports: list[str] = Field(default_factory=list)
 
 
 class ProjectConfig(BaseModel):

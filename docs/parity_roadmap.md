@@ -123,6 +123,20 @@ the core of modern DV — is hand-written for every project.
 **Accept:** a packet-style transaction (header + var-length payload + CRC) with
 constraints generates and randomizes.
 
+**Status — first slice landed (enum/typed fields + per-field constraints):**
+- `PortConfig.enum` → QuickUVM generates the testbench's OWN `<name>_e` typedef and
+  a `rand <name>_e` field that self-constrains to its legal values. **Black box by
+  default**: the TB encodes the spec independently of the DUT — a wrong DUT encoding
+  is *caught*, not mirrored (proven in `examples/alu/` by a mutation test: swapping
+  the DUT's SRL/SLT opcodes yields 216 scoreboard failures).
+- `PortConfig.type` + `project.imports` → the white-box escape hatch: reference an
+  EXTERNAL spec/DUT type (powerful when genuinely shared).
+- `PortConfig.constraint` → a per-field expression collected into a `c_qcfg`
+  transaction constraint block.
+- Byte-identical when unused (a plain `name+width+rand` field emits the legacy SV).
+- *Remaining:* struct/packed-array/variable-length payloads, soft/dist constraints,
+  inter-field relations, per-field `rand_mode`.
+
 ### V1 — Functional coverage from fields  *(highest leverage; coverage)*
 Derive a real covergroup from the transaction/config fields the generator already has:
 config-driven coverpoints + bins, optional crosses, sampled from the monitor's analysis

@@ -6,6 +6,18 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
+// TB-owned enum for 'op' (encodes the spec, not the DUT type).
+typedef enum logic [3:0] {
+  ADD = 4'd0,
+  SUB = 4'd1,
+  AND = 4'd2,
+  OR = 4'd3,
+  XOR = 4'd4,
+  SLL = 4'd5,
+  SRL = 4'd6,
+  SLT = 4'd7
+} op_e;
+
 class alu_seq_item extends uvm_sequence_item;
   `uvm_object_utils(alu_seq_item)
 
@@ -19,7 +31,7 @@ class alu_seq_item extends uvm_sequence_item;
   // Input fields (driven to DUT)
   rand bit [7:0] a;
   rand bit [7:0] b;
-  rand bit [3:0] op;
+  rand op_e op;
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -70,7 +82,7 @@ class alu_seq_item extends uvm_sequence_item;
     string s = "";
     s = {s, $sformatf("a=%0h  ", a)};
     s = {s, $sformatf("b=%0h  ", b)};
-    s = {s, $sformatf("op=%b  ", op)};
+    s = {s, $sformatf("op=%s  ", op.name())};
     return(s);
   endfunction
 

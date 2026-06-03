@@ -16,6 +16,9 @@ package tb_pkg;
 {% if register_model %}
   import {{ register_model.package }}::*;
 {% endif %}
+{% for pkg in project.imports %}
+  import {{ pkg }}::*;
+{% endfor %}
   // pragma quickuvm custom imports begin
   // pragma quickuvm custom imports end
 

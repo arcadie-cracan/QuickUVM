@@ -19,12 +19,18 @@ class {{ agent.name }}_cover extends uvm_subscriber #({{ agent.transaction }});
     option.per_instance = 1;
     option.at_least     = 10;
 {% for port in agent.output_ports %}
+{% if port.enum %}
+    {{ port.name }}_cp : coverpoint tr.{{ port.name }};
+{% else %}
     {{ port.name }}_cp : coverpoint tr.{{ port.name }} {bins {{ port.name }}_bins[8] = {[0:$]};}
+{% endif %}
 {% endfor %}
 {% for port in agent.input_ports %}
 {% if port.name == dut.reset %}
     dorst   : coverpoint tr.{{ port.name }} {bins dorst  = {'0};}
     norst   : coverpoint tr.{{ port.name }} {bins norst  = {'1};}
+{% elif port.enum %}
+    {{ port.name }}_cp : coverpoint tr.{{ port.name }};
 {% else %}
     {{ port.name }}_cp : coverpoint tr.{{ port.name }} {bins {{ port.name }}_bins[8] = {[0:$]};}
 {% endif %}
