@@ -36,6 +36,19 @@ and the golden model reads `case (t.op) ADD: …` with no DUT import.
   - `alu_sequence.svh` `do_item_constraints` — empty (the enum self-constrains).
 - `sim/xrun.f` — Xcelium filelist (`alu_pkg.sv` compiled before `tb_pkg`, for the DUT).
 
+## Functional coverage (V1)
+`alu.yaml` also carries a `coverage_models:` block, so `gen/alu_cover.svh` has a
+real covergroup instead of the generic stub: `op` auto-bins one-per-opcode, `a`/`b`
+get corner bins (`zero`/`max`/`mid`), `carry` covers `{0,1}`, and `op × a` / `op × b`
+crosses ask whether each opcode was exercised against each operand corner. Same
+black-box discipline as the opcodes — the bins encode the *spec's* interesting
+values, not DUT internals.
+
+```bash
+cd sim && xrun -f xrun.f +UVM_TESTNAME=rand_test -coverage functional
+# -> TEST PASSED, 1001/1001; covergroup `cov` ≈ 55.56% (28/64 bins) under pure random
+```
+
 ## Run
 ```bash
 quick-uvm generate -c alu.yaml -o gen

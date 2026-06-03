@@ -37,3 +37,25 @@ agents:
 tests:
   - name: rand_test
     num_items: 1000
+# V1 — functional coverage from fields. Black box: the bins encode the spec's
+# interesting operand values (corners + the bulk range), independent of the DUT.
+# The op coverpoint auto-bins one-per-opcode (enum); the crosses ask whether each
+# opcode was exercised against each operand corner.
+coverage_models:
+  - agent: alu
+    coverpoints:
+      - field: op                       # enum -> auto one bin per opcode
+      - field: a
+        bins:
+          - {name: zero, value: 0}
+          - {name: max,  value: 255}
+          - {name: mid,  range: [1, 254]}
+      - field: b
+        bins:
+          - {name: zero, value: 0}
+          - {name: max,  value: 255}
+          - {name: mid,  range: [1, 254]}
+      - field: carry                    # 1-bit output -> {0,1}
+    crosses:
+      - [op, a]
+      - [op, b]
