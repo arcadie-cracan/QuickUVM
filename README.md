@@ -111,6 +111,11 @@ dut:
   clock: clk
   reset: rst_n
   reset_active_low: true
+  external_reset: false  # opt-in: reset is driven by a top-level reset generator
+                         # (not the agent). When true, QuickUVM declares the reset
+                         # as an interface port, generates a reset_generator in top,
+                         # and reset-gates the driver + monitor. Leave false when the
+                         # reset is an agent input port or handled in user pragma code.
 
 clock:
   period: 10

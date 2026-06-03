@@ -67,18 +67,28 @@ opt-in/layered.
 - **Skeleton, not magic.** Generated logic that can't be inferred stays in pragma regions
   — but the *default skeleton must encode good patterns* (see X0).
 
-## X0 — Template-default hardening (cross-cutting, do first; low cost)
+## X0 — External-reset support — DONE
 
-Independent of new features: the default driver/monitor skeletons currently propagate
-anti-patterns into every generated TB (observed in the field):
+Origin: the default driver/monitor drove/sampled without waiting for reset, which bit a
+downstream SPI bench. **A design review (4 proposals, adversarially judged) reframed this:**
+an *auto* reset-gate has no safe generic target — for an agent-driven reset (a randomized
+input port) a `wait` would deadlock the driver against itself, and for an external reset
+the generated interface never declared the signal, so `vif.<reset>` was undeclared and the
+wait wouldn't compile. So the real fix is an explicit, opt-in **external-reset feature**,
+not a silent default.
 
-- driver does `@vif.cb1` with **no reset wait** → can drive during reset;
-- monitor uses a **blind fixed-count sampling loop** with no frame/envelope bounding or
-  malformed-input handling.
+Shipped: `dut.external_reset: bool = false`. When true (and `dut.reset` is set and is *not*
+an agent input port — validated), QuickUVM:
+- declares the reset as an **interface port** (`interface foo (input clk, input rst_n);`),
+- generates a **`reset_generator`** in top (a pragma region — assert then deassert) and
+  passes the reset to each interface (named ports),
+- **reset-gates** the driver (`initialize` waits for deassert + settle) and the monitor
+  (`run_phase` waits before the first sample).
 
-Fix the template defaults (reset-gated driver start; envelope-bounded, self-resyncing
-monitor sampling) so generated benches start correct-by-construction. Cheap, high value,
-no schema change.
+Byte-identical when false (verified: spi regen is a no-op; simple_reg leaks nothing).
+Verible-lint clean for the external path. Covered by `tests/test_external_reset.py`.
+Note: the monitor's protocol-specific framing/sampling robustness (the SPI "blind loop")
+stays user pragma code — the generic skeleton can't know the protocol.
 
 ## Priority tier 1 — the universal pillars (general-DV leverage)
 
@@ -178,7 +188,7 @@ coverage-merge flow (coverage closure needs all of these).
 ## Suggested sequencing
 
 ```
-X0 template-default hardening (do first, cheap)
+X0 external-reset support (DONE)
   │
 tier 1 (universal pillars):  S1 ─┬─ V1 ─┬─ S2 ─ C2 ─ K0
                                  │       │                │
@@ -199,7 +209,7 @@ The General-DV MVP now closes the loop on all three things that make a generated
 actually *do* verification rather than just compile: **stimulus in** (S1/S2/C2),
 **coverage observing** (V1), and a **golden model checking** (K0).
 
-Recommendation: do **X0** immediately (cheap correctness win), then pursue the
+Recommendation: with **X0 done**, pursue the rest of the
 **General-DV MVP** (stimulus + coverage + virtual sequences + reference-model seam) —
 these are the pillars that bite *every* project. Defer reuse/hierarchy/infra until a
 multi-block or closure-driven need forces them. QuickUVM's niche remains simplicity +

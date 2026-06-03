@@ -12,26 +12,44 @@ module top;
   import tb_pkg::*;
 
   logic clk;
+{% if dut.external_reset %}
+  logic {{ dut.reset }};
+{% endif %}
 
   // Instantiate clock generator
   clkgen ck (clk);
+{% if dut.external_reset %}
+
+  // Reset generator (external reset). Period units follow the sim -timescale.
+  // pragma quickuvm custom reset_generator begin
+  initial begin
+    {{ dut.reset }} = 1'b{% if dut.reset_active_low %}0{% else %}1{% endif %};   // assert
+    repeat (5) @(posedge clk);
+    // NOTE: the driver and monitor block until this deasserts — if you edit this
+    // block you MUST drive {{ dut.reset }} to its inactive level or the TB will hang.
+    {{ dut.reset }} = 1'b{% if dut.reset_active_low %}1{% else %}0{% endif %};   // deassert
+  end
+  // pragma quickuvm custom reset_generator end
+{% endif %}
 
   // Instantiate interfaces
 {% for agent in agents %}
-  {{ agent.interface }} {{ agent.interface }}_inst (clk);
+  {{ agent.interface }} {{ agent.interface }}_inst ({% if dut.external_reset %}.clk(clk), .{{ dut.reset }}({{ dut.reset }}){% else %}clk{% endif %});
 {% endfor %}
 
   // pragma quickuvm custom dut_connections begin
   // Instantiate DUT — connect to interface signals hierarchically
   {{ dut.name }} dut_inst (
 {% set primary = agents[0] %}
+{% set reset_port = namespace(found=false) %}
+{% for _, p in primary.all_ports %}{% if p.name == dut.reset %}{% set reset_port.found = true %}{% endif %}{% endfor %}
 {% for port in primary.output_ports %}
     .{{ port.name }}({{ primary.interface }}_inst.{{ port.name }}),
 {% endfor %}
 {% for port in primary.input_ports %}
     .{{ port.name }}({{ primary.interface }}_inst.{{ port.name }}),
 {% endfor %}
-    .{{ dut.clock }}(clk){% if dut.reset %},
+    .{{ dut.clock }}(clk){% if dut.reset and not reset_port.found %},
     .{{ dut.reset }}({{ primary.interface }}_inst.{{ dut.reset }}){% endif %}
   );
   // pragma quickuvm custom dut_connections end

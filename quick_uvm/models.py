@@ -60,6 +60,14 @@ class DutConfig(BaseModel):
     clock: str = "clk"
     reset: str = "rst_n"
     reset_active_low: bool = True
+    # Opt-in: the reset is driven EXTERNALLY (by a top-level reset generator),
+    # not by the agent. When true, QuickUVM declares the reset as an interface
+    # port, generates a `reset_generator` in top, and reset-gates the driver +
+    # monitor (they hold off until reset deasserts). Leave false when the reset
+    # is an agent input port (agent-driven) or handled in user pragma code.
+    # Flipping true->false later removes the reset_generator pragma region, so
+    # regeneration is fail-closed (re-run with --allow-drop to discard it).
+    external_reset: bool = False
 
 
 class ClockConfig(BaseModel):
@@ -172,6 +180,23 @@ class ProjectConfig(BaseModel):
                 raise ValueError(
                     f"register_model.bus_agent references unknown agent "
                     f"'{self.register_model.bus_agent}'."
+                )
+        if self.dut.external_reset:
+            if not self.dut.reset:
+                raise ValueError(
+                    "dut.external_reset requires dut.reset to name the reset signal."
+                )
+            if self.dut.reset == self.dut.clock:
+                raise ValueError(
+                    f"dut.external_reset: dut.reset '{self.dut.reset}' must differ "
+                    f"from dut.clock (would create a duplicate interface port)."
+                )
+            port_names = {p.name for a in self.agents for _, p in a.all_ports}
+            if self.dut.reset in port_names:
+                raise ValueError(
+                    f"dut.external_reset is set but dut.reset '{self.dut.reset}' is an "
+                    f"agent port. An external reset must not also be an agent port — "
+                    f"remove it from the agent ports or unset external_reset."
                 )
         return self
 
