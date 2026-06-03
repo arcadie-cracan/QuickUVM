@@ -25,7 +25,14 @@ agents:
         - {name: op,      width: 3,  randomize: true}
       outputs:
         - {name: data_out, width: 32}
+    # S2 — sequence library: a longer random soak + a directed sweep of the
+    # shift amount (walks amt = 0..31 while data_in/op stay random).
+    sequences:
+      - {name: bs_rand,     kind: random,       count: 256}
+      - {name: bs_amt_walk, kind: incrementing, count: 32, field: amt}
 
 tests:
   - name: rand_test
     num_items: 500
+  - name: amt_sweep            # runs bs_amt_walk instead of the default bs_sequence
+    sequence: {agent: bs, name: bs_amt_walk}

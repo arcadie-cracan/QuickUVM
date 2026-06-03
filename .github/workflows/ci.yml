@@ -68,3 +68,12 @@ jobs:
       - name: Verible lint (enum-path generated SV/SVH)
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_alu/*.sv gen_alu/*.svh
+
+      # Gate the S2 sequence-library path: the barrel_shifter example generates a
+      # random + incrementing library sequence and a test that selects one.
+      - name: Generate the sequence-library example (S2)
+        run: quick-uvm generate -c examples/barrel_shifter/barrel_shifter.yaml -o gen_bs
+
+      - name: Verible lint (sequence-library generated SV/SVH)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_bs/*.sv gen_bs/*.svh

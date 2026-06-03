@@ -131,6 +131,12 @@ class Generator:
             specs.append(
                 FileSpec("agent_sequence.svh.j2", f"{agent.name}_sequence.svh", ctx)
             )
+            # S2 — the per-agent sequence library (one class per declared sequence)
+            for seq in agent.sequences:
+                seq_ctx = {**base_ctx, "agent": agent, "sequence": seq}
+                specs.append(
+                    FileSpec("agent_seq_lib.svh.j2", f"{seq.name}.svh", seq_ctx)
+                )
 
         # ---- tests -------------------------------------------------------
         specs.append(FileSpec("test_base.svh.j2", "test_base.svh", base_ctx))
