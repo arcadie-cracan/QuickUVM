@@ -3,7 +3,7 @@
 // Operations are named (alu_pkg::opcode_e) rather than magic numbers.
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
-module alu import alu_pkg::*; #(
+module alu #(
   parameter int W = 8
 ) (
   input  logic [W-1:0] a,
@@ -15,6 +15,8 @@ module alu import alu_pkg::*; #(
   output logic         negative,
   output logic         overflow
 );
+  import alu_pkg::*;
+
   logic [W:0] add_ext, sub_ext;
 
   always_comb begin
