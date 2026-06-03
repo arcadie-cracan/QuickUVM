@@ -1,0 +1,31 @@
+project:
+  name: alu_tb
+  author: qa@example.com
+dut:
+  name: alu
+  clock: clk
+  reset: ''
+  combinational: true
+clock:
+  period: 10
+  unit: ns
+agents:
+  - name: alu
+    interface: alu_if
+    transaction: alu_seq_item
+    trans_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: a,  width: 8, randomize: true}
+        - {name: b,  width: 8, randomize: true}
+        - {name: op, width: 4, randomize: true}
+      outputs:
+        - {name: result,   width: 8}
+        - {name: zero,     width: 1}
+        - {name: carry,    width: 1}
+        - {name: negative, width: 1}
+        - {name: overflow, width: 1}
+tests:
+  - name: rand_test
+    num_items: 1000
