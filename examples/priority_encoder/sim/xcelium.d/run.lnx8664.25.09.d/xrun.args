@@ -1,8 +1,0 @@
-//
-// File created by:  xrun
-// Do not modify this file
-//
--f
-xrun.f
-+UVM_TESTNAME=rand_test
-+UVM_VERBOSITY=UVM_LOW

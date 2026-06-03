@@ -32,3 +32,12 @@ dvt_build.log
 # Generated testbench output (keep examples, ignore scratch)
 /tb/
 /tb_out/
+
+# Simulator working dirs / logs (keep the xrun.f filelists)
+**/sim/xcelium.d/
+**/sim/*.log
+**/sim/*.history
+**/sim/*.shm/
+**/sim/.simvision/
+**/sim/INCA_libs/
+**/sim/waves.shm/

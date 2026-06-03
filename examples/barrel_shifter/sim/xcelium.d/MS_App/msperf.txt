@@ -1,2 +1,0 @@
-DMSPFEB, Logic or RNM blocks only
-SVMSEB, .sv file
