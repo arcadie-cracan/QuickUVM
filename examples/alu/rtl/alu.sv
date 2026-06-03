@@ -1,9 +1,9 @@
 //----------------------------------------------------------------------
 // alu — parameterized combinational ALU with Z/C/N/V flags.
-// op: 0 ADD, 1 SUB, 2 AND, 3 OR, 4 XOR, 5 SLL, 6 SRL, 7 SLT (signed).
+// Operations are named (alu_pkg::opcode_e) rather than magic numbers.
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
-module alu #(
+module alu import alu_pkg::*; #(
   parameter int W = 8
 ) (
   input  logic [W-1:0] a,
@@ -22,23 +22,23 @@ module alu #(
     sub_ext  = {1'b0, a} - {1'b0, b};
     carry    = 1'b0;
     overflow = 1'b0;
-    unique case (op)
-      4'd0: begin  // ADD
+    unique case (opcode_e'(op))
+      ADD: begin
         result   = add_ext[W-1:0];
         carry    = add_ext[W];
         overflow = (a[W-1] == b[W-1]) && (result[W-1] != a[W-1]);
       end
-      4'd1: begin  // SUB
+      SUB: begin
         result   = sub_ext[W-1:0];
         carry    = sub_ext[W];  // borrow
         overflow = (a[W-1] != b[W-1]) && (result[W-1] != a[W-1]);
       end
-      4'd2:    result = a & b;                                          // AND
-      4'd3:    result = a | b;                                          // OR
-      4'd4:    result = a ^ b;                                          // XOR
-      4'd5:    result = a << b[$clog2(W)-1:0];                          // SLL
-      4'd6:    result = a >> b[$clog2(W)-1:0];                          // SRL
-      4'd7:    result = {{(W-1){1'b0}}, ($signed(a) < $signed(b))};     // SLT
+      AND:     result = a & b;
+      OR:      result = a | b;
+      XOR:     result = a ^ b;
+      SLL:     result = a << b[$clog2(W)-1:0];
+      SRL:     result = a >> b[$clog2(W)-1:0];
+      SLT:     result = {{(W-1){1'b0}}, ($signed(a) < $signed(b))};
       default: result = '0;
     endcase
     zero     = (result == '0);

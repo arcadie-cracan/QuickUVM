@@ -14,6 +14,7 @@
 package tb_pkg;
   import uvm_pkg::*;
   // pragma quickuvm custom imports begin
+  import alu_pkg::*;   // named ALU opcodes (opcode_e) for the golden model + constraint
   // pragma quickuvm custom imports end
 
   // Transaction classes

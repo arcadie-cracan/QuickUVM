@@ -28,7 +28,7 @@ class alu_sequence extends uvm_sequence #(alu_seq_item);
     if (!(tr.randomize() with {
 
       // pragma quickuvm custom do_item_constraints begin
-      tr.op inside {[4'd0:4'd7]};   // ADD,SUB,AND,OR,XOR,SLL,SRL,SLT
+      tr.op inside {[ADD:SLT]};   // valid opcodes by name
       // pragma quickuvm custom do_item_constraints end
     })) `uvm_fatal("ALU_SEQ", "alu_sequence randomization failed")
     `uvm_info("do_item", tr.input2string(), UVM_FULL)

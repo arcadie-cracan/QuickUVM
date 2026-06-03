@@ -5,6 +5,7 @@
 -linedebug
 -top top
 +incdir+../gen
+../rtl/alu_pkg.sv
 ../gen/tb_pkg.sv
 ../gen/alu_if.sv
 ../gen/clkgen.sv

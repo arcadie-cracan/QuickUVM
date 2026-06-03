@@ -77,6 +77,23 @@ Handles / members:
 - analysis port: `<name>_ap` · analysis export: `<name>_export` · TLM fifo: `<name>_fifo`
 - clocking block: `cb*` (e.g. `cb1`)
 
+## Named constants over magic numbers
+
+Prefer **named constants — `enum` typedefs, `parameter`/`localparam`, and `` `define ``
+(sparingly) — over bare numeric literals**, in both generated output and the SV you write
+in pragma regions (DUTs, golden models, constraints, coverage). A literal `4'd5` says
+nothing; `SLL` does.
+
+- **Opcodes / modes / states**: an `enum` (ideally in a shared package) — the value reads
+  by name everywhere it's used (RTL `case`, the scoreboard golden model, sequence
+  constraints, covergroup bins). See [`examples/alu/`](../examples/alu/): `alu_pkg::opcode_e`
+  is used by the DUT *and* the testbench, so `case (opcode_e'(op)) ADD: …` and
+  `op inside {[ADD:SLT]}` replace `4'd0`/`[0:7]`.
+- **Widths / counts / thresholds**: a `parameter`/`localparam`, not a repeated literal.
+- A typed `enum` rand field also self-constrains randomization to its legal values — the
+  generator will do this for you once S1 (typed transaction fields) lands; until then,
+  name the constants by hand.
+
 ## Structure (Paradigm-Works flat-package style — today's default)
 
 - All components are included into a single `tb_pkg.sv` (the `layout: packaged` option is

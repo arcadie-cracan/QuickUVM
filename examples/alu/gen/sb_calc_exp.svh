@@ -25,30 +25,30 @@ function alu_seq_item sb_predictor::sb_calc_exp(alu_seq_item t);
   extr.copy(t);
 
   // pragma quickuvm custom prediction_logic begin
-  // Golden model (combinational ALU, W=8) — mirrors rtl/alu.sv exactly.
+  // Golden model (combinational ALU, W=8) — mirrors rtl/alu.sv, named opcodes.
   begin
     logic [8:0] add_ext, sub_ext;
     add_ext = {1'b0, t.a} + {1'b0, t.b};
     sub_ext = {1'b0, t.a} - {1'b0, t.b};
     extr.carry    = 1'b0;
     extr.overflow = 1'b0;
-    case (t.op)
-      4'd0: begin  // ADD
+    unique case (opcode_e'(t.op))
+      ADD: begin
         extr.result   = add_ext[7:0];
         extr.carry    = add_ext[8];
         extr.overflow = (t.a[7] == t.b[7]) && (extr.result[7] != t.a[7]);
       end
-      4'd1: begin  // SUB
+      SUB: begin
         extr.result   = sub_ext[7:0];
         extr.carry    = sub_ext[8];
         extr.overflow = (t.a[7] != t.b[7]) && (extr.result[7] != t.a[7]);
       end
-      4'd2:    extr.result = t.a & t.b;
-      4'd3:    extr.result = t.a | t.b;
-      4'd4:    extr.result = t.a ^ t.b;
-      4'd5:    extr.result = t.a << t.b[2:0];
-      4'd6:    extr.result = t.a >> t.b[2:0];
-      4'd7:    extr.result = {7'b0, ($signed(t.a) < $signed(t.b))};
+      AND:     extr.result = t.a & t.b;
+      OR:      extr.result = t.a | t.b;
+      XOR:     extr.result = t.a ^ t.b;
+      SLL:     extr.result = t.a << t.b[2:0];
+      SRL:     extr.result = t.a >> t.b[2:0];
+      SLT:     extr.result = {7'b0, ($signed(t.a) < $signed(t.b))};
       default: extr.result = '0;
     endcase
     extr.zero     = (extr.result == '0);
