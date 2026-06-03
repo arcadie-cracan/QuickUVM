@@ -25,7 +25,7 @@ class alu_cover extends uvm_subscriber #(alu_seq_item);
     overflow_cp : coverpoint tr.overflow {bins overflow_bins[8] = {[0:$]};}
     a_cp : coverpoint tr.a {bins a_bins[8] = {[0:$]};}
     b_cp : coverpoint tr.b {bins b_bins[8] = {[0:$]};}
-    op_cp : coverpoint tr.op {bins op_bins[8] = {[0:$]};}
+    op_cp : coverpoint tr.op;
 
     // pragma quickuvm custom coverpoints_additional begin
     // pragma quickuvm custom coverpoints_additional end

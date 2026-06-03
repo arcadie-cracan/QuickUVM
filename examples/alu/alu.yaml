@@ -19,7 +19,15 @@ agents:
       inputs:
         - {name: a,  width: 8, randomize: true}
         - {name: b,  width: 8, randomize: true}
-        - {name: op, width: 4, randomize: true}
+        # Black box: the TB declares its OWN op_e enum from the interface spec
+        # (opcode 0=ADD .. 7=SLT). It does NOT import the DUT's alu_pkg — a wrong
+        # DUT encoding would then be caught, not mirrored. The typed enum field
+        # also self-constrains randomization to the 8 legal opcodes (no sequence
+        # constraint needed).
+        - name: op
+          width: 4
+          randomize: true
+          enum: {ADD: 0, SUB: 1, AND: 2, OR: 3, XOR: 4, SLL: 5, SRL: 6, SLT: 7}
       outputs:
         - {name: result,   width: 8}
         - {name: zero,     width: 1}
