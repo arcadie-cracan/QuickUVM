@@ -84,15 +84,19 @@ Prefer **named constants — `enum` typedefs, `parameter`/`localparam`, and `` `
 in pragma regions (DUTs, golden models, constraints, coverage). A literal `4'd5` says
 nothing; `SLL` does.
 
-- **Opcodes / modes / states**: an `enum` (ideally in a shared package) — the value reads
-  by name everywhere it's used (RTL `case`, the scoreboard golden model, sequence
-  constraints, covergroup bins). See [`examples/alu/`](../examples/alu/): `alu_pkg::opcode_e`
-  is used by the DUT *and* the testbench, so `case (opcode_e'(op)) ADD: …` and
-  `op inside {[ADD:SLT]}` replace `4'd0`/`[0:7]`.
+- **Opcodes / modes / states**: an `enum` — the value reads by name everywhere it's used
+  (RTL `case`, the scoreboard golden model, sequence constraints, covergroup bins). In
+  [`examples/alu/`](../examples/alu/), the DUT names its opcodes via its own
+  `alu_pkg::opcode_e`, and the **testbench independently** declares its own `op_e` (from
+  the `enum:` config — see below), so the golden model reads `case (t.op) ADD: …` with
+  no DUT import. **Black box**: the TB's enum is a *separate* type that encodes the same
+  spec, so a wrong DUT encoding is caught, not mirrored.
 - **Widths / counts / thresholds**: a `parameter`/`localparam`, not a repeated literal.
 - A typed `enum` rand field also self-constrains randomization to its legal values — the
-  generator will do this for you once S1 (typed transaction fields) lands; until then,
-  name the constants by hand.
+  generator does this for you (**S1**): declare `enum: {NAME: value, …}` on a port and
+  QuickUVM emits the `<name>_e` typedef + a `rand <name>_e` field (no hand-written
+  `inside` constraint). Use `type:` + `project.imports` only when the TB genuinely must
+  share an external type.
 
 ## Structure (Paradigm-Works flat-package style — today's default)
 

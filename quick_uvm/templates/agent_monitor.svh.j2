@@ -49,7 +49,11 @@ class {{ agent.name }}_monitor extends uvm_monitor;
     //---------------------------------------------
     @vif.mon_cb;
 {% for kind, port in agent.all_ports %}
+{% if port.enum or port.type %}
+    void'($cast(t.{{ port.name }}, vif.mon_cb.{{ port.name }}));
+{% else %}
     t.{{ port.name }} = vif.mon_cb.{{ port.name }};
+{% endif %}
 {% endfor %}
 {% else %}
     //---------------------------------------------
@@ -57,7 +61,11 @@ class {{ agent.name }}_monitor extends uvm_monitor;
     // Sample DUT inputs now (on posedge clk)
     //---------------------------------------------
 {% for port in agent.input_ports %}
+{% if port.enum or port.type %}
+    void'($cast(t.{{ port.name }}, vif.{{ port.name }}));
+{% else %}
     t.{{ port.name }} = vif.{{ port.name }};
+{% endif %}
 {% endfor %}
 
     @vif.cb1;
@@ -76,7 +84,11 @@ class {{ agent.name }}_monitor extends uvm_monitor;
     // Uses clocking block timing
     //---------------------------------------------
 {% for port in agent.output_ports %}
+{% if port.enum or port.type %}
+    void'($cast(t.{{ port.name }}, vif.cb1.{{ port.name }}));
+{% else %}
     t.{{ port.name }} = vif.cb1.{{ port.name }};
+{% endif %}
 {% endfor %}
 {% endif %}
 

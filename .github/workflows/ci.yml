@@ -57,3 +57,14 @@ jobs:
       - name: Verible lint (generated SV/SVH)
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_tb/*.sv gen_tb/*.svh
+
+      # Also gate the S1 enum path (typed transaction fields): the alu example
+      # exercises a generated `<name>_e` typedef, a typed `rand` field, the
+      # logic->enum monitor `$cast`, and enum-aware coverpoints — none of which
+      # the plain simple_reg config covers.
+      - name: Generate the enum-field example (S1)
+        run: quick-uvm generate -c examples/alu/alu.yaml -o gen_alu
+
+      - name: Verible lint (enum-path generated SV/SVH)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_alu/*.sv gen_alu/*.svh

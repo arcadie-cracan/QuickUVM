@@ -6,15 +6,32 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
+{% for port in agent.output_ports + agent.input_ports %}
+{% if port.enum %}
+// TB-owned enum for '{{ port.name }}' (encodes the spec, not the DUT type).
+typedef enum logic [{{ port.width - 1 }}:0] {
+{% for name, val in port.enum.items() %}
+  {{ name }} = {{ port.width }}'d{{ val }}{{ "," if not loop.last }}
+{% endfor %}
+} {{ port.name }}_e;
+
+{% endif %}
+{% endfor %}
 class {{ agent.transaction }} extends uvm_sequence_item;
 {% if agent.trans_style == 'field_macros' %}
   // Field macro style (transy.svh pattern)
   `uvm_object_utils_begin({{ agent.transaction }})
 {% for port in agent.output_ports %}
+{% if port.enum %}
+    `uvm_field_enum({{ port.name }}_e, {{ port.name }}, UVM_ALL_ON | UVM_NOCOMPARE)
+{% else %}
     `uvm_field_int({{ port.name }}, UVM_ALL_ON | UVM_NOCOMPARE)
+{% endif %}
 {% endfor %}
 {% for port in agent.input_ports %}
-{% if not port.randomize %}
+{% if port.enum %}
+    `uvm_field_enum({{ port.name }}_e, {{ port.name }}, UVM_ALL_ON{% if not port.randomize %} | UVM_NOCOMPARE{% endif %})
+{% elif not port.randomize %}
     `uvm_field_int({{ port.name }}, UVM_ALL_ON | UVM_NOCOMPARE)
 {% else %}
     `uvm_field_int({{ port.name }}, UVM_ALL_ON)
@@ -27,17 +44,38 @@ class {{ agent.transaction }} extends uvm_sequence_item;
 
   // Output fields (not randomized — sampled from DUT)
 {% for port in agent.output_ports %}
+{% if port.enum or port.type %}
+       {{ port.sv_type }} {{ port.name }};
+{% else %}
        logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
+{% endif %}
 {% endfor %}
 
   // Input fields (driven to DUT)
 {% for port in agent.input_ports %}
 {% if port.randomize %}
+{% if port.enum or port.type %}
+  rand {{ port.sv_type }} {{ port.name }};
+{% else %}
   rand bit {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
+{% endif %}
+{% else %}
+{% if port.enum or port.type %}
+       {{ port.sv_type }} {{ port.name }};
 {% else %}
        bit {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
 {% endif %}
+{% endif %}
 {% endfor %}
+{% set constrained = agent.input_ports | selectattr('randomize') | selectattr('constraint') | list %}
+{% if constrained %}
+
+  constraint c_qcfg {
+{% for port in constrained %}
+    {{ port.constraint }};
+{% endfor %}
+  }
+{% endif %}
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -85,7 +123,9 @@ class {{ agent.transaction }} extends uvm_sequence_item;
   virtual function string input2string();
     string s = "";
 {% for port in agent.input_ports %}
-{% if port.width <= 4 %}
+{% if port.enum %}
+    s = {s, $sformatf("{{ port.name }}=%s  ", {{ port.name }}.name())};
+{% elif port.width <= 4 %}
     s = {s, $sformatf("{{ port.name }}=%b  ", {{ port.name }})};
 {% else %}
     s = {s, $sformatf("{{ port.name }}=%0h  ", {{ port.name }})};
@@ -97,7 +137,9 @@ class {{ agent.transaction }} extends uvm_sequence_item;
   virtual function string output2string();
     string s = "";
 {% for port in agent.output_ports %}
-{% if port.width <= 4 %}
+{% if port.enum %}
+    s = {s, $sformatf("{{ port.name }}=%s  ", {{ port.name }}.name())};
+{% elif port.width <= 4 %}
     s = {s, $sformatf("{{ port.name }}=%b  ", {{ port.name }})};
 {% else %}
     s = {s, $sformatf("{{ port.name }}=%0h  ", {{ port.name }})};
