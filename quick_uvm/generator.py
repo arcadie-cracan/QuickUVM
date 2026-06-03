@@ -79,6 +79,7 @@ class Generator:
             "analysis": cfg.analysis,
             "register_model": cfg.register_model,
             "reg_bus_agent": cfg.reg_bus_agent,
+            "virtual_sequences": cfg.virtual_sequences,
         }
 
         specs: list[FileSpec] = []
@@ -96,7 +97,7 @@ class Generator:
             }
             specs.append(FileSpec("agent_if.sv.j2", f"{agent.interface}.sv", ctx))
             specs.append(
-                FileSpec("agent_trans.svh.j2", f"{agent.transaction}.svh", ctx)
+                FileSpec("agent_trans.svh.j2", f"{agent.sequence_item}.svh", ctx)
             )
             specs.append(
                 FileSpec("agent_config.svh.j2", f"{agent.name}_config.svh", ctx)
@@ -137,6 +138,16 @@ class Generator:
                 specs.append(
                     FileSpec("agent_seq_lib.svh.j2", f"{seq.name}.svh", seq_ctx)
                 )
+
+        # ---- C2: virtual sequencer + virtual sequences -------------------
+        if cfg.virtual_sequences:
+            specs.append(FileSpec("env_vsqr.svh.j2", "env_vsqr.svh", base_ctx))
+            specs.append(
+                FileSpec("env_vseq_base.svh.j2", "env_vseq_base.svh", base_ctx)
+            )
+            for vseq in cfg.virtual_sequences:
+                vctx = {**base_ctx, "vseq": vseq}
+                specs.append(FileSpec("env_vseq.svh.j2", f"{vseq.name}.svh", vctx))
 
         # ---- tests -------------------------------------------------------
         specs.append(FileSpec("test_base.svh.j2", "test_base.svh", base_ctx))

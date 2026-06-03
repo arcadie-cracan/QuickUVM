@@ -12,7 +12,7 @@
 class tb_scoreboard extends uvm_scoreboard;
   `uvm_component_utils(tb_scoreboard)
 
-  uvm_analysis_export #({{ pa.transaction }}) axp;
+  uvm_analysis_export #({{ pa.sequence_item }}) axp;
   sb_predictor prd;
   sb_comparator cmp;
 

@@ -40,22 +40,29 @@ module top;
   // pragma quickuvm custom dut_connections begin
   // Instantiate DUT — connect to interface signals hierarchically
   {{ dut.name }} dut_inst (
-{% set primary = agents[0] %}
 {% if dut.combinational %}
-{% for kind, port in primary.all_ports %}
-    .{{ port.name }}({{ primary.interface }}_inst.{{ port.name }}){{ "," if not loop.last else "" }}
+{% set ns = namespace(conns=[]) %}
+{% for agent in agents %}
+{% for kind, port in agent.all_ports %}
+{% set ns.conns = ns.conns + [(agent.interface, port.name)] %}
+{% endfor %}
+{% endfor %}
+{% for iface, pname in ns.conns %}
+    .{{ pname }}({{ iface }}_inst.{{ pname }}){{ "," if not loop.last else "" }}
 {% endfor %}
 {% else %}
 {% set reset_port = namespace(found=false) %}
-{% for _, p in primary.all_ports %}{% if p.name == dut.reset %}{% set reset_port.found = true %}{% endif %}{% endfor %}
-{% for port in primary.output_ports %}
-    .{{ port.name }}({{ primary.interface }}_inst.{{ port.name }}),
+{% for agent in agents %}{% for _, p in agent.all_ports %}{% if p.name == dut.reset %}{% set reset_port.found = true %}{% endif %}{% endfor %}{% endfor %}
+{% for agent in agents %}
+{% for port in agent.output_ports %}
+    .{{ port.name }}({{ agent.interface }}_inst.{{ port.name }}),
 {% endfor %}
-{% for port in primary.input_ports %}
-    .{{ port.name }}({{ primary.interface }}_inst.{{ port.name }}),
+{% for port in agent.input_ports %}
+    .{{ port.name }}({{ agent.interface }}_inst.{{ port.name }}),
+{% endfor %}
 {% endfor %}
     .{{ dut.clock }}(clk){% if dut.reset and not reset_port.found %},
-    .{{ dut.reset }}({{ primary.interface }}_inst.{{ dut.reset }}){% endif %}
+    .{{ dut.reset }}({{ agents[0].interface }}_inst.{{ dut.reset }}){% endif %}
 {% endif %}
   );
   // pragma quickuvm custom dut_connections end

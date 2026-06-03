@@ -24,7 +24,7 @@ def _ag(name="bus"):
     return AgentConfig(
         name=name,
         interface=f"{name}_if",
-        transaction=f"{name}_seq_item",
+        sequence_item=f"{name}_seq_item",
         ports={
             "inputs": [PortConfig(name="addr", width=8)],
             "outputs": [PortConfig(name="data", width=8)],
@@ -108,7 +108,7 @@ def test_external_reset_rejects_agent_driven_reset():
     ag = AgentConfig(
         name="bus",
         interface="bus_if",
-        transaction="bus_seq_item",
+        sequence_item="bus_seq_item",
         ports={"inputs": [PortConfig(name="rst_n_i", width=1)], "outputs": []},
     )
     with pytest.raises(Exception, match="agent port"):
@@ -119,7 +119,7 @@ def test_external_reset_rejects_output_port_collision():
     ag = AgentConfig(
         name="bus",
         interface="bus_if",
-        transaction="bus_seq_item",
+        sequence_item="bus_seq_item",
         ports={"inputs": [], "outputs": [PortConfig(name="data", width=8)]},
     )
     with pytest.raises(Exception, match="agent port"):
@@ -153,7 +153,7 @@ def test_reset_connected_once_when_agent_port(tmp_path):
     ag = AgentConfig(
         name="bus",
         interface="bus_if",
-        transaction="bus_seq_item",
+        sequence_item="bus_seq_item",
         ports={
             "inputs": [PortConfig(name="rst_n", width=1)],
             "outputs": [PortConfig(name="data", width=8)],

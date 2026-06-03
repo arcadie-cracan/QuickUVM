@@ -13,10 +13,10 @@
 //----------------------------------------------------------------------
 {% set pa = agents[0] %}
 
-class sb_predictor extends uvm_subscriber #({{ pa.transaction }});
+class sb_predictor extends uvm_subscriber #({{ pa.sequence_item }});
   `uvm_component_utils(sb_predictor)
 
-  uvm_analysis_port #({{ pa.transaction }}) results_ap;
+  uvm_analysis_port #({{ pa.sequence_item }}) results_ap;
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -30,12 +30,12 @@ class sb_predictor extends uvm_subscriber #({{ pa.transaction }});
     results_ap = new("results_ap", this);
   endfunction
 
-  function void write({{ pa.transaction }} t);
-    {{ pa.transaction }} exp_tr;
+  function void write({{ pa.sequence_item }} t);
+    {{ pa.sequence_item }} exp_tr;
     exp_tr = sb_calc_exp(t);
     results_ap.write(exp_tr);
   endfunction
 
-  extern function {{ pa.transaction }} sb_calc_exp({{ pa.transaction }} t);
+  extern function {{ pa.sequence_item }} sb_calc_exp({{ pa.sequence_item }} t);
 
 endclass

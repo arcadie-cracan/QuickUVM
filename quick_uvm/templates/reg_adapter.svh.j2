@@ -5,7 +5,7 @@
 // Author:   {{ project.author }}
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
-// Front-door register adapter: converts uvm_reg_bus_op <-> {{ reg_bus_agent.transaction }}.
+// Front-door register adapter: converts uvm_reg_bus_op <-> {{ reg_bus_agent.sequence_item }}.
 // The protocol-specific mapping is YOUR code — fill the reg2bus / bus2reg
 // pragma sections below (field names, opcodes, paging, byte ordering).
 //----------------------------------------------------------------------
@@ -26,7 +26,7 @@ class {{ register_model.adapter }} extends uvm_reg_adapter;
 
   // Register operation -> bus transaction
   virtual function uvm_sequence_item reg2bus(const ref uvm_reg_bus_op rw);
-    {{ ba.transaction }} tr = {{ ba.transaction }}::type_id::create("reg2bus_tr");
+    {{ ba.sequence_item }} tr = {{ ba.sequence_item }}::type_id::create("reg2bus_tr");
     // pragma quickuvm custom reg2bus begin
     // TODO: map rw.kind (UVM_READ/UVM_WRITE), rw.addr, rw.data onto tr fields, e.g.:
     //   tr.cmd_opcode = (rw.kind == UVM_WRITE) ? OP_WRITE : OP_READ;
@@ -38,7 +38,7 @@ class {{ register_model.adapter }} extends uvm_reg_adapter;
 
   // Bus transaction -> register operation
   virtual function void bus2reg(uvm_sequence_item bus_item, ref uvm_reg_bus_op rw);
-    {{ ba.transaction }} tr;
+    {{ ba.sequence_item }} tr;
     if (!$cast(tr, bus_item)) begin
       `uvm_fatal("{{ register_model.adapter | upper }}", "bus2reg: unexpected bus item type")
       return;

@@ -13,7 +13,7 @@ class {{ agent.name }}_agent extends uvm_agent;
   {{ agent.name }}_config  cfg;
   virtual {{ agent.interface }} vif;
 
-  uvm_analysis_port #({{ agent.transaction }}) ap;
+  uvm_analysis_port #({{ agent.sequence_item }}) ap;
   {{ agent.name }}_driver     drv;
   {{ agent.name }}_monitor    mon;
   {{ agent.name }}_sequencer  sqr;

@@ -1,0 +1,71 @@
+project:
+  name: fifo_tb
+  author: qa@example.com
+
+# Synchronous FIFO — the multi-agent example for C2 (virtual sequences).
+# A write agent and a read agent drive two separate interfaces; virtual
+# sequences coordinate them through the env's virtual sequencer (vsqr).
+dut:
+  name: fifo
+  clock: clk
+  reset: rst_n
+  external_reset: true        # the FIFO's reset is driven by top's reset_generator
+
+clock:
+  period: 10
+  unit: ns
+
+# Suppress the default single-stream scoreboard/coverage — the FIFO is checked by
+# a two-stream model wired in the env + test pragmas (one analysis fifo per agent).
+analysis:
+  coverage: []
+  scoreboards: []
+
+agents:
+  - name: wr
+    interface: wr_if
+    sequence_item: wr_seq_item
+    seq_item_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: wr_en,   width: 1}
+        - {name: wr_data, width: 8}
+      outputs:
+        - {name: full, width: 1}
+    sequences:
+      - {name: wr_push, kind: incrementing, count: 16, field: wr_data}
+      - {name: wr_rand, kind: random, count: 32}
+  - name: rd
+    interface: rd_if
+    sequence_item: rd_seq_item
+    seq_item_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: rd_en, width: 1}
+      outputs:
+        - {name: rd_data, width: 8}
+        - {name: empty,   width: 1}
+    sequences:
+      - {name: rd_pop,  kind: random, count: 16}
+      - {name: rd_rand, kind: random, count: 32}
+
+virtual_sequences:
+  # Sequential: fill the FIFO (16 incrementing writes), then drain it (16 reads).
+  # Writes and reads are temporally separated, so the model check is exact.
+  - name: smoke_vseq
+    mode: sequential
+    body:
+      - {agent: wr, sequence: wr_push}
+      - {agent: rd, sequence: rd_pop}
+  # Parallel: concurrent random write/read soak (fork…join).
+  - name: stress_vseq
+    mode: parallel
+    body:
+      - {agent: wr, sequence: wr_rand}
+      - {agent: rd, sequence: rd_rand}
+
+tests:
+  - {name: smoke,  vseq: smoke_vseq}
+  - {name: stress, vseq: stress_vseq}

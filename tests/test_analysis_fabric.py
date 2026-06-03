@@ -27,7 +27,7 @@ def _ag(n):
     return AgentConfig(
         name=n,
         interface=f"{n}_if",
-        transaction=f"{n}_trans",
+        sequence_item=f"{n}_trans",
         ports={
             "outputs": [PortConfig(name="dout", width=8, randomize=False)],
             "inputs": [PortConfig(name="din", width=8)],

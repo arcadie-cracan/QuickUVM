@@ -24,12 +24,12 @@ from quick_uvm.models import (
 OPS = {"ADD": 0, "SUB": 1, "AND": 2, "OR": 3, "XOR": 4, "SLL": 5, "SRL": 6, "SLT": 7}
 
 
-def _ag(inputs, outputs=None, *, name="alu", trans_style="manual"):
+def _ag(inputs, outputs=None, *, name="alu", seq_item_style="manual"):
     return AgentConfig(
         name=name,
         interface=f"{name}_if",
-        transaction=f"{name}_seq_item",
-        trans_style=trans_style,
+        sequence_item=f"{name}_seq_item",
+        seq_item_style=seq_item_style,
         ports={
             "inputs": inputs,
             "outputs": outputs or [PortConfig(name="result", width=8)],
@@ -48,7 +48,7 @@ def _cfg(agent, *, imports=None):
 
 def _trans(tmp_path, agent, **kw):
     Generator(_cfg(agent, **kw)).generate_all(tmp_path)
-    return (tmp_path / f"{agent.transaction}.svh").read_text()
+    return (tmp_path / f"{agent.sequence_item}.svh").read_text()
 
 
 # ---- enum field (black box) ------------------------------------------------
@@ -85,7 +85,9 @@ def test_enum_output_field_uses_type(tmp_path):
 
 
 def test_enum_field_macro_uses_uvm_field_enum(tmp_path):
-    agent = _ag([PortConfig(name="op", width=4, enum=OPS)], trans_style="field_macros")
+    agent = _ag(
+        [PortConfig(name="op", width=4, enum=OPS)], seq_item_style="field_macros"
+    )
     txt = _trans(tmp_path, agent)
     assert "`uvm_field_enum(op_e, op, UVM_ALL_ON)" in txt
     assert "`uvm_field_int(op," not in txt  # not the int macro
@@ -95,7 +97,7 @@ def test_enum_output_field_macro_nocompare(tmp_path):
     agent = _ag(
         [PortConfig(name="a", width=8)],
         outputs=[PortConfig(name="status", width=2, enum={"OK": 0, "ERR": 1})],
-        trans_style="field_macros",
+        seq_item_style="field_macros",
     )
     txt = _trans(tmp_path, agent)
     assert "`uvm_field_enum(status_e, status, UVM_ALL_ON | UVM_NOCOMPARE)" in txt
@@ -213,7 +215,7 @@ def _agent_with(inputs, outputs):
     return AgentConfig(
         name="alu",
         interface="alu_if",
-        transaction="alu_seq_item",
+        sequence_item="alu_seq_item",
         ports={"inputs": inputs, "outputs": outputs},
     )
 

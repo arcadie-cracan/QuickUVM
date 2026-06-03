@@ -11,7 +11,7 @@ class {{ agent.name }}_monitor extends uvm_monitor;
 
   virtual {{ agent.interface }} vif;
 
-  uvm_analysis_port #({{ agent.transaction }}) ap;
+  uvm_analysis_port #({{ agent.sequence_item }}) ap;
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -26,7 +26,7 @@ class {{ agent.name }}_monitor extends uvm_monitor;
   endfunction
 
   task run_phase(uvm_phase phase);
-    {{ agent.transaction }} tr;
+    {{ agent.sequence_item }} tr;
 {% if dut.external_reset %}
     // Reset is driven externally: do not emit transactions until it deasserts, then
     // resync to the clock grid (sample_dut() assumes it starts at a posedge clk).
@@ -39,9 +39,9 @@ class {{ agent.name }}_monitor extends uvm_monitor;
     end
   endtask
 
-  task sample_dut (output {{ agent.transaction }} tr);
-    {{ agent.transaction }} t;
-    t = {{ agent.transaction }}::type_id::create("t");
+  task sample_dut (output {{ agent.sequence_item }} tr);
+    {{ agent.sequence_item }} t;
+    t = {{ agent.sequence_item }}::type_id::create("t");
 {% if dut.combinational %}
     //---------------------------------------------
     // Combinational DUT (0-cycle latency): one race-free snapshot of inputs AND

@@ -14,11 +14,11 @@
 //----------------------------------------------------------------------
 {% set pa = agents[0] %}
 
-function {{ pa.transaction }} sb_predictor::sb_calc_exp({{ pa.transaction }} t);
+function {{ pa.sequence_item }} sb_predictor::sb_calc_exp({{ pa.sequence_item }} t);
   // Declare static state variables needed between calls
   // static logic [W-1:0] ex_prev;
 
-  {{ pa.transaction }} extr = {{ pa.transaction }}::type_id::create("extr");
+  {{ pa.sequence_item }} extr = {{ pa.sequence_item }}::type_id::create("extr");
 
   `uvm_info("CALC #1", t.convert2string(), UVM_FULL)
 

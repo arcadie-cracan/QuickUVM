@@ -5,7 +5,7 @@
 // Author:   {{ project.author }}
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
-// Custom register front-door: drives the bus agent ({{ reg_bus_agent.transaction }})
+// Custom register front-door: drives the bus agent ({{ reg_bus_agent.sequence_item }})
 // to perform one register access, implementing the protocol specifics that a 1:1
 // uvm_reg_adapter cannot (e.g. address paging, pipelined reads, multi-byte access).
 //
@@ -26,7 +26,7 @@ class {{ register_model.frontdoor }} extends uvm_reg_frontdoor;
   endfunction
 
   virtual task body();
-    {{ ba.transaction }} req;
+    {{ ba.sequence_item }} req;
     uvm_reg          rg;
     uvm_reg_addr_t   addr;
     if (!$cast(rg, rw_info.element)) begin
