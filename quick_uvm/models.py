@@ -202,6 +202,41 @@ class TestSeqSel(BaseModel):
     name: str
 
 
+class VseqStep(BaseModel):
+    """One sub-sequence start inside a virtual sequence (C2)."""
+
+    agent: str
+    sequence: str  # a library sequence of `agent`, or its default <agent>_sequence
+
+
+class VseqConfig(BaseModel):
+    """A virtual sequence: coordinates per-agent sub-sequences via the vsqr (C2).
+
+    `mode: sequential` starts the steps in order; `parallel` starts them in a
+    fork…join. Each step targets an active agent's sequencer through the
+    `env_vsqr` handles. Opt-in: declaring any `vsequences` generates env_vsqr +
+    env_vseq_base; absent ⇒ no virtual-sequence layer (byte-identical).
+    """
+
+    name: str
+    mode: Literal["sequential", "parallel"] = "sequential"
+    body: list[VseqStep] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        _check_sv_identifier(v, "vsequence name")
+        return v
+
+    @model_validator(mode="after")
+    def _check_body(self) -> VseqConfig:
+        if not self.body:
+            raise ValueError(
+                f"vsequence '{self.name}': declare at least one step in 'body'."
+            )
+        return self
+
+
 class AgentConfig(BaseModel):
     name: str
     interface: str
@@ -325,6 +360,8 @@ class TestConfig(BaseModel):
     # S2 — run a selected agent-library sequence instead of the default
     # <primary>_sequence. None ⇒ today's behavior (byte-identical).
     sequence: TestSeqSel | None = None
+    # C2 — run a virtual sequence on the env's vsqr (coordinates >=2 agents).
+    vseq: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -332,6 +369,15 @@ class TestConfig(BaseModel):
         if " " in v:
             raise ValueError(f"Test name '{v}' must not contain spaces.")
         return v
+
+    @model_validator(mode="after")
+    def _check_stimulus(self) -> TestConfig:
+        if self.sequence is not None and self.vseq is not None:
+            raise ValueError(
+                f"test '{self.name}': set either 'sequence' (single-agent) or 'vseq' "
+                f"(virtual sequence), not both."
+            )
+        return self
 
 
 class ScoreboardSpec(BaseModel):
@@ -511,6 +557,7 @@ class ProjectConfig(BaseModel):
     analysis: AnalysisConfig | None = None
     register_model: RegisterModelConfig | None = None
     coverage_models: list[CoverageModel] = Field(default_factory=list)
+    vsequences: list[VseqConfig] = Field(default_factory=list)  # C2
 
     @model_validator(mode="after")
     def validate_agents(self) -> ProjectConfig:
@@ -637,6 +684,43 @@ class ProjectConfig(BaseModel):
                 raise ValueError(
                     f"test '{t.name}': sequence selector targets passive agent "
                     f"'{sel.agent}' — a passive agent builds no sequencer to run on."
+                )
+        # C2 — virtual sequences
+        agents_by_name = {a.name: a for a in self.agents}
+        vseq_names: set[str] = set()
+        for vs in self.vsequences:
+            if vs.name in vseq_names:
+                raise ValueError(f"vsequences: duplicate vsequence name '{vs.name}'.")
+            vseq_names.add(vs.name)
+            if vs.name == "env_vseq_base":
+                raise ValueError(
+                    "vsequences: name 'env_vseq_base' is reserved — choose another."
+                )
+            for step in vs.body:
+                ag_obj = agents_by_name.get(step.agent)
+                if ag_obj is None:
+                    raise ValueError(
+                        f"vsequence '{vs.name}': step references unknown agent "
+                        f"'{step.agent}'."
+                    )
+                if not ag_obj.active:
+                    raise ValueError(
+                        f"vsequence '{vs.name}': step targets passive agent "
+                        f"'{step.agent}' — no sequencer is built for it."
+                    )
+                valid_seqs = {s.name for s in ag_obj.sequences} | {
+                    f"{ag_obj.name}_sequence"
+                }
+                if step.sequence not in valid_seqs:
+                    raise ValueError(
+                        f"vsequence '{vs.name}': step sequence '{step.sequence}' is "
+                        f"not a library sequence of agent '{step.agent}' (nor its "
+                        f"default '{ag_obj.name}_sequence')."
+                    )
+        for t in self.tests:
+            if t.vseq is not None and t.vseq not in vseq_names:
+                raise ValueError(
+                    f"test '{t.name}': vseq '{t.vseq}' is not a declared vsequence."
                 )
         return self
 

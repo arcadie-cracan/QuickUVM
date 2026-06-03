@@ -77,3 +77,13 @@ jobs:
       - name: Verible lint (sequence-library generated SV/SVH)
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_bs/*.sv gen_bs/*.svh
+
+      # Gate the C2 virtual-sequence path: the multi-agent fifo example generates
+      # env_vsqr / env_vseq_base / sequential + parallel virtual sequences and a
+      # two-interface DUT connection.
+      - name: Generate the multi-agent example (C2)
+        run: quick-uvm generate -c examples/fifo/fifo.yaml -o gen_fifo
+
+      - name: Verible lint (virtual-sequence generated SV/SVH)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_fifo/*.sv gen_fifo/*.svh

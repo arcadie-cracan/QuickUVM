@@ -187,6 +187,25 @@ test → sequence selection (replace the bare `num_items`).
 multi-interface DUT (i.e. most DUTs).
 **Accept:** a vseq coordinating ≥2 agents.
 
+**Status — landed:**
+- `vsequences:` → QuickUVM generates `env_vsqr` (a handle to each active agent's
+  sequencer, wired in `env.connect_phase`), `env_vseq_base`
+  (`` `uvm_declare_p_sequencer(env_vsqr) ``), and one class per vsequence whose body
+  starts per-agent sub-sequences `sequential` (in order) or `parallel` (`fork…join`).
+- `tests[].sequence` vs `tests[].vseq` select single-agent vs virtual-sequence
+  stimulus (mutually exclusive); a vseq runs on `e.vsqr`.
+- The default `top.sv` DUT connection now wires **all** agents' ports (was
+  primary-only), so a multi-interface DUT connects out of the box.
+- Fail-closed validation: vseq names are legal/unique/non-reserved; steps target an
+  active agent and an existing library (or default) sequence; a test's vseq must exist.
+- Byte-identical when absent. Validated on `examples/fifo/` (a 2-agent synchronous
+  FIFO): the sequential `smoke_vseq` passes a **strict data-integrity check**
+  (16/16, 0 errors) and the parallel `stress_vseq` runs a concurrent soak — both on
+  Xcelium; verible-lint-clean; CI gates it.
+- *Note:* strict checking of the concurrent stream uses a hand-wired two-stream
+  model (one analysis fifo per agent) — the generalized cycle-aligned multi-stream
+  scoreboard is roadmap **A2**.
+
 ### K0 — Reference-model / DPI-C predictor seam  *(checker; inspired by HDL Verifier)*
 The scoreboard predictor is the biggest hand-written-effort sink in a real bench, and
 UVMF/Easier UVM leave it entirely to the user. Rather than synthesize a predictor,

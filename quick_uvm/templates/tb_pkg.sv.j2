@@ -54,6 +54,10 @@ package tb_pkg;
   `include "{{ register_model.frontdoor }}.svh"
 {% endif %}
 {% endif %}
+{% if vsequences %}
+  `include "env_vsqr.svh"
+  `include "env_vseq_base.svh"
+{% endif %}
   `include "env.svh"
 
   // Sequences (per agent)
@@ -62,6 +66,9 @@ package tb_pkg;
 {% for seq in agent.sequences %}
   `include "{{ seq.name }}.svh"
 {% endfor %}
+{% endfor %}
+{% for vseq in vsequences %}
+  `include "{{ vseq.name }}.svh"
 {% endfor %}
   // pragma quickuvm custom sequences_additional begin
   // pragma quickuvm custom sequences_additional end

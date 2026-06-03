@@ -6,12 +6,15 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 {% set pa = agents[0] %}
-{% if test.sequence %}
+{% if test.vseq %}
+{% set seq_type = test.vseq %}
+{% set seq_start = 'e.vsqr' %}
+{% elif test.sequence %}
 {% set seq_type = test.sequence.name %}
-{% set seq_sqr = test.sequence.agent %}
+{% set seq_start = 'e.' ~ test.sequence.agent ~ '_agnt.sqr' %}
 {% else %}
 {% set seq_type = pa.name ~ '_sequence' %}
-{% set seq_sqr = pa.name %}
+{% set seq_start = 'e.' ~ pa.name ~ '_agnt.sqr' %}
 {% endif %}
 
 class {{ test.name }} extends test_base;
@@ -33,7 +36,7 @@ class {{ test.name }} extends test_base;
     //----------------------------------------------------
     phase.raise_objection(this);
     `uvm_info("{{ test.name }}", "about to start seq", UVM_FULL)
-    seq.start(e.{{ seq_sqr }}_agnt.sqr);
+    seq.start({{ seq_start }});
     // pragma quickuvm custom run_phase_additional begin
     // pragma quickuvm custom run_phase_additional end
     phase.drop_objection(this);
