@@ -1,0 +1,9 @@
+define XMSIMRC	( /opt/tools/lnx86/x86_64/CDN_DEPOT/XCELIUM_DEPOT/XCELIUM_25.09.002/tools/xcelium/files/xmsimrc, ~/.xmsimrc )
+define AMSRC	( /opt/tools/lnx86/x86_64/CDN_DEPOT/XCELIUM_DEPOT/XCELIUM_25.09.002/tools/xcelium/files/amsrc, ~/.amsrc )
+include ./hdlrun.var
+define SNAPSHOT worklib.top:sv
+DEFINE RUNMODEDEFAULT 1
+DEFINE LIB_MAP (  => worklib )
+DEFINE LIB_MAP ($LIB_MAP, + => worklib )
+define ELAB_SNAPSHOT
+define SNAPSHOT worklib.top:sv

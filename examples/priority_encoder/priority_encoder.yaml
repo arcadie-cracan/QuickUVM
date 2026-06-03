@@ -1,0 +1,26 @@
+project:
+  name: priority_encoder_tb
+  author: qa@example.com
+dut:
+  name: priority_encoder
+  clock: clk
+  reset: ''
+  combinational: true
+clock:
+  period: 10
+  unit: ns
+agents:
+  - name: pe
+    interface: pe_if
+    transaction: pe_seq_item
+    trans_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: req, width: 8, randomize: true}
+      outputs:
+        - {name: idx,   width: 3}
+        - {name: valid, width: 1}
+tests:
+  - name: rand_test
+    num_items: 500

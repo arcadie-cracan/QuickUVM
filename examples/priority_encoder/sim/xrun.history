@@ -1,0 +1,4 @@
+#e1(03Jun2026:08:55:48): source ./xcelium.d/env.d/env.history.03Jun2026_08_55_48
+s1(03Jun2026:08:55:48):  xrun -f xrun.f +UVM_TESTNAME=rand_test +UVM_VERBOSITY=UVM_LOW 
+#e2(03Jun2026:08:56:28): source ./xcelium.d/env.d/env.history.03Jun2026_08_56_28
+s2(03Jun2026:08:56:28):  xrun -f xrun.f +UVM_TESTNAME=rand_test +UVM_VERBOSITY=UVM_LOW 
