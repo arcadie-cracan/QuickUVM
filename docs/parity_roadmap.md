@@ -90,6 +90,27 @@ Verible-lint clean for the external path. Covered by `tests/test_external_reset.
 Note: the monitor's protocol-specific framing/sampling robustness (the SPI "blind loop")
 stays user pragma code — the generic skeleton can't know the protocol.
 
+## Combinational DUT support — DONE
+
+From the example-library effort (`examples/barrel_shifter/`): pure combinational blocks
+(no clock/state) are a flexibility stress test for a clock-centric generator. Opt-in
+`dut.combinational: bool = false`. When true: the generated clock is kept as a TB
+**cadence** (one vector/cycle) but NOT connected to the DUT; the DUT stub is
+`always_comb`; and the monitor samples inputs AND outputs **together** (0-cycle latency)
+race-free through a dedicated **monitor clocking block** (`mon_cb`, all signals
+`input #1step`) — vs the default monitor's input→`@cb1`→output pattern that suits a
+registered (1-cycle-latency) DUT. The cadence period must exceed the DUT's combinational
+settling time (it also gives glitch-free, delay-tolerant sampling). Mutually exclusive
+with `external_reset`. Byte-identical when false. Validated end-to-end: a parameterized
+barrel shifter passes 501/501 on Xcelium with zero clock/monitor manual edits (only the
+golden model + op constraint are user code). Covered by `tests/test_combinational.py`.
+
+**Follow-up to evaluate:** the `mon_cb` race-free sampling is currently scoped to
+combinational. Making it the default for *registered* monitors too (sampling driven
+inputs through a clocking block instead of raw) would harden every generated monitor —
+but it changes the input↔output alignment handling and is not byte-identical, so it needs
+its own decision + validation.
+
 ## Priority tier 1 — the universal pillars (general-DV leverage)
 
 ### S1 — Rich transaction / constraint modeling  *(highest leverage; stimulus)*

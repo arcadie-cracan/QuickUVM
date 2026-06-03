@@ -1,0 +1,31 @@
+project:
+  name: barrel_shifter_tb
+  author: qa@example.com
+
+dut:
+  name: barrel_shifter
+  clock: clk           # testbench cadence only — the DUT is combinational
+  reset: ''            # no reset
+  combinational: true  # purely combinational DUT
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: bs
+    interface: bs_if
+    transaction: bs_seq_item
+    trans_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: data_in, width: 32, randomize: true}
+        - {name: amt,     width: 5,  randomize: true}
+        - {name: op,      width: 3,  randomize: true}
+      outputs:
+        - {name: data_out, width: 32}
+
+tests:
+  - name: rand_test
+    num_items: 500

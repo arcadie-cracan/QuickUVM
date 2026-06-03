@@ -68,6 +68,13 @@ class DutConfig(BaseModel):
     # Flipping true->false later removes the reset_generator pragma region, so
     # regeneration is fail-closed (re-run with --allow-drop to discard it).
     external_reset: bool = False
+    # Opt-in: the DUT is purely COMBINATIONAL (no clock/reset of its own). The
+    # generated clock is kept as a testbench cadence (one vector/cycle), but it
+    # is NOT connected to the DUT; the DUT stub is always_comb; and the monitor
+    # samples inputs AND outputs together (0-cycle latency) race-free through a
+    # dedicated monitor clocking block. The cadence period (clock.period) must
+    # exceed the DUT's combinational settling time.
+    combinational: bool = False
 
 
 class ClockConfig(BaseModel):
@@ -198,6 +205,11 @@ class ProjectConfig(BaseModel):
                     f"agent port. An external reset must not also be an agent port — "
                     f"remove it from the agent ports or unset external_reset."
                 )
+        if self.dut.combinational and self.dut.external_reset:
+            raise ValueError(
+                "dut.combinational and dut.external_reset are mutually exclusive "
+                "(a combinational DUT has no reset)."
+            )
         return self
 
     @property

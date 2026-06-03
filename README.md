@@ -116,6 +116,12 @@ dut:
                          # as an interface port, generates a reset_generator in top,
                          # and reset-gates the driver + monitor. Leave false when the
                          # reset is an agent input port or handled in user pragma code.
+  combinational: false   # opt-in: the DUT is purely combinational (no clock/reset).
+                         # The clock is kept as a TB cadence (one vector/cycle) but
+                         # NOT connected to the DUT; the stub is always_comb; and the
+                         # monitor samples inputs+outputs together (0-cycle latency)
+                         # race-free via a monitor clocking block. The cadence period
+                         # must exceed the DUT's combinational settling time.
 
 clock:
   period: 10

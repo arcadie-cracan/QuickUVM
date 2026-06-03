@@ -35,4 +35,15 @@ interface {{ agent.interface }} (input clk{% if dut.external_reset %}, input {{ 
     // pragma quickuvm custom clocking_block_additional begin
     // pragma quickuvm custom clocking_block_additional end
   endclocking
+{% if dut.combinational %}
+
+  // Monitor clocking block: sample ALL observed signals (driven inputs AND DUT
+  // outputs) race-free at #1step before posedge — one consistent snapshot/cycle.
+  clocking mon_cb @(posedge clk);
+    default input #1step;
+{% for kind, port in agent.all_ports %}
+    input {{ port.name }};
+{% endfor %}
+  endclocking
+{% endif %}
 endinterface

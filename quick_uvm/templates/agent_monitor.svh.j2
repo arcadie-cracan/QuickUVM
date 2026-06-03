@@ -42,6 +42,16 @@ class {{ agent.name }}_monitor extends uvm_monitor;
   task sample_dut (output {{ agent.transaction }} tr);
     {{ agent.transaction }} t;
     t = {{ agent.transaction }}::type_id::create("t");
+{% if dut.combinational %}
+    //---------------------------------------------
+    // Combinational DUT (0-cycle latency): one race-free snapshot of inputs AND
+    // outputs taken together through the monitor clocking block.
+    //---------------------------------------------
+    @vif.mon_cb;
+{% for kind, port in agent.all_ports %}
+    t.{{ port.name }} = vif.mon_cb.{{ port.name }};
+{% endfor %}
+{% else %}
     //---------------------------------------------
     // Assumption: sample_dut() is already sync-ed to posedge clk
     // Sample DUT inputs now (on posedge clk)
@@ -68,6 +78,7 @@ class {{ agent.name }}_monitor extends uvm_monitor;
 {% for port in agent.output_ports %}
     t.{{ port.name }} = vif.cb1.{{ port.name }};
 {% endfor %}
+{% endif %}
 
     // pragma quickuvm custom sample_dut_additional begin
     // pragma quickuvm custom sample_dut_additional end

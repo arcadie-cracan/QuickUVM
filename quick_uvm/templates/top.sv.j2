@@ -41,6 +41,11 @@ module top;
   // Instantiate DUT — connect to interface signals hierarchically
   {{ dut.name }} dut_inst (
 {% set primary = agents[0] %}
+{% if dut.combinational %}
+{% for kind, port in primary.all_ports %}
+    .{{ port.name }}({{ primary.interface }}_inst.{{ port.name }}){{ "," if not loop.last else "" }}
+{% endfor %}
+{% else %}
 {% set reset_port = namespace(found=false) %}
 {% for _, p in primary.all_ports %}{% if p.name == dut.reset %}{% set reset_port.found = true %}{% endif %}{% endfor %}
 {% for port in primary.output_ports %}
@@ -51,6 +56,7 @@ module top;
 {% endfor %}
     .{{ dut.clock }}(clk){% if dut.reset and not reset_port.found %},
     .{{ dut.reset }}({{ primary.interface }}_inst.{{ dut.reset }}){% endif %}
+{% endif %}
   );
   // pragma quickuvm custom dut_connections end
 

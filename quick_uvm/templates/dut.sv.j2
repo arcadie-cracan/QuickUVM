@@ -10,6 +10,12 @@
 
 module {{ dut.name }} (
 {% set primary = agents[0] %}
+{% if dut.combinational %}
+{% for kind, port in primary.all_ports %}
+  {{ 'output logic ' if kind == 'output' else 'input  ' }}{% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }}{{ "," if not loop.last else "" }}
+{% endfor %}
+  );
+{% else %}
 {% for port in primary.output_ports %}
   output logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }},
 {% endfor %}
@@ -18,8 +24,17 @@ module {{ dut.name }} (
 {% endfor %}
   input               {{ dut.clock }}{% if dut.reset %},
   input               {{ dut.reset }}{% endif %});
+{% endif %}
 
   // pragma quickuvm custom dut_logic begin
+{% if dut.combinational %}
+  // Combinational stub — replace with your real combinational DUT.
+  always_comb begin
+{% for port in primary.output_ports %}
+    {{ port.name }} = '0;
+{% endfor %}
+  end
+{% else %}
 {% for port in primary.output_ports %}
   logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}r_{{ port.name }};
 {% endfor %}
@@ -52,6 +67,7 @@ module {{ dut.name }} (
     end
 {% endif %}
   end
+{% endif %}
   // pragma quickuvm custom dut_logic end
 
 endmodule
