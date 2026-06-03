@@ -41,3 +41,5 @@ dvt_build.log
 **/sim/.simvision/
 **/sim/INCA_libs/
 **/sim/waves.shm/
+**/sim/cov_work/
+**/sim/*.key

@@ -140,8 +140,24 @@ constraints generates and randomizes.
 ### V1 — Functional coverage from fields  *(highest leverage; coverage)*
 Derive a real covergroup from the transaction/config fields the generator already has:
 config-driven coverpoints + bins, optional crosses, sampled from the monitor's analysis
-write. Opt-in `coverage_model:` block; default stays the empty stub.
+write. Opt-in `coverage_models:` block; default stays the generic stub.
 **Accept:** coverpoints/bins for a transaction's fields generate and accumulate.
+
+**Status — first slice landed (config-driven covergroup):**
+- `coverage_models:` (a list, one entry per agent) → QuickUVM generates a real
+  covergroup in `<agent>_cover`: config-driven coverpoints with named **bins**
+  (`value` / `range` / `values`), **enum fields auto-bin** one-per-label, **crosses**
+  (`[a, b]` → `a_x_b : cross a_cp, b_cp`), and per-coverpoint `at_least`. Sampled on
+  the existing monitor analysis write — no new plumbing.
+- Fail-closed validation: field must be a port of the agent; bin values must fit the
+  field width; a wide (>1-bit) plain field requires explicit bins (no vague
+  auto-partition); a cross must reference declared coverpoints.
+- Byte-identical when absent (the generic `bins x[8] = {[0:$]}` stub stays).
+- **Black box**: bins encode the spec's interesting values (corners/ranges), not DUT
+  internals. Validated on `examples/alu/` — 28/64 bins, 55.56% after 1001 random
+  vectors on Xcelium; verible-clean; CI gates it (the alu lint step).
+- *Remaining:* `illegal_bins`/`ignore_bins`, transition bins (`=>`), per-bin cross
+  selection (`binsof`), width-derived auto-bins, `option.goal` / coverage reports.
 
 ### S2 — Sequence library
 Generate more than one base sequence: a small library (incrementing/random/directed),

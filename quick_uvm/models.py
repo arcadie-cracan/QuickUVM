@@ -2,11 +2,86 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+# A pragmatic subset of SystemVerilog reserved words a user might accidentally use
+# as a coverage bin name. Not exhaustive (IEEE 1800 has ~250); the identifier-format
+# check below catches the rest of the common mistakes (spaces, hyphens, leading digit).
+_SV_KEYWORDS = frozenset(
+    {
+        "begin",
+        "end",
+        "bit",
+        "logic",
+        "reg",
+        "wire",
+        "byte",
+        "int",
+        "integer",
+        "shortint",
+        "longint",
+        "real",
+        "shortreal",
+        "time",
+        "string",
+        "enum",
+        "struct",
+        "union",
+        "signed",
+        "unsigned",
+        "void",
+        "type",
+        "typedef",
+        "if",
+        "else",
+        "case",
+        "casex",
+        "casez",
+        "for",
+        "while",
+        "do",
+        "repeat",
+        "foreach",
+        "return",
+        "break",
+        "continue",
+        "default",
+        "with",
+        "inside",
+        "bins",
+        "illegal_bins",
+        "ignore_bins",
+        "wildcard",
+        "cross",
+        "coverpoint",
+        "covergroup",
+        "option",
+        "iff",
+        "class",
+        "module",
+        "function",
+        "task",
+    }
+)
+_SV_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _check_sv_identifier(name: str, what: str) -> None:
+    """Raise unless `name` is a legal, non-reserved SystemVerilog identifier."""
+    if not _SV_IDENT_RE.match(name):
+        raise ValueError(
+            f"{what} '{name}' is not a legal SystemVerilog identifier "
+            f"(letters/digits/underscore, not starting with a digit)."
+        )
+    if name in _SV_KEYWORDS:
+        raise ValueError(
+            f"{what} '{name}' is a SystemVerilog reserved word — choose another name."
+        )
 
 
 class PortConfig(BaseModel):
@@ -195,6 +270,115 @@ class AnalysisConfig(BaseModel):
     scoreboards: list[ScoreboardSpec] = Field(default_factory=list)
 
 
+class CoverageBin(BaseModel):
+    """One named bin of a coverpoint — exactly one of value/range/values."""
+
+    name: str
+    value: int | None = None
+    range: tuple[int, int] | None = None  # inclusive [lo, hi]
+    values: list[int] | None = None
+
+    @model_validator(mode="after")
+    def _check_one(self) -> CoverageBin:
+        _check_sv_identifier(self.name, "coverage bin name")
+        n_set = sum(x is not None for x in (self.value, self.range, self.values))
+        if n_set != 1:
+            raise ValueError(
+                f"coverage bin '{self.name}': set exactly one of 'value', 'range', "
+                f"or 'values'."
+            )
+        if self.range is not None and self.range[0] > self.range[1]:
+            raise ValueError(
+                f"coverage bin '{self.name}': range low {self.range[0]} > high "
+                f"{self.range[1]}."
+            )
+        if self.values is not None and not self.values:
+            raise ValueError(f"coverage bin '{self.name}': 'values' must be non-empty.")
+        return self
+
+    def all_values(self) -> list[int]:
+        """Every concrete value the bin references (for width range-checking)."""
+        if self.value is not None:
+            return [self.value]
+        if self.range is not None:
+            return [self.range[0], self.range[1]]
+        return list(self.values or [])
+
+    @property
+    def sv_bin(self) -> str:
+        """The SystemVerilog bin set-expression (the `{...}` content)."""
+        if self.value is not None:
+            return f"{{{self.value}}}"
+        if self.range is not None:
+            return f"{{[{self.range[0]}:{self.range[1]}]}}"
+        return "{" + ", ".join(str(v) for v in (self.values or [])) + "}"
+
+
+class Coverpoint(BaseModel):
+    field: str  # must name a port on the covered agent
+    bins: list[CoverageBin] = Field(default_factory=list)
+    at_least: int | None = None  # per-coverpoint override of cg option.at_least
+
+    @model_validator(mode="after")
+    def _check_cp(self) -> Coverpoint:
+        if self.at_least is not None and self.at_least < 1:
+            raise ValueError(
+                f"coverpoint '{self.field}': at_least must be >= 1 (got "
+                f"{self.at_least})."
+            )
+        seen: set[str] = set()
+        for b in self.bins:
+            if b.name in seen:
+                raise ValueError(
+                    f"coverpoint '{self.field}': duplicate bin name '{b.name}'."
+                )
+            seen.add(b.name)
+        return self
+
+
+class CoverageModel(BaseModel):
+    """Opt-in functional coverage model for one agent (V1).
+
+    Generates a real covergroup (config-driven coverpoints + bins + crosses) in
+    <agent>_cover, replacing the generic auto-bin stub. Sampled on the monitor's
+    analysis write (no new plumbing). Black box: bins encode the spec's
+    interesting values independently of the DUT's internals.
+    """
+
+    agent: str
+    coverpoints: list[Coverpoint] = Field(default_factory=list)
+    crosses: list[list[str]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_shape(self) -> CoverageModel:
+        if not self.coverpoints:
+            raise ValueError(
+                f"coverage_model for agent '{self.agent}': declare at least one "
+                f"coverpoint."
+            )
+        cp_fields: set[str] = set()
+        for cp in self.coverpoints:
+            if cp.field in cp_fields:
+                raise ValueError(
+                    f"coverage_model for agent '{self.agent}': duplicate coverpoint "
+                    f"for field '{cp.field}' (each field gets one coverpoint)."
+                )
+            cp_fields.add(cp.field)
+        for cr in self.crosses:
+            if len(cr) < 2:
+                raise ValueError(
+                    f"coverage_model for agent '{self.agent}': a cross needs >= 2 "
+                    f"fields, got {cr}."
+                )
+            for f in cr:
+                if f not in cp_fields:
+                    raise ValueError(
+                        f"coverage_model for agent '{self.agent}': cross references "
+                        f"'{f}', which is not a declared coverpoint."
+                    )
+        return self
+
+
 class RegisterModelConfig(BaseModel):
     """Opt-in front-door register-model (RAL) integration (C4a).
 
@@ -246,6 +430,7 @@ class ProjectConfig(BaseModel):
     tests: list[TestConfig] = Field(default_factory=lambda: [TestConfig(name="test1")])
     analysis: AnalysisConfig | None = None
     register_model: RegisterModelConfig | None = None
+    coverage_models: list[CoverageModel] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_agents(self) -> ProjectConfig:
@@ -254,6 +439,7 @@ class ProjectConfig(BaseModel):
             raise ValueError("Agent names must be unique.")
         if not self.agents:
             raise ValueError("At least one agent must be defined.")
+        agent_name_set = set(names)
         if self.analysis is not None:
             agent_names = set(names)
             for ag in self.analysis.coverage:
@@ -298,7 +484,63 @@ class ProjectConfig(BaseModel):
                 "dut.combinational and dut.external_reset are mutually exclusive "
                 "(a combinational DUT has no reset)."
             )
+        # Which agents actually get a <agent>_cover instance in the env: the
+        # listed agents when an analysis block is present, else just the primary.
+        # A coverage model on any other agent would compile but never be sampled.
+        covered_agents = (
+            set(self.analysis.coverage) if self.analysis else {self.agents[0].name}
+        )
+        seen_cov: set[str] = set()
+        for cm in self.coverage_models:
+            if cm.agent not in agent_name_set:
+                raise ValueError(
+                    f"coverage_models references unknown agent '{cm.agent}'."
+                )
+            if cm.agent in seen_cov:
+                raise ValueError(
+                    f"coverage_models: duplicate model for agent '{cm.agent}'."
+                )
+            seen_cov.add(cm.agent)
+            if cm.agent not in covered_agents:
+                hint = (
+                    f"add '{cm.agent}' to analysis.coverage"
+                    if self.analysis
+                    else f"only the primary agent '{self.agents[0].name}' is covered "
+                    f"by default — add an analysis.coverage list to cover others"
+                )
+                raise ValueError(
+                    f"coverage_model[{cm.agent}]: agent '{cm.agent}' has a coverage "
+                    f"model but is not wired for coverage ({hint})."
+                )
+            agent = next(a for a in self.agents if a.name == cm.agent)
+            port_by_name = {p.name: p for _, p in agent.all_ports}
+            for cp in cm.coverpoints:
+                if cp.field not in port_by_name:
+                    raise ValueError(
+                        f"coverage_model[{cm.agent}]: coverpoint field '{cp.field}' is "
+                        f"not a port of agent '{cm.agent}'."
+                    )
+                port = port_by_name[cp.field]
+                if not cp.bins and not port.enum and port.width > 1:
+                    raise ValueError(
+                        f"coverage_model[{cm.agent}]: coverpoint '{cp.field}' "
+                        f"({port.width} bits) needs explicit bins (auto-partition is "
+                        f"only for enum/1-bit fields)."
+                    )
+                hi = (1 << port.width) - 1
+                for b in cp.bins:
+                    for v in b.all_values():
+                        if not (0 <= v <= hi):
+                            raise ValueError(
+                                f"coverage_model[{cm.agent}]: bin '{b.name}' on "
+                                f"'{cp.field}' has value {v} outside 0..{hi} "
+                                f"({port.width} bits)."
+                            )
         return self
+
+    def coverage_model_for(self, agent_name: str) -> CoverageModel | None:
+        """The coverage model targeting `agent_name`, if any (V1)."""
+        return next((c for c in self.coverage_models if c.agent == agent_name), None)
 
     @property
     def reg_bus_agent(self) -> AgentConfig | None:
