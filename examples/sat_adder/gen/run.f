@@ -1,12 +1,10 @@
--timescale 1{{ clock.unit }}/1{{ clock.unit }}
+-timescale 1ns/1ns
 -f pkg.f
 +incdir+..
 clkgen.sv
-{{ dut.name }}.sv
+sat_adder.sv
 tb_top.sv
-{% if reference_model.language == 'c' %}
-{{ dut.name }}_reference_model.c
-{% endif %}
+sat_adder_reference_model.c
 -y . +libext+.sv
 
 // Add extra sim args, incdirs or sources below (preserved across regeneration):

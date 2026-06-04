@@ -87,3 +87,12 @@ jobs:
       - name: Verible lint (virtual-sequence generated SV/SVH)
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_fifo/*.sv gen_fifo/*.svh
+
+      # Gate the K0 DPI-C reference-model path: the sat_adder example generates the
+      # SV marshaling bridge (import "DPI-C" ...) + a C stub. Lint the generated SV.
+      - name: Generate the DPI-C reference-model example (K0)
+        run: quick-uvm generate -c examples/sat_adder/sat_adder.yaml -o gen_sat
+
+      - name: Verible lint (DPI-C bridge generated SV/SVH)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_sat/*.sv gen_sat/*.svh

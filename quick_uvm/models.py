@@ -150,6 +150,34 @@ class PortConfig(BaseModel):
             return self.type
         return f"bit [{self.width - 1}:0]" if self.width > 1 else "bit"
 
+    @property
+    def dpi_sv_type(self) -> str:
+        """SV scalar type for this field as a DPI-C argument (by width, K0)."""
+        w = self.width
+        return (
+            "byte"
+            if w <= 8
+            else "shortint"
+            if w <= 16
+            else "int"
+            if w <= 32
+            else "longint"
+        )
+
+    @property
+    def dpi_c_type(self) -> str:
+        """C scalar type matching dpi_sv_type (K0)."""
+        w = self.width
+        return (
+            "char"
+            if w <= 8
+            else "short"
+            if w <= 16
+            else "int"
+            if w <= 32
+            else "long long"
+        )
+
 
 PortMap = dict[Literal["inputs", "outputs"], list[PortConfig]]
 
@@ -291,6 +319,18 @@ class AgentConfig(BaseModel):
                     f"agent '{self.name}': input port '{p.name}' has a constraint but "
                     f"randomize=false (non-rand). Set randomize=true or drop it."
                 )
+        # A field name must be unique across inputs+outputs: the transaction
+        # declares one member per field, and the DPI-C bridge (K0) emits one
+        # formal per field — a name in both lists double-declares either way.
+        overlap = {p.name for p in self.input_ports} & {
+            p.name for p in self.output_ports
+        }
+        if overlap:
+            raise ValueError(
+                f"agent '{self.name}': field name(s) {sorted(overlap)} appear in both "
+                f"inputs and outputs. Each field maps to one transaction member; use "
+                f"distinct names (e.g. an '_in'/'_out' suffix)."
+            )
         seen: set[str] = set()
         ports_by_name = {p.name: p for p in self.input_ports}
         for s in self.sequences:
@@ -547,6 +587,19 @@ class RegisterModelConfig(BaseModel):
         return self
 
 
+class ReferenceModelConfig(BaseModel):
+    """Configures the scoreboard's reference model / predictor (K0).
+
+    `language: sv` (default) keeps the SV `predict()` body in
+    `<dut>_reference_model.svh` (byte-identical). `language: c` generates a DPI-C
+    seam instead: a fully-generated SV marshaling bridge + a `<dut>_reference_model.c`
+    stub (the only file the user edits) whose `<dut>_predict` signature is derived
+    from the primary agent's transaction fields.
+    """
+
+    language: Literal["sv", "c"] = "sv"
+
+
 class ProjectMeta(BaseModel):
     name: str
     author: str = ""
@@ -568,6 +621,7 @@ class ProjectConfig(BaseModel):
     register_model: RegisterModelConfig | None = None
     coverage_models: list[CoverageModel] = Field(default_factory=list)
     virtual_sequences: list[VseqConfig] = Field(default_factory=list)  # C2
+    reference_model: ReferenceModelConfig = Field(default_factory=ReferenceModelConfig)
     # Sane default for multi-agent subsystems: with >=2 active agents and no explicit
     # virtual_sequences, auto-scaffold a vsqr + a default vseq that fires each agent's
     # base sequence (the "add a vsqr as a habit" convention). Set false to opt out.
@@ -739,6 +793,16 @@ class ProjectConfig(BaseModel):
                 raise ValueError(
                     f"test '{t.name}': vseq '{t.vseq}' is not a declared vsequence."
                 )
+        # K0 — the DPI-C reference model marshals each primary-agent field as a
+        # scalar DPI arg (≤64-bit). Wider fields need svBitVecVal (a follow-up).
+        if self.reference_model.language == "c":
+            for _, p in self.agents[0].all_ports:
+                if p.width > 64:
+                    raise ValueError(
+                        f"reference_model.language='c': field '{p.name}' is "
+                        f"{p.width} bits; DPI-C scalar marshaling supports ≤64-bit "
+                        f"fields (wider fields are not yet supported)."
+                    )
         return self
 
     def coverage_model_for(self, agent_name: str) -> CoverageModel | None:

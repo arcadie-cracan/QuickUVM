@@ -236,6 +236,16 @@ def test_constraint_on_nonrand_input_rejected():
         )
 
 
+def test_same_name_in_inputs_and_outputs_rejected():
+    # one field -> one transaction member (and one DPI-C formal, K0); a name in
+    # both lists would double-declare. Reject it at config time.
+    with pytest.raises(Exception, match="both"):
+        _agent_with(
+            [PortConfig(name="data", width=8)],
+            [PortConfig(name="data", width=8, randomize=False)],
+        )
+
+
 # ---- monitor casts logic->enum (IEEE 1800.2 strong typing) -----------------
 
 
