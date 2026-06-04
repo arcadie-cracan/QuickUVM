@@ -179,6 +179,57 @@ class PortConfig(BaseModel):
         )
 
 
+class FieldConfig(BaseModel):
+    """A transaction-only field (S1): variable-length data that is NOT an
+    interface wire — a dynamic array or queue serialized by user pragma code in
+    the driver/monitor. QuickUVM owns its declaration, randomization, field
+    automation and constraints; the bus (de)serialization stays user code
+    ("skeleton, not magic"). Opt-in: an agent with no `fields` is byte-identical.
+    """
+
+    name: str
+    element_width: int = 8  # width of each element, e.g. 8 -> bit [7:0] x[]
+    kind: Literal["dynamic", "queue"] = "dynamic"  # x[]  vs  x[$]
+    randomize: bool = True
+    # Sane default size bound so an unconstrained `rand` array can't randomize to a
+    # runaway size; widen/narrow via these. Set bound_size:false to suppress the
+    # auto-bound entirely and own sizing through `constraints:` (avoids a silent
+    # contradiction between the implicit bound and a user size relation).
+    min_size: int = 0
+    max_size: int = 64
+    bound_size: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        _check_sv_identifier(v, "field name")
+        return v
+
+    @model_validator(mode="after")
+    def _check_bounds(self) -> FieldConfig:
+        if self.element_width < 1:
+            raise ValueError(f"field '{self.name}': element_width must be >= 1.")
+        if self.min_size < 0:
+            raise ValueError(f"field '{self.name}': min_size must be >= 0.")
+        floor = max(1, self.min_size)
+        if self.max_size < floor:
+            raise ValueError(
+                f"field '{self.name}': max_size ({self.max_size}) must be >= "
+                f"{floor} (max of 1 and min_size)."
+            )
+        return self
+
+    @property
+    def sv_element_type(self) -> str:
+        """SV element type for the array/queue declaration."""
+        return f"bit [{self.element_width - 1}:0]" if self.element_width > 1 else "bit"
+
+    @property
+    def sv_decl_suffix(self) -> str:
+        """`[$]` for a queue, `[]` for a dynamic array."""
+        return "[$]" if self.kind == "queue" else "[]"
+
+
 PortMap = dict[Literal["inputs", "outputs"], list[PortConfig]]
 
 
@@ -273,6 +324,9 @@ class AgentConfig(BaseModel):
     active: bool = True
     ports: PortMap = Field(default_factory=_default_ports)
     sequences: list[SequenceConfig] = Field(default_factory=list)  # S2 library
+    # S1 — rich stimulus (opt-in, byte-identical when empty):
+    fields: list[FieldConfig] = Field(default_factory=list)  # transaction-only data
+    constraints: list[str] = Field(default_factory=list)  # transaction-level raw SV
 
     @property
     def input_ports(self) -> list[PortConfig]:
@@ -331,6 +385,27 @@ class AgentConfig(BaseModel):
                 f"inputs and outputs. Each field maps to one transaction member; use "
                 f"distinct names (e.g. an '_in'/'_out' suffix)."
             )
+        # S1 — transaction-only fields share the transaction namespace with ports;
+        # names must be unique across ports+fields. Constraints must be non-empty.
+        port_names = {p.name for p in self.input_ports} | {
+            p.name for p in self.output_ports
+        }
+        fseen: set[str] = set()
+        for f in self.fields:
+            if f.name in port_names:
+                raise ValueError(
+                    f"agent '{self.name}': field '{f.name}' collides with a port of "
+                    f"the same name — transaction-only fields and interface ports "
+                    f"share the transaction namespace. Use a distinct name."
+                )
+            if f.name in fseen:
+                raise ValueError(f"agent '{self.name}': duplicate field '{f.name}'.")
+            fseen.add(f.name)
+        for c in self.constraints:
+            if not c.strip():
+                raise ValueError(
+                    f"agent '{self.name}': empty transaction constraint expression."
+                )
         seen: set[str] = set()
         ports_by_name = {p.name: p for p in self.input_ports}
         for s in self.sequences:

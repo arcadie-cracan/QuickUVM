@@ -17,6 +17,7 @@ from quick_uvm.models import (
     AnalysisConfig,
     ClockConfig,
     DutConfig,
+    FieldConfig,
     PortConfig,
     ProjectConfig,
     ProjectMeta,
@@ -92,6 +93,17 @@ CONFIGS = {
     "dpi_c_two_agents": _cfg(
         agents=[_agent("a0"), _agent("a1")],
         reference_model=ReferenceModelConfig(language="c"),
+    ),
+    # S1 — a transaction with a var-length payload field + transaction constraints
+    # (exercises the new `trans_c` block + post-input field declarations).
+    "rich_stimulus": _cfg(
+        agents=[
+            _agent(
+                "a0",
+                fields=[FieldConfig(name="payload", element_width=8, max_size=16)],
+                constraints=["din < payload.size()"],
+            )
+        ],
     ),
 }
 

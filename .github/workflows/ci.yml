@@ -96,3 +96,12 @@ jobs:
       - name: Verible lint (DPI-C bridge generated SV/SVH)
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_sat/*.sv gen_sat/*.svh
+
+      # Gate the S1 rich-stimulus path: the packet example generates a var-length
+      # payload field (rand byte[]) + a transaction-level `trans_c` constraint block.
+      - name: Generate the rich-stimulus example (S1)
+        run: quick-uvm generate -c examples/packet/packet.yaml -o gen_pkt
+
+      - name: Verible lint (rich-stimulus generated SV/SVH)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_pkt/*.sv gen_pkt/*.svh

@@ -133,11 +133,29 @@ constraints generates and randomizes.
   the DUT's SRL/SLT opcodes yields 216 scoreboard failures).
 - `PortConfig.type` + `project.imports` → the white-box escape hatch: reference an
   EXTERNAL spec/DUT type (powerful when genuinely shared).
-- `PortConfig.constraint` → a per-field expression collected into a `c_qcfg`
+- `PortConfig.constraint` → a per-field expression collected into a `qcfg_c`
   transaction constraint block.
 - Byte-identical when unused (a plain `name+width+rand` field emits the legacy SV).
-- *Remaining:* struct/packed-array/variable-length payloads, soft/dist constraints,
-  inter-field relations, per-field `rand_mode`.
+
+**Status — second slice landed (variable-length payload + transaction constraints):**
+- `agents[].fields:` → **transaction-only** data that is NOT an interface wire: a
+  `rand` **dynamic array** (`bit [W-1:0] x[]`) or **queue** (`x[$]`), with
+  `uvm_field_array_int`/`uvm_field_queue_int` automation and an auto size-bound
+  (`min_size`/`max_size`) so an unconstrained array can't randomize to a runaway
+  size. The bus (de)serialization stays user pragma code ("skeleton, not magic").
+- `agents[].constraints:` → a **transaction-level** list of raw SystemVerilog,
+  emitted into a `trans_c` block. One mechanism covers **inter-field relations**
+  (`len == payload.size()`), **`dist`** weighting, **`soft`** defaults, and payload
+  sizing — powerful, no new schema, fail-closed on names/uniqueness/empties.
+- Fail-closed validation: field names are legal SV identifiers, unique across
+  ports+fields; size bounds are sane; constraint expressions are non-empty.
+- Byte-identical when absent (no `fields`/`constraints` → no `trans_c`, no members).
+- Validated on `examples/packet/` (a combinational checksum DUT): a `rand byte
+  payload[]` packed onto a wide bus, with `len == payload.size()` and a length
+  `dist` — **TEST PASSED 61/61 on Xcelium**, lengths span `[1:16]` with the dist's
+  short-packet bias; verible-lint-clean; CI gates it.
+- *Remaining:* struct fields, **packed** arrays (fixed-width, stay in `ports`),
+  per-field `rand_mode`, and structured (schema) sugar for `dist`/`soft`.
 
 ### V1 — Functional coverage from fields  *(highest leverage; coverage)*
 Derive a real covergroup from the transaction/config fields the generator already has:
