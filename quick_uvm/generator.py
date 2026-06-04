@@ -81,6 +81,7 @@ class Generator:
             "reg_bus_agent": cfg.reg_bus_agent,
             "virtual_sequences": cfg.effective_virtual_sequences,
             "auto_vseq": cfg.auto_vseq_name,
+            "reference_model": cfg.reference_model,
         }
 
         specs: list[FileSpec] = []
@@ -184,10 +185,26 @@ class Generator:
                     FileSpec("reg_test.svh.j2", f"{dut}_reg_test.svh", base_ctx)
                 )
 
-        # ---- reference model (extern predict() body) ---------------------
-        specs.append(
-            FileSpec("sb_calc_exp.svh.j2", f"{dut}_reference_model.svh", base_ctx)
-        )
+        # ---- reference model: SV predict() body, or DPI-C bridge + C stub (K0)
+        if cfg.reference_model.language == "c":
+            specs.append(
+                FileSpec(
+                    "sb_reference_model_dpi.svh.j2",
+                    f"{dut}_reference_model.svh",
+                    base_ctx,
+                )
+            )
+            specs.append(
+                FileSpec(
+                    "sb_reference_model.c.j2", f"{dut}_reference_model.c", base_ctx
+                )
+            )
+        else:
+            specs.append(
+                FileSpec(
+                    "sb_reference_model.svh.j2", f"{dut}_reference_model.svh", base_ctx
+                )
+            )
 
         # ---- top + package + filelists -----------------------------------
         specs.append(FileSpec("top.sv.j2", "tb_top.sv", base_ctx))

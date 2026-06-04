@@ -4,6 +4,9 @@
 clkgen.sv
 {{ dut.name }}.sv
 tb_top.sv
+{% if reference_model.language == 'c' %}
+{{ dut.name }}_reference_model.c
+{% endif %}
 -y . +libext+.sv
 
 // Add extra sim args, incdirs or sources below (preserved across regeneration):

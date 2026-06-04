@@ -228,6 +228,29 @@ The reference-model *body* stays user code (SV or C); QuickUVM owns the interfac
 This is the lever HDL Verifier exploits, minus the MATLAB/Simulink front-end (out of scope).
 **Accept:** a transaction round-trips through a DPI-C golden-model stub into the scoreboard.
 
+**Status — landed:**
+- The predictor seam already existed: `<dut>_predictor.predict(req) → exp`, body in
+  `<dut>_reference_model.svh`. K0 adds the **DPI-C option** via a
+  `reference_model: {language: sv | c}` block (default `sv`, byte-identical).
+- `language: c` → a **fully-generated SV marshaling bridge**
+  (`import "DPI-C" function void <dut>_predict(...)` + a `predict()` that copies the
+  transaction, calls the C function, unpacks the expected outputs) plus a
+  **`<dut>_reference_model.c` stub** (the only file the user edits) whose signature is
+  derived from the primary agent's fields; the `.c` is added to the generated `run.f`.
+- Scalar marshaling by width: ≤8→`byte`/`char`, ≤16→`shortint`/`short`, ≤32→`int`/`int`,
+  ≤64→`longint`/`long long` (inputs by value, outputs by pointer); enum/typed fields are
+  cast. Fail-closed: a >64-bit field on the `c` path is rejected (packed `svBitVecVal`
+  marshaling is a follow-up). The `.c` pragma region is preserved on regeneration.
+- Validated on `examples/sat_adder/` (a combinational saturating adder, golden model in
+  C): the transaction **round-trips through the DPI-C model into the scoreboard, 201/201
+  on Xcelium**; SV is verible-lint-clean; CI gates it.
+- *Remaining:* C++/SystemC bodies, >64-bit (packed) marshaling, per-scoreboard language
+  once A2 (multi-stream) lands.
+
+With K0, the **General-DV MVP is complete** (X0 + S1 + V1 + S2 + C2 + K0): stimulus,
+field-derived coverage, multi-agent coordination, and a bring-your-own golden model
+(SV or C) checking seam.
+
 ## Priority tier 2 — reuse / architecture
 
 ### F2 — VIP package restructuring

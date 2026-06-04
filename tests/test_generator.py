@@ -65,7 +65,7 @@ def test_pragma_markers_in_driver(generated_tb):
     assert "// pragma quickuvm custom drive_item_additional begin" in content
 
 
-def test_pragma_markers_in_calc_exp(generated_tb):
+def test_pragma_markers_in_reference_model(generated_tb):
     content = (generated_tb / "simple_reg_reference_model.svh").read_text()
     assert "// pragma quickuvm custom prediction_logic begin" in content
     assert "// pragma quickuvm custom prediction_logic end" in content
