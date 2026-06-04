@@ -28,7 +28,7 @@ class barrel_shifter_base_test extends uvm_test;
     env_cfg.bs_cfg = bs_cfg::type_id::create("bs_cfg");
     env_cfg.bs_cfg.is_active = UVM_ACTIVE;
     if (!uvm_config_db#(virtual bs_if)::get(this, "", "bs_if_vif", env_cfg.bs_cfg.vif))
-      `uvm_fatal("NOVIF", "No virtual bs_if set as 'bs_if_vif' in the config DB (see top.sv)")
+      `uvm_fatal("NOVIF", "No virtual interface 'bs_if_vif' in config DB (see tb_top.sv)")
     uvm_config_db#(barrel_shifter_env_cfg)::set(this, "e", "env_cfg", env_cfg);
 
     e = barrel_shifter_env::type_id::create("e", this);
