@@ -1,0 +1,44 @@
+# packet — QuickUVM S1 example: a rich, packet-style transaction.
+#
+# Headline: a VARIABLE-LENGTH payload (a transaction-only `fields:` entry, not an
+# interface wire) plus transaction-level `constraints:` — an inter-field relation
+# (len == payload.size()) and a `dist` weighting the packet length. The driver
+# packs the rand payload into the `data` bus (one pragma snippet); the reference
+# model sums it in SV. Combinational (one packet per vector) so the bench stays
+# single-cycle. Demonstrates the S1 first slice.
+project:
+  name: packet
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: pkt_sum
+  combinational: true    # one packet per vector; payload arrives packed on `data`
+
+clock: {}
+
+agents:
+  - name: stream
+    interface: stream_if
+    sequence_item: stream_seq_item
+    ports:
+      inputs:
+        # `len` is a packet-level header the solver picks together with the payload
+        # (the `len == payload.size()` constraint ties them) — so it stays `rand`.
+        - {name: len, width: 5}                     # number of valid bytes (rand)
+        # `data` is the packed payload bus; the driver derives it from `payload`,
+        # so it is not solver-randomized.
+        - {name: data, width: 128, randomize: false}
+      outputs:
+        - {name: sum, width: 16}                    # checksum (the checked output)
+    fields:
+      # The variable-length payload — a `rand byte payload[]` transaction member.
+      - {name: payload, element_width: 8, kind: dynamic, min_size: 1, max_size: 16}
+    constraints:
+      # Inter-field relation: the header equals the actual payload length.
+      - "len == payload.size()"
+      # dist: weight short packets 3:1 over long ones (stimulus shaping).
+      - "payload.size() dist { [1:4] := 3, [5:16] := 1 }"
+
+tests:
+  - {name: rand_test, num_items: 60}
