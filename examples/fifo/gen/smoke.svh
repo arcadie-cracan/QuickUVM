@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-class smoke extends test_base;
+class smoke extends fifo_base_test;
   `uvm_component_utils(smoke)
 
   function new (string name, uvm_component parent);

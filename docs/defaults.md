@@ -28,14 +28,14 @@ no-consensus flags below are where the survey explicitly **failed** to find a mo
 | Dimension | Open-source modal default (evidence) | QuickUVM default | Status |
 |---|---|---|---|
 | **Agent structure** | one **active** agent per interface; sequencer+driver+monitor; `is_active` knob (default ACTIVE); single env [EasierUVM, Doulos, gen_uvm] | `active: true`; sqr+drv+mon; one env | **matches** |
-| **Config objects** | one config object per component; **read-own-only** [EasierUVM] | `env_config` + one `<agent>_config` each | **matches** |
+| **Config objects** | one config object per component; **read-own-only** [EasierUVM] | `<dut>_env_cfg` + one `<agent>_cfg` each | **matches** |
 | **Clocking** | one clocking block per interface; drive skew ≈ **20%** of the period; monitor samples outputs `input #1step`; DUT inputs sampled raw on the edge [Cummings `uvmtb_template`] | `cb1`/`mon_cb`; `drive_offset_pct: 20`; registered monitor = raw-in + `#1step`-out | **matches** |
-| **Scoreboard** | **predictor + comparator** split; reference model isolated in **one** editable file; TLM analysis FIFOs + `compare()` [Cummings SNUG'13; OpenTitan; CV32E4*] | `sb_predictor` + `sb_comparator` + `tb_scoreboard`; model in `sb_calc_exp.svh` | **matches** (the canonical pattern) |
-| **Virtual-seq mechanism** | `vseq_base` with `` `uvm_declare_p_sequencer ``; all vseqs extend it; subsequencer handles via `connect()`/`p_sequencer` **not** config_db [Cummings/Bergeron DVCon'16] | `env_vseq_base` + `env_vsqr`; `p_sequencer.<agent>_sqr` | **matches** (config_db path was *refuted*) |
+| **Scoreboard** | **predictor + comparator** split; reference model isolated in **one** editable file; TLM analysis FIFOs + `compare()` [Cummings SNUG'13; OpenTitan; CV32E4*] | `<dut>_predictor` + `<dut>_comparator` + `<dut>_scoreboard`; model in `<dut>_reference_model.svh` (`predict()`) | **matches** (the canonical pattern) |
+| **Virtual-seq mechanism** | `vseq_base` with `` `uvm_declare_p_sequencer ``; all vseqs extend it; subsequencer handles via `connect()`/`p_sequencer` **not** config_db [Cummings/Bergeron DVCon'16] | `<dut>_base_vseq` + `<dut>_virtual_sequencer`; `p_sequencer.<agent>_sqr` | **matches** (config_db path was *refuted*) |
 | **Virtual-seq *policy*** | "add a vsqr **as a habit**"; the modal skeleton's Test "runs a virtual sequence to start one simple sequence per agent" [Cummings/Bergeron; EasierUVM] | **auto** vsqr + default vseq for ≥2 active agents (see below) | **matches** |
 | **RAL** | opt-in, only when a register map is declared [uvmtb_template, gen_uvm, EasierUVM] | `register_model` opt-in | **matches** |
-| **Sequence library** | **no consensus** on a fixed set — only "a base sequence + a vseq" is mandated | one `<agent>_sequence`; richer library opt-in (S2) | **matches** (opt-in is the safe call) |
-| **Layout** | modal = **layered** per-interface/env packages, `_agent/_if/_pkg/_env` [UVMF, EasierUVM] | **flat** single `tb_pkg` | **deliberate divergence** — flat is simpler for the small/education case; layered is roadmap **F2** ("powerful when needed") |
+| **Sequence library** | **no consensus** on a fixed set — only "a base sequence + a vseq" is mandated | one `<agent>_seq`; richer library opt-in (S2) | **matches** (opt-in is the safe call) |
+| **Layout** | modal = **layered** per-interface/env packages, `_agent/_if/_pkg/_env` [UVMF, EasierUVM] | **flat** single `<dut>_tb_pkg` | **deliberate divergence** — flat is simpler for the small/education case; layered is roadmap **F2** ("powerful when needed") |
 
 ## The one behavioral change: auto virtual-sequence layer
 
@@ -45,8 +45,8 @@ to add one *as a habit* (retrofitting later is painful). QuickUVM's vsqr/vseq la
 started opt-in; the default is now:
 
 > **When there are ≥2 active agents and no explicit `virtual_sequences:`**, QuickUVM
-> auto-scaffolds `env_vsqr` + `env_vseq_base` + a default `<project>_vseq` whose body fires
-> each active agent's base `<agent>_sequence`; the default test runs it on `e.vsqr`.
+> auto-scaffolds `<dut>_virtual_sequencer` + `<dut>_base_vseq` + a default `<dut>_vseq` whose body fires
+> each active agent's base `<agent>_seq`; the default test runs it on `e.vsqr`.
 
 - **Trigger** keys on **active** agents (a vsqr coordinates *driving* agents; passive
   monitor-only agents have no sequencer). A single driving agent ⇒ no vsqr.
@@ -57,7 +57,7 @@ started opt-in; the default is now:
 - **Opt-out:** `auto_virtual_sequences: bool = true` — set false for the rare multi-agent
   bench that coordinates stimulus in test pragma code instead.
 - **Launch precedence** (in the generated test): explicit `vseq:` → explicit `sequence:` →
-  the auto vseq on `e.vsqr` → the primary agent's `<agent>_sequence`.
+  the auto vseq on `e.vsqr` → the primary agent's `<agent>_seq`.
 - **Byte-identical** for every existing case: single-agent benches get no vsqr; benches
   with explicit `virtual_sequences:` are unchanged; only *new* multi-agent-without-vseqs
   configs gain the scaffold.

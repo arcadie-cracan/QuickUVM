@@ -116,7 +116,7 @@ def test_external_type_field_uses_type_verbatim(tmp_path):
 def test_external_type_imports_into_tb_pkg(tmp_path):
     agent = _ag([PortConfig(name="op", width=4, type="alu_pkg::opcode_e")])
     Generator(_cfg(agent, imports=["alu_pkg"])).generate_all(tmp_path)
-    pkg = (tmp_path / "tb_pkg.sv").read_text()
+    pkg = (tmp_path / "d_tb_pkg.sv").read_text()
     assert "import alu_pkg::*;" in pkg
 
 
@@ -265,7 +265,7 @@ def test_monitor_plain_field_uncast(tmp_path):
 def test_enum_coverpoint_uses_auto_bins(tmp_path):
     agent = _ag([PortConfig(name="op", width=4, enum=OPS)])
     Generator(_cfg(agent)).generate_all(tmp_path)
-    cov = (tmp_path / "alu_cover.svh").read_text()
+    cov = (tmp_path / "alu_cov.svh").read_text()
     assert "op_cp : coverpoint tr.op;" in cov  # auto one-bin-per-label
     assert "op_bins[8]" not in cov  # not the generic range partition
 

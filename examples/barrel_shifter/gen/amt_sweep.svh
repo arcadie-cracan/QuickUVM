@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-class amt_sweep extends test_base;
+class amt_sweep extends barrel_shifter_base_test;
   `uvm_component_utils(amt_sweep)
 
   function new (string name, uvm_component parent);

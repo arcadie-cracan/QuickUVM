@@ -13,7 +13,7 @@
 // check (project.uvm_version selects this). UVM 1.2+ uses set_default_door.
 //----------------------------------------------------------------------
 
-class reg_test extends test_base;
+class reg_test extends {{ dut.name }}_base_test;
   `uvm_component_utils(reg_test)
 
   function new (string name, uvm_component parent);

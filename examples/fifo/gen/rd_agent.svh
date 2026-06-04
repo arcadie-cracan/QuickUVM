@@ -10,7 +10,7 @@ class rd_agent extends uvm_agent;
   `uvm_component_utils(rd_agent)
 
   // is_active is inherited from uvm_agent; set from cfg in build_phase
-  rd_config  cfg;
+  rd_cfg  cfg;
   virtual rd_if vif;
 
   uvm_analysis_port #(rd_seq_item) ap;
@@ -27,8 +27,8 @@ class rd_agent extends uvm_agent;
 
   virtual function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    if (!uvm_config_db#(rd_config)::get(this, "", "cfg", cfg))
-      `uvm_fatal("NOCFG", {"No rd_config set for: ", get_full_name()})
+    if (!uvm_config_db#(rd_cfg)::get(this, "", "cfg", cfg))
+      `uvm_fatal("NOCFG", {"No rd_cfg set for: ", get_full_name()})
     is_active = cfg.is_active;
     vif       = cfg.vif;
     if (is_active == UVM_ACTIVE) begin

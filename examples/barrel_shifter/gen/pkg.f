@@ -1,4 +1,4 @@
-tb_pkg.sv
+barrel_shifter_tb_pkg.sv
 bs_if.sv
 
 // Add extra package/source files below (preserved across regeneration):

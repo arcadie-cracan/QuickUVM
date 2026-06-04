@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-class rand_test extends test_base;
+class rand_test extends barrel_shifter_base_test;
   `uvm_component_utils(rand_test)
 
   function new (string name, uvm_component parent);
@@ -20,8 +20,8 @@ class rand_test extends test_base;
   endfunction
 
   task run_phase(uvm_phase phase);
-    bs_sequence seq;
-    seq = bs_sequence::type_id::create("seq");
+    bs_seq seq;
+    seq = bs_seq::type_id::create("seq");
     //----------------------------------------------------
     phase.raise_objection(this);
     `uvm_info("rand_test", "about to start seq", UVM_FULL)

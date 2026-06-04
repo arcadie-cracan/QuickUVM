@@ -52,7 +52,7 @@ def test_interface_declares_reset_port(tmp_path):
 
 def test_top_has_reset_wire_generator_and_named_instantiation(tmp_path):
     Generator(_cfg(external_reset=True)).generate_all(tmp_path)
-    top = (tmp_path / "top.sv").read_text()
+    top = (tmp_path / "tb_top.sv").read_text()
     assert "logic rst_n_i;" in top
     assert "pragma quickuvm custom reset_generator begin" in top
     assert "rst_n_i = 1'b0;" in top  # assert (active-low)
@@ -73,7 +73,7 @@ def test_active_high_reset_polarity(tmp_path):
     cfg = _cfg(external_reset=True)
     cfg.dut.reset_active_low = False
     Generator(cfg).generate_all(tmp_path)
-    top = (tmp_path / "top.sv").read_text()
+    top = (tmp_path / "tb_top.sv").read_text()
     drv = (tmp_path / "bus_driver.svh").read_text()
     # discriminating: active-high asserts to 1, deasserts to 0 (the inverse of low)
     assert "rst_n_i = 1'b1;   // assert" in top
@@ -86,7 +86,7 @@ def test_active_high_reset_polarity(tmp_path):
 
 def test_default_emits_no_external_reset_code(tmp_path):
     Generator(_cfg(external_reset=False)).generate_all(tmp_path)
-    top = (tmp_path / "top.sv").read_text()
+    top = (tmp_path / "tb_top.sv").read_text()
     iface = (tmp_path / "bus_if.sv").read_text()
     drv = (tmp_path / "bus_driver.svh").read_text()
     assert "reset_generator" not in top
@@ -140,7 +140,7 @@ def test_multi_agent_external_reset_fans_out(tmp_path):
     )
     assert "input rst_n_i" in (tmp_path / "bus_if.sv").read_text()
     assert "input rst_n_i" in (tmp_path / "mem_if.sv").read_text()
-    top = (tmp_path / "top.sv").read_text()
+    top = (tmp_path / "tb_top.sv").read_text()
     assert "bus_if bus_if_inst (.clk(clk), .rst_n_i(rst_n_i));" in top
     assert "mem_if mem_if_inst (.clk(clk), .rst_n_i(rst_n_i));" in top
     # second agent's monitor/driver also gate
@@ -166,7 +166,7 @@ def test_reset_connected_once_when_agent_port(tmp_path):
         tests=[TConf(name="t1")],
     )
     Generator(cfg).generate_all(tmp_path)
-    top = (tmp_path / "top.sv").read_text()
+    top = (tmp_path / "tb_top.sv").read_text()
     assert top.count(".rst_n(bus_if_inst.rst_n)") == 1
 
 
@@ -175,7 +175,7 @@ def test_external_reset_regen_is_idempotent(tmp_path):
     region and does not error (fail-closed merge round-trips the default body)."""
     cfg = _cfg(external_reset=True)
     Generator(cfg).generate_all(tmp_path)
-    first = (tmp_path / "top.sv").read_text()
+    first = (tmp_path / "tb_top.sv").read_text()
     Generator(cfg).generate_all(tmp_path)  # regenerate over the existing tree
-    assert (tmp_path / "top.sv").read_text() == first
+    assert (tmp_path / "tb_top.sv").read_text() == first
     assert "pragma quickuvm custom reset_generator begin" in first

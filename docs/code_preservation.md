@@ -55,20 +55,20 @@ Empty fences (write custom code here):
 | File | Sections |
 |---|---|
 | `<trans>.svh` | `class_item_additional`, `do_copy_additional`, `do_compare_additional`, `convert2string_additional` |
-| `<agent>_config.svh` / `env_config.svh` | `config_var_additional` |
+| `<agent>_cfg.svh` / `<dut>_env_cfg.svh` | `config_var_additional` |
 | `<adapter>.svh` (register_model) | `class_item_additional`, `new_additional`, `reg2bus`, `bus2reg` |
 | `reg_test.svh` (register_model) | `reg_test_pre`, `reg_test_post` |
 | `<if>.sv` | `signals_additional`, `clocking_block_additional` |
 | `<agent>_driver.svh` | `class_item_additional`, `initialize_additional`, `drive_item_additional` |
 | `<agent>_monitor.svh` | `class_item_additional`, `sample_dut_additional` |
 | `<agent>_agent.svh` | `class_item_additional`, `build_phase_additional`, `connect_phase_additional` |
-| `<agent>_cover.svh` | `class_item_additional`, `coverpoints_additional` |
-| `<agent>_sequence.svh` | `class_item_additional`, `do_item_constraints` |
-| `env.svh` | `class_item_additional`, `build_phase_additional`, `connect_phase_additional` |
-| `test_base.svh` / `<test>.svh` | `class_item_additional`, `build_phase_additional`, `run_phase_additional` |
-| `sb_comparator.svh` / `sb_predictor.svh` | `class_item_additional` |
-| `tb_pkg.sv` | `imports`, `sequences_additional` |
-| `top.sv` | `dut_connections` |
+| `<agent>_cov.svh` | `class_item_additional`, `coverpoints_additional` |
+| `<agent>_seq.svh` | `class_item_additional`, `do_item_constraints` |
+| `<dut>_env.svh` | `class_item_additional`, `build_phase_additional`, `connect_phase_additional` |
+| `<dut>_base_test.svh` / `<test>.svh` | `class_item_additional`, `build_phase_additional`, `run_phase_additional` |
+| `<dut>_comparator.svh` / `<dut>_predictor.svh` | `class_item_additional` |
+| `<dut>_tb_pkg.sv` | `imports`, `sequences_additional` |
+| `tb_top.sv` | `dut_connections` |
 | `pkg.f` / `run.f` | `extra_pkg_files`, `extra_run_args` |
 
 Fences that ship with a **default body** you are expected to replace in place
@@ -77,4 +77,4 @@ Fences that ship with a **default body** you are expected to replace in place
 | File | Section |
 |---|---|
 | `<dut>.sv` | `dut_logic` |
-| `sb_calc_exp.svh` | `prediction_logic` |
+| `<dut>_reference_model.svh` | `prediction_logic` |

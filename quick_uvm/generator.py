@@ -100,9 +100,7 @@ class Generator:
             specs.append(
                 FileSpec("agent_trans.svh.j2", f"{agent.sequence_item}.svh", ctx)
             )
-            specs.append(
-                FileSpec("agent_config.svh.j2", f"{agent.name}_config.svh", ctx)
-            )
+            specs.append(FileSpec("agent_config.svh.j2", f"{agent.name}_cfg.svh", ctx))
             specs.append(
                 FileSpec("agent_sequencer.svh.j2", f"{agent.name}_sequencer.svh", ctx)
             )
@@ -113,16 +111,21 @@ class Generator:
                 FileSpec("agent_monitor.svh.j2", f"{agent.name}_monitor.svh", ctx)
             )
             specs.append(FileSpec("agent_agent.svh.j2", f"{agent.name}_agent.svh", ctx))
-            specs.append(FileSpec("agent_cover.svh.j2", f"{agent.name}_cover.svh", ctx))
+            specs.append(FileSpec("agent_cover.svh.j2", f"{agent.name}_cov.svh", ctx))
 
-        # ---- scoreboard --------------------------------------------------
-        specs.append(FileSpec("sb_predictor.svh.j2", "sb_predictor.svh", base_ctx))
-        specs.append(FileSpec("sb_comparator.svh.j2", "sb_comparator.svh", base_ctx))
-        specs.append(FileSpec("tb_scoreboard.svh.j2", "tb_scoreboard.svh", base_ctx))
+        # ---- scoreboard (prefixed by the DUT/block name) -----------------
+        dut = cfg.dut.name
+        specs.append(FileSpec("sb_predictor.svh.j2", f"{dut}_predictor.svh", base_ctx))
+        specs.append(
+            FileSpec("sb_comparator.svh.j2", f"{dut}_comparator.svh", base_ctx)
+        )
+        specs.append(
+            FileSpec("tb_scoreboard.svh.j2", f"{dut}_scoreboard.svh", base_ctx)
+        )
 
         # ---- environment -------------------------------------------------
-        specs.append(FileSpec("env_config.svh.j2", "env_config.svh", base_ctx))
-        specs.append(FileSpec("env.svh.j2", "env.svh", base_ctx))
+        specs.append(FileSpec("env_config.svh.j2", f"{dut}_env_cfg.svh", base_ctx))
+        specs.append(FileSpec("env.svh.j2", f"{dut}_env.svh", base_ctx))
 
         # ---- per-agent sequences -----------------------------------------
         for agent in cfg.agents:
@@ -131,7 +134,7 @@ class Generator:
             first_test = cfg.tests[0] if cfg.tests else TestConfig(name="test1")
             ctx = {**base_ctx, "agent": agent, "test": first_test}
             specs.append(
-                FileSpec("agent_sequence.svh.j2", f"{agent.name}_sequence.svh", ctx)
+                FileSpec("agent_sequence.svh.j2", f"{agent.name}_seq.svh", ctx)
             )
             # S2 — the per-agent sequence library (one class per declared sequence)
             for seq in agent.sequences:
@@ -145,16 +148,18 @@ class Generator:
         # (one base sequence per active agent) for a >=2-active-agent subsystem.
         effective_vseqs = cfg.effective_virtual_sequences
         if effective_vseqs:
-            specs.append(FileSpec("env_vsqr.svh.j2", "env_vsqr.svh", base_ctx))
             specs.append(
-                FileSpec("env_vseq_base.svh.j2", "env_vseq_base.svh", base_ctx)
+                FileSpec("env_vsqr.svh.j2", f"{dut}_virtual_sequencer.svh", base_ctx)
+            )
+            specs.append(
+                FileSpec("env_vseq_base.svh.j2", f"{dut}_base_vseq.svh", base_ctx)
             )
             for vseq in effective_vseqs:
                 vctx = {**base_ctx, "vseq": vseq}
                 specs.append(FileSpec("env_vseq.svh.j2", f"{vseq.name}.svh", vctx))
 
         # ---- tests -------------------------------------------------------
-        specs.append(FileSpec("test_base.svh.j2", "test_base.svh", base_ctx))
+        specs.append(FileSpec("test_base.svh.j2", f"{dut}_base_test.svh", base_ctx))
         for test in cfg.tests:
             ctx = {**base_ctx, "test": test}
             specs.append(FileSpec("test.svh.j2", f"{test.name}.svh", ctx))
@@ -175,14 +180,18 @@ class Generator:
                     )
                 )
             if cfg.register_model.reg_test:
-                specs.append(FileSpec("reg_test.svh.j2", "reg_test.svh", base_ctx))
+                specs.append(
+                    FileSpec("reg_test.svh.j2", f"{dut}_reg_test.svh", base_ctx)
+                )
 
-        # ---- extern function body ----------------------------------------
-        specs.append(FileSpec("sb_calc_exp.svh.j2", "sb_calc_exp.svh", base_ctx))
+        # ---- reference model (extern predict() body) ---------------------
+        specs.append(
+            FileSpec("sb_calc_exp.svh.j2", f"{dut}_reference_model.svh", base_ctx)
+        )
 
         # ---- top + package + filelists -----------------------------------
-        specs.append(FileSpec("top.sv.j2", "top.sv", base_ctx))
-        specs.append(FileSpec("tb_pkg.sv.j2", "tb_pkg.sv", base_ctx))
+        specs.append(FileSpec("top.sv.j2", "tb_top.sv", base_ctx))
+        specs.append(FileSpec("tb_pkg.sv.j2", f"{dut}_tb_pkg.sv", base_ctx))
         specs.append(FileSpec("pkg.f.j2", "pkg.f", base_ctx))
         specs.append(FileSpec("run.f.j2", "run.f", base_ctx))
 

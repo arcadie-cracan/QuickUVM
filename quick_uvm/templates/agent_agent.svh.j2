@@ -10,7 +10,7 @@ class {{ agent.name }}_agent extends uvm_agent;
   `uvm_component_utils({{ agent.name }}_agent)
 
   // is_active is inherited from uvm_agent; set from cfg in build_phase
-  {{ agent.name }}_config  cfg;
+  {{ agent.name }}_cfg  cfg;
   virtual {{ agent.interface }} vif;
 
   uvm_analysis_port #({{ agent.sequence_item }}) ap;
@@ -27,8 +27,8 @@ class {{ agent.name }}_agent extends uvm_agent;
 
   virtual function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    if (!uvm_config_db#({{ agent.name }}_config)::get(this, "", "cfg", cfg))
-      `uvm_fatal("NOCFG", {"No {{ agent.name }}_config set for: ", get_full_name()})
+    if (!uvm_config_db#({{ agent.name }}_cfg)::get(this, "", "cfg", cfg))
+      `uvm_fatal("NOCFG", {"No {{ agent.name }}_cfg set for: ", get_full_name()})
     is_active = cfg.is_active;
     vif       = cfg.vif;
     if (is_active == UVM_ACTIVE) begin

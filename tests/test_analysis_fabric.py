@@ -50,9 +50,9 @@ def _cfg(agents, analysis=None):
 
 def test_default_env_is_legacy_single_stream(tmp_path):
     Generator(_cfg([_ag("reg")])).generate_all(tmp_path)
-    e = (tmp_path / "env.svh").read_text()
-    assert "tb_scoreboard sbd;" in e
-    assert "reg_cover cov;" in e
+    e = (tmp_path / "d_env.svh").read_text()
+    assert "d_scoreboard sbd;" in e
+    assert "reg_cov cov;" in e
     assert "reg_agnt.ap.connect(sbd.axp);" in e
     assert "reg_agnt.ap.connect(cov.analysis_export);" in e
 
@@ -69,14 +69,14 @@ def test_analysis_wires_per_agent_coverage_and_scoreboard(tmp_path):
         ),
     )
     Generator(cfg).generate_all(tmp_path)
-    e = (tmp_path / "env.svh").read_text()
+    e = (tmp_path / "d_env.svh").read_text()
     # per-agent coverage collectors
-    assert "drv_cover drv_cov;" in e
-    assert "mon_cover mon_cov;" in e
+    assert "drv_cov drv_cov;" in e
+    assert "mon_cov mon_cov;" in e
     assert "drv_agnt.ap.connect(drv_cov.analysis_export);" in e
     assert "mon_agnt.ap.connect(mon_cov.analysis_export);" in e
     # scoreboard bound to its source agent
-    assert "tb_scoreboard sbd;" in e
+    assert "d_scoreboard sbd;" in e
     assert "drv_agnt.ap.connect(sbd.axp);" in e
     # legacy primary-only comment must be gone in the data-driven path
     assert "Primary agent" not in e
@@ -91,7 +91,7 @@ def test_agent_absent_from_analysis_is_not_connected(tmp_path):
         ),
     )
     Generator(cfg).generate_all(tmp_path)
-    e = (tmp_path / "env.svh").read_text()
+    e = (tmp_path / "d_env.svh").read_text()
     assert "mon_agent  mon_agnt;" in e  # still instantiated
     assert "mon_cov" not in e  # but no coverage
     assert "mon_agnt.ap.connect" not in e  # and no connection

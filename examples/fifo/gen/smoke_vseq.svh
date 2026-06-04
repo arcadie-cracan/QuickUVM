@@ -6,9 +6,9 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 // C2 virtual sequence 'smoke_vseq' (sequential) — coordinates per-agent
-// sub-sequences through the env_vsqr.
+// sub-sequences through the fifo_virtual_sequencer.
 
-class smoke_vseq extends env_vseq_base;
+class smoke_vseq extends fifo_base_vseq;
   `uvm_object_utils(smoke_vseq)
 
   // pragma quickuvm custom class_item_additional begin

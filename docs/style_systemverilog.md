@@ -53,23 +53,39 @@ Verible lint is the headless CI authority.
 
 ## Naming conventions
 
-Files/classes are `lower_snake_case` with a **role suffix**:
+Files/classes are `lower_snake_case`. **Per-agent** components carry the agent name as a
+prefix + a role suffix; **bench-level** components carry the **`<dut>`** (block) name as a
+prefix. This mirrors the open-source modal scheme (OpenTitan/uvmdvgen, EasierUVM) — see
+[`defaults.md`](defaults.md) for the survey. Spelled-out role words, with the modal
+abbreviations (`_cfg`, `_seq`, `_vseq`, `_cov`, `_if`, `_pkg`) and `_seq_item` as the one
+clarity exception.
 
-| Component | Suffix / name | Example |
+Per-agent (prefix = `<agent>`):
+
+| Component | Suffix | Example (agent `reg`) |
 |---|---|---|
-| Transaction (sequence item) | `_seq_item` | `reg_seq_item` |
+| Sequence item | `_seq_item` | `reg_seq_item` |
 | Agent | `_agent` | `reg_agent` |
-| Driver | `_driver` | `reg_driver` |
-| Monitor | `_monitor` | `reg_monitor` |
-| Sequencer | `_sequencer` | `reg_sequencer` |
-| Sequence | `_sequence` / `_seq` | `reg_sequence` |
-| Agent config | `_config` | `reg_config` |
-| Environment | `env` | `env` |
-| Env config | `env_config` | `env_config` |
-| Coverage collector | `_cover` | `reg_cover` |
-| Scoreboard | `_scoreboard` / `sb_*` | `tb_scoreboard`, `sb_comparator` |
-| Test | `_test` / `test_*` | `test_base`, `test_rand` |
-| Register adapter | `_adapter` | `reg_adapter` |
+| Driver / Monitor / Sequencer | `_driver` / `_monitor` / `_sequencer` | `reg_driver` |
+| Agent config | `_cfg` | `reg_cfg` |
+| Coverage collector | `_cov` | `reg_cov` |
+| Sequence (base/default) | `_seq` | `reg_seq` |
+| Interface | `_if` (handle `vif`) | `reg_if` |
+
+Bench-level (prefix = `<dut>`, e.g. `alu`):
+
+| Component | Name | Example |
+|---|---|---|
+| Environment / env config | `<dut>_env` / `<dut>_env_cfg` | `alu_env` |
+| Scoreboard | `<dut>_scoreboard` | `alu_scoreboard` |
+| Predictor / Comparator | `<dut>_predictor` / `<dut>_comparator` | `alu_predictor` |
+| Reference model (golden `predict()`) | `<dut>_reference_model` | `alu_reference_model` |
+| Virtual sequencer / base vseq | `<dut>_virtual_sequencer` / `<dut>_base_vseq` | `alu_virtual_sequencer` |
+| Default virtual sequence | `<dut>_vseq` | `alu_vseq` |
+| Base test | `<dut>_base_test` | `alu_base_test` |
+| Package | `<dut>_tb_pkg` | `alu_tb_pkg` |
+| TB top module | `tb_top` | `tb_top` |
+| Register adapter | config-named (`_adapter`) | `alu_reg_adapter` |
 
 > **Transaction suffix: `_seq_item`** (project decision) — it names the UVM concept (a
 > `uvm_sequence_item`) precisely. The `sequence_item:` field in the YAML config sets it;
@@ -105,7 +121,7 @@ nothing; `SLL` does.
 
 ## Structure (Paradigm-Works flat-package style — today's default)
 
-- All components are included into a single `tb_pkg.sv` (the `layout: packaged` option is
+- All components are included into a single `<dut>_tb_pkg.sv` (the `layout: packaged` option is
   roadmapped in [`parity_roadmap.md`](parity_roadmap.md), phase F2).
 - Interfaces passed via `uvm_config_db` (was `uvm_resource_db` before v0.3.0/F1).
 - Clocking-block-driven I/O; `extern` method bodies in separate `.svh` files.

@@ -9,8 +9,8 @@ samples inputs+outputs together race-free via a monitor clocking block.
 - `rtl/barrel_shifter.sv` — the clean MIT combinational DUT.
 - `barrel_shifter.yaml` — the QuickUVM config (`combinational: true`).
 - `gen/` — the generated testbench. Only two pragma sections are hand-filled:
-  - `sb_calc_exp.svh` `prediction_logic` — the golden model (`out = shift(in, amt, op)`).
-  - `bs_sequence.svh` `do_item_constraints` — `op inside {[0:4]}`.
+  - `barrel_shifter_reference_model.svh` `prediction_logic` — the golden `predict()` model (`out = shift(in, amt, op)`).
+  - `bs_seq.svh` `do_item_constraints` — `op inside {[0:4]}`.
 - `sim/xrun.f` — Xcelium filelist (wires the **real** `rtl/` DUT, not the generated stub).
 
 ## Sequence library (S2)
@@ -18,7 +18,7 @@ samples inputs+outputs together race-free via a monitor clocking block.
 (a longer random soak) and `bs_amt_walk` (an `incrementing` sweep that walks the
 shift amount `amt = 0..31` while data/op stay random). The `amt_sweep` test
 **selects** `bs_amt_walk` (`tests[].sequence: {agent: bs, name: bs_amt_walk}`)
-instead of the default `bs_sequence`.
+instead of the default `bs_seq`.
 
 ## Generate + run
 ```bash

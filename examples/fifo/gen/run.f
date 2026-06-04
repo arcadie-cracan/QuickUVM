@@ -3,7 +3,7 @@
 +incdir+..
 clkgen.sv
 fifo.sv
-top.sv
+tb_top.sv
 -y . +libext+.sv
 
 // Add extra sim args, incdirs or sources below (preserved across regeneration):

@@ -91,23 +91,23 @@ def _gen(tmp_path, virtual_sequences=None, tests=None):
 
 def test_vsqr_has_sequencer_handles(tmp_path):
     _gen(tmp_path, [_SMOKE])
-    vsqr = (tmp_path / "env_vsqr.svh").read_text()
-    assert "class env_vsqr extends uvm_sequencer;" in vsqr
+    vsqr = (tmp_path / "fifo_virtual_sequencer.svh").read_text()
+    assert "class fifo_virtual_sequencer extends uvm_sequencer;" in vsqr
     assert "wr_sequencer wr_sqr;" in vsqr
     assert "rd_sequencer rd_sqr;" in vsqr
 
 
 def test_vseq_base_declares_p_sequencer(tmp_path):
     _gen(tmp_path, [_SMOKE])
-    base = (tmp_path / "env_vseq_base.svh").read_text()
-    assert "class env_vseq_base extends uvm_sequence #(uvm_sequence_item);" in base
-    assert "`uvm_declare_p_sequencer(env_vsqr)" in base
+    base = (tmp_path / "fifo_base_vseq.svh").read_text()
+    assert "class fifo_base_vseq extends uvm_sequence #(uvm_sequence_item);" in base
+    assert "`uvm_declare_p_sequencer(fifo_virtual_sequencer)" in base
 
 
 def test_sequential_vseq_body(tmp_path):
     _gen(tmp_path, [_SMOKE])
     vs = (tmp_path / "smoke_vseq.svh").read_text()
-    assert "class smoke_vseq extends env_vseq_base;" in vs
+    assert "class smoke_vseq extends fifo_base_vseq;" in vs
     assert "wr_seq1.start(p_sequencer.wr_sqr);" in vs
     assert "rd_seq2.start(p_sequencer.rd_sqr);" in vs
     assert "fork" not in vs  # sequential
@@ -123,18 +123,18 @@ def test_parallel_vseq_uses_fork_join(tmp_path):
 
 def test_env_wires_vsqr(tmp_path):
     _gen(tmp_path, [_SMOKE])
-    env = (tmp_path / "env.svh").read_text()
-    assert "env_vsqr vsqr;" in env
-    assert 'vsqr = env_vsqr::type_id::create("vsqr", this);' in env
+    env = (tmp_path / "fifo_env.svh").read_text()
+    assert "fifo_virtual_sequencer vsqr;" in env
+    assert 'vsqr = fifo_virtual_sequencer::type_id::create("vsqr", this);' in env
     assert "vsqr.wr_sqr = wr_agnt.sqr;" in env
     assert "vsqr.rd_sqr = rd_agnt.sqr;" in env
 
 
 def test_tb_pkg_includes_vseq_files(tmp_path):
     _gen(tmp_path, [_SMOKE, _STRESS])
-    pkg = (tmp_path / "tb_pkg.sv").read_text()
-    assert '`include "env_vsqr.svh"' in pkg
-    assert '`include "env_vseq_base.svh"' in pkg
+    pkg = (tmp_path / "fifo_tb_pkg.sv").read_text()
+    assert '`include "fifo_virtual_sequencer.svh"' in pkg
+    assert '`include "fifo_base_vseq.svh"' in pkg
     assert '`include "smoke_vseq.svh"' in pkg
     assert '`include "stress_vseq.svh"' in pkg
 
@@ -159,9 +159,9 @@ def test_no_vsqr_when_auto_off(tmp_path):
         auto_virtual_sequences=False,
     )
     Generator(cfg).generate_all(tmp_path)
-    assert not (tmp_path / "env_vsqr.svh").exists()
-    assert not (tmp_path / "env_vseq_base.svh").exists()
-    env = (tmp_path / "env.svh").read_text()
+    assert not (tmp_path / "fifo_virtual_sequencer.svh").exists()
+    assert not (tmp_path / "fifo_base_vseq.svh").exists()
+    env = (tmp_path / "fifo_env.svh").read_text()
     assert "vsqr" not in env
 
 
@@ -171,7 +171,7 @@ def test_no_vsqr_when_auto_off(tmp_path):
 def test_top_connects_all_agents(tmp_path):
     # a registered 2-agent DUT: the DUT connection must wire BOTH interfaces
     Generator(_cfg([_SMOKE])).generate_all(tmp_path)
-    top = (tmp_path / "top.sv").read_text()
+    top = (tmp_path / "tb_top.sv").read_text()
     assert ".full(wr_if_inst.full)" in top
     assert ".wr_data(wr_if_inst.wr_data)" in top
     assert ".rd_data(rd_if_inst.rd_data)" in top  # second agent — was missing before
@@ -217,8 +217,8 @@ def test_vseq_unknown_sequence_rejected():
 
 
 def test_vseq_step_can_use_default_sequence():
-    # the default <agent>_sequence is always a valid step target
-    _cfg([VseqConfig(name="v", body=[VseqStep(agent="wr", sequence="wr_sequence")])])
+    # the default <agent>_seq is always a valid step target
+    _cfg([VseqConfig(name="v", body=[VseqStep(agent="wr", sequence="wr_seq")])])
 
 
 def test_vseq_passive_agent_rejected():

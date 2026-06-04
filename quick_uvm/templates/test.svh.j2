@@ -16,11 +16,11 @@
 {% set seq_type = auto_vseq %}
 {% set seq_start = 'e.vsqr' %}
 {% else %}
-{% set seq_type = pa.name ~ '_sequence' %}
+{% set seq_type = pa.name ~ '_seq' %}
 {% set seq_start = 'e.' ~ pa.name ~ '_agnt.sqr' %}
 {% endif %}
 
-class {{ test.name }} extends test_base;
+class {{ test.name }} extends {{ dut.name }}_base_test;
   `uvm_component_utils({{ test.name }})
 
   function new (string name, uvm_component parent);

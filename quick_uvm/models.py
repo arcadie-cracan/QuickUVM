@@ -299,7 +299,7 @@ class AgentConfig(BaseModel):
                     f"agent '{self.name}': duplicate sequence name '{s.name}'."
                 )
             seen.add(s.name)
-            if s.name == f"{self.name}_sequence":
+            if s.name == f"{self.name}_seq":
                 raise ValueError(
                     f"agent '{self.name}': sequence '{s.name}' collides with the "
                     f"generated default sequence — choose another name."
@@ -331,6 +331,16 @@ class DutConfig(BaseModel):
     clock: str = "clk"
     reset: str = "rst_n"
     reset_active_low: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        # dut.name is the DUT module name AND the prefix for the bench-level class
+        # names (<dut>_env, <dut>_scoreboard, <dut>_vseq, ...), so it must be a
+        # legal SV identifier.
+        _check_sv_identifier(v, "dut name")
+        return v
+
     # Opt-in: the reset is driven EXTERNALLY (by a top-level reset generator),
     # not by the agent. When true, QuickUVM declares the reset as an interface
     # port, generates a `reset_generator` in top, and reset-gates the driver +
@@ -542,15 +552,6 @@ class ProjectMeta(BaseModel):
     author: str = ""
     year: int = 2026
     uvm_version: Literal["1.1d", "1.2"] = "1.2"  # selects version-specific UVM APIs
-
-    @field_validator("name")
-    @classmethod
-    def _check_name(cls, v: str) -> str:
-        # project.name derives the auto virtual-sequence class name (<name>_vseq),
-        # so it must be a legal SV identifier.
-        _check_sv_identifier(v, "project name")
-        return v
-
     # Packages to import into tb_pkg (e.g. for PortConfig.type external references).
     # Prefer the black-box default (generated enums); use this only when the TB
     # genuinely must share a spec/DUT package.
@@ -724,9 +725,7 @@ class ProjectConfig(BaseModel):
                         f"vsequence '{vs.name}': step targets passive agent "
                         f"'{step.agent}' — no sequencer is built for it."
                     )
-                valid_seqs = {s.name for s in ag_obj.sequences} | {
-                    f"{ag_obj.name}_sequence"
-                }
+                valid_seqs = {s.name for s in ag_obj.sequences} | {f"{ag_obj.name}_seq"}
                 if step.sequence not in valid_seqs:
                     raise ValueError(
                         f"vsequence '{vs.name}': step sequence '{step.sequence}' is "
@@ -780,7 +779,7 @@ class ProjectConfig(BaseModel):
             return None
         if len(self.active_agents) < 2:
             return None
-        return f"{self.project.name}_vseq"
+        return f"{self.dut.name}_vseq"
 
     @property
     def effective_virtual_sequences(self) -> list[VseqConfig]:
@@ -796,7 +795,7 @@ class ProjectConfig(BaseModel):
                 name=name,
                 mode=self.auto_vseq_mode,
                 body=[
-                    VseqStep(agent=a.name, sequence=f"{a.name}_sequence")
+                    VseqStep(agent=a.name, sequence=f"{a.name}_seq")
                     for a in self.active_agents
                 ],
             )

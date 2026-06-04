@@ -58,7 +58,7 @@ def _cfg(coverage_models=None, agent=None):
 
 def _cover(tmp_path, coverage_models, agent=None):
     Generator(_cfg(coverage_models, agent)).generate_all(tmp_path)
-    return (tmp_path / "alu_cover.svh").read_text()
+    return (tmp_path / "alu_cov.svh").read_text()
 
 
 _ALU_MODEL = CoverageModel(
