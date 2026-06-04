@@ -1,0 +1,38 @@
+project:
+  name: sat_adder_tb
+  author: qa@example.com
+
+# K0 example: the scoreboard's golden model is written in C and called via DPI-C.
+# A combinational saturating adder — `reference_model.language: c` makes QuickUVM
+# generate a DPI-C bridge (sat_adder_reference_model.svh) + a C stub
+# (sat_adder_reference_model.c, the only file the user edits).
+dut:
+  name: sat_adder
+  clock: clk
+  reset: ''
+  combinational: true
+
+clock:
+  period: 10
+  unit: ns
+
+reference_model:
+  language: c
+
+agents:
+  - name: add
+    interface: add_if
+    sequence_item: add_seq_item
+    trans_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: a, width: 8}
+        - {name: b, width: 8}
+      outputs:
+        - {name: sum, width: 8}
+        - {name: ovf, width: 1}
+
+tests:
+  - name: rand_test
+    num_items: 200
