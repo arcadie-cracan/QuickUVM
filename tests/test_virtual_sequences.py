@@ -149,8 +149,16 @@ def test_test_runs_vseq_on_vsqr(tmp_path):
 # ---- byte-identical when absent --------------------------------------------
 
 
-def test_no_virtual_sequences_no_vsqr(tmp_path):
-    _gen(tmp_path, [])
+def test_no_vsqr_when_auto_off(tmp_path):
+    # 2 agents but auto-vsqr disabled and no explicit vseqs -> no virtual-seq layer
+    cfg = ProjectConfig(
+        project=ProjectMeta(name="t"),
+        dut=DutConfig(name="fifo"),
+        agents=_two_agents(),
+        tests=[TConf(name="t1")],
+        auto_virtual_sequences=False,
+    )
+    Generator(cfg).generate_all(tmp_path)
     assert not (tmp_path / "env_vsqr.svh").exists()
     assert not (tmp_path / "env_vseq_base.svh").exists()
     env = (tmp_path / "env.svh").read_text()

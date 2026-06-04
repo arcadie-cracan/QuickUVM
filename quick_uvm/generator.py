@@ -79,7 +79,8 @@ class Generator:
             "analysis": cfg.analysis,
             "register_model": cfg.register_model,
             "reg_bus_agent": cfg.reg_bus_agent,
-            "virtual_sequences": cfg.virtual_sequences,
+            "virtual_sequences": cfg.effective_virtual_sequences,
+            "auto_vseq": cfg.auto_vseq_name,
         }
 
         specs: list[FileSpec] = []
@@ -140,12 +141,15 @@ class Generator:
                 )
 
         # ---- C2: virtual sequencer + virtual sequences -------------------
-        if cfg.virtual_sequences:
+        # `effective_virtual_sequences` = the explicit ones, or an auto-default
+        # (one base sequence per active agent) for a >=2-active-agent subsystem.
+        effective_vseqs = cfg.effective_virtual_sequences
+        if effective_vseqs:
             specs.append(FileSpec("env_vsqr.svh.j2", "env_vsqr.svh", base_ctx))
             specs.append(
                 FileSpec("env_vseq_base.svh.j2", "env_vseq_base.svh", base_ctx)
             )
-            for vseq in cfg.virtual_sequences:
+            for vseq in effective_vseqs:
                 vctx = {**base_ctx, "vseq": vseq}
                 specs.append(FileSpec("env_vseq.svh.j2", f"{vseq.name}.svh", vctx))
 

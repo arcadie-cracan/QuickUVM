@@ -4,8 +4,10 @@ Goal: make QuickUVM a credible **general-purpose** UVM generator for any digital
 functional-verification project — not just single-block, single-protocol benches —
 while preserving its identity (simplicity + fail-closed pragma preservation).
 
-See `comparison.md` for the current capability matrix and `code_preservation.md` for the
-merge contract every phase must keep intact.
+See `comparison.md` for the current capability matrix, `code_preservation.md` for the
+merge contract every phase must keep intact, and [`defaults.md`](defaults.md) for the
+**sane-defaults spec** (what a generated bench looks like out of the box, and the
+open-source evidence behind each choice).
 
 ## Reprioritization note (why this differs from the v0.3 plan)
 
@@ -194,6 +196,11 @@ multi-interface DUT (i.e. most DUTs).
   starts per-agent sub-sequences `sequential` (in order) or `parallel` (`fork…join`).
 - `tests[].sequence` vs `tests[].vseq` select single-agent vs virtual-sequence
   stimulus (mutually exclusive); a vseq runs on `e.vsqr`.
+- **Sane default (see [`defaults.md`](defaults.md)):** with **≥2 active agents and no
+  explicit `virtual_sequences`**, QuickUVM auto-scaffolds the vsqr + a default
+  `<project>_vseq` (parallel) firing each agent's base sequence, and the default test
+  runs it. `auto_virtual_sequences: false` / `auto_vseq_mode:` are the knobs; single-agent
+  and explicit-vseq benches are byte-identical.
 - The default `top.sv` DUT connection now wires **all** agents' ports (was
   primary-only), so a multi-interface DUT connects out of the box.
 - Fail-closed validation: vseq names are legal/unique/non-reserved; steps target an
