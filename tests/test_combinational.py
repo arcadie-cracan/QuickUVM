@@ -50,7 +50,7 @@ def _cfg(*, combinational=False, agents=None):
 
 def test_dut_connection_has_no_clock(tmp_path):
     Generator(_cfg(combinational=True)).generate_all(tmp_path)
-    top = (tmp_path / "top.sv").read_text()
+    top = (tmp_path / "tb_top.sv").read_text()
     # DUT connected to ports only — no .clk / no reset
     assert ".data_out(bs_if_inst.data_out)" in top
     assert ".clk(" not in top
@@ -89,7 +89,7 @@ def test_dut_stub_is_combinational(tmp_path):
 
 def test_default_is_registered(tmp_path):
     Generator(_cfg(combinational=False)).generate_all(tmp_path)
-    top = (tmp_path / "top.sv").read_text()
+    top = (tmp_path / "tb_top.sv").read_text()
     iface = (tmp_path / "bs_if.sv").read_text()
     mon = (tmp_path / "bs_monitor.svh").read_text()
     assert ".clk(clk)" in top

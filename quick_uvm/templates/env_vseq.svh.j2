@@ -6,9 +6,9 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 // C2 virtual sequence '{{ vseq.name }}' ({{ vseq.mode }}) — coordinates per-agent
-// sub-sequences through the env_vsqr.
+// sub-sequences through the {{ dut.name }}_virtual_sequencer.
 
-class {{ vseq.name }} extends env_vseq_base;
+class {{ vseq.name }} extends {{ dut.name }}_base_vseq;
   `uvm_object_utils({{ vseq.name }})
 
   // pragma quickuvm custom class_item_additional begin

@@ -60,53 +60,51 @@ def _cfg(agents):
 
 
 def test_agent_and_env_config_files_generated(tb):
-    assert (tb / "reg_config.svh").exists()
-    assert (tb / "env_config.svh").exists()
+    assert (tb / "reg_cfg.svh").exists()
+    assert (tb / "simple_reg_env_cfg.svh").exists()
 
 
 def test_agent_config_holds_vif_and_is_active(tb):
-    c = (tb / "reg_config.svh").read_text()
-    assert "class reg_config extends uvm_object" in c
+    c = (tb / "reg_cfg.svh").read_text()
+    assert "class reg_cfg extends uvm_object" in c
     assert "uvm_active_passive_enum is_active" in c
     assert "virtual reg_if vif" in c
 
 
 def test_env_config_aggregates_agent_config(tb):
-    c = (tb / "env_config.svh").read_text()
-    assert "class env_config extends uvm_object" in c
-    assert "reg_config reg_cfg" in c
+    c = (tb / "simple_reg_env_cfg.svh").read_text()
+    assert "class simple_reg_env_cfg extends uvm_object" in c
+    assert "reg_cfg reg_cfg" in c
 
 
 # ---- config_db wiring (no more uvm_resource_db) ---------------------------
 
 
 def test_top_sets_vif_via_config_db(tb):
-    t = (tb / "top.sv").read_text()
+    t = (tb / "tb_top.sv").read_text()
     assert 'uvm_config_db#(virtual reg_if)::set(null, "*", "reg_if_vif"' in t
     assert "uvm_resource_db" not in t
 
 
 def test_agent_gets_config_and_no_resource_db(tb):
     a = (tb / "reg_agent.svh").read_text()
-    assert 'uvm_config_db#(reg_config)::get(this, "", "cfg", cfg)' in a
+    assert 'uvm_config_db#(reg_cfg)::get(this, "", "cfg", cfg)' in a
     assert "is_active = cfg.is_active;" in a
     assert "vif       = cfg.vif;" in a
     assert "uvm_resource_db" not in a
 
 
 def test_env_distributes_agent_config(tb):
-    e = (tb / "env.svh").read_text()
-    assert 'uvm_config_db#(env_config)::get(this, "", "env_cfg", env_cfg)' in e
-    assert (
-        'uvm_config_db#(reg_config)::set(this, "reg_agnt", "cfg", env_cfg.reg_cfg)' in e
-    )
+    e = (tb / "simple_reg_env.svh").read_text()
+    assert 'uvm_config_db#(simple_reg_env_cfg)::get(this, "", "env_cfg", env_cfg)' in e
+    assert 'uvm_config_db#(reg_cfg)::set(this, "reg_agnt", "cfg", env_cfg.reg_cfg)' in e
 
 
 def test_test_base_builds_and_sets_env_config(tb):
-    t = (tb / "test_base.svh").read_text()
-    assert 'env_cfg = env_config::type_id::create("env_cfg")' in t
+    t = (tb / "simple_reg_base_test.svh").read_text()
+    assert 'env_cfg = simple_reg_env_cfg::type_id::create("env_cfg")' in t
     assert "env_cfg.reg_cfg.is_active = UVM_ACTIVE" in t
-    assert 'uvm_config_db#(env_config)::set(this, "e", "env_cfg", env_cfg)' in t
+    assert 'uvm_config_db#(simple_reg_env_cfg)::set(this, "e", "env_cfg", env_cfg)' in t
 
 
 # ---- the active/passive flag actually works now ---------------------------
@@ -115,9 +113,12 @@ def test_test_base_builds_and_sets_env_config(tb):
 def test_active_flag_drives_is_active(tmp_path):
     Generator(_cfg([_agent("a0", active=False)])).generate_all(tmp_path)
     # config default reflects passive
-    assert "is_active = UVM_PASSIVE" in (tmp_path / "a0_config.svh").read_text()
+    assert "is_active = UVM_PASSIVE" in (tmp_path / "a0_cfg.svh").read_text()
     # test_base sets it passive
-    assert "a0_cfg.is_active = UVM_PASSIVE" in (tmp_path / "test_base.svh").read_text()
+    assert (
+        "a0_cfg.is_active = UVM_PASSIVE"
+        in (tmp_path / "t_dut_base_test.svh").read_text()
+    )
     # agent still gates driver/sequencer creation on is_active
     a = (tmp_path / "a0_agent.svh").read_text()
     assert "if (is_active == UVM_ACTIVE) begin" in a
@@ -125,5 +126,8 @@ def test_active_flag_drives_is_active(tmp_path):
 
 def test_active_true_is_active_active(tmp_path):
     Generator(_cfg([_agent("a0", active=True)])).generate_all(tmp_path)
-    assert "is_active = UVM_ACTIVE" in (tmp_path / "a0_config.svh").read_text()
-    assert "a0_cfg.is_active = UVM_ACTIVE" in (tmp_path / "test_base.svh").read_text()
+    assert "is_active = UVM_ACTIVE" in (tmp_path / "a0_cfg.svh").read_text()
+    assert (
+        "a0_cfg.is_active = UVM_ACTIVE"
+        in (tmp_path / "t_dut_base_test.svh").read_text()
+    )

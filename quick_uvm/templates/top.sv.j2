@@ -7,9 +7,9 @@
 //----------------------------------------------------------------------
 
 `include "uvm_macros.svh"
-module top;
+module tb_top;
   import uvm_pkg::*;
-  import tb_pkg::*;
+  import {{ dut.name }}_tb_pkg::*;
 
   logic clk;
 {% if dut.external_reset %}

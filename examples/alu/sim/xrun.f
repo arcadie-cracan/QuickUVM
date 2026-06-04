@@ -3,11 +3,11 @@
 -access +rwc
 -timescale 1ns/1ns
 -linedebug
--top top
+-top tb_top
 +incdir+../gen
 ../rtl/alu_pkg.sv
-../gen/tb_pkg.sv
+../gen/alu_tb_pkg.sv
 ../gen/alu_if.sv
 ../gen/clkgen.sv
 ../rtl/alu.sv
-../gen/top.sv
+../gen/tb_top.sv

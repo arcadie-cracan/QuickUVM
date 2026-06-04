@@ -297,8 +297,8 @@ def add_test(config: str, name: str, num_items: int, output: str | None) -> None
     gen = Generator(cfg)
 
     results = gen.generate_all(out_dir, only=f"{name}.svh")
-    # Also regenerate tb_pkg.sv so the new test is included
-    results += gen.generate_all(out_dir, only="tb_pkg.sv")
+    # Also regenerate the package so the new test is included
+    results += gen.generate_all(out_dir, only=f"{cfg.dut.name}_tb_pkg.sv")
 
     for status, path in results:
         click.echo(f"  {_status_icon(status)}  {path}")

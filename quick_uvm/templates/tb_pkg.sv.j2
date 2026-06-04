@@ -6,12 +6,12 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-`ifndef TB_PKG__SV
-`define TB_PKG__SV
+`ifndef {{ dut.name | upper }}_TB_PKG__SV
+`define {{ dut.name | upper }}_TB_PKG__SV
 
 `include "uvm_macros.svh"
 
-package tb_pkg;
+package {{ dut.name }}_tb_pkg;
   import uvm_pkg::*;
 {% if register_model %}
   import {{ register_model.package }}::*;
@@ -29,12 +29,12 @@ package tb_pkg;
 
   // Agent configuration objects
 {% for agent in agents %}
-  `include "{{ agent.name }}_config.svh"
+  `include "{{ agent.name }}_cfg.svh"
 {% endfor %}
 
   // Testbench components (per agent)
 {% for agent in agents %}
-  `include "{{ agent.name }}_cover.svh"
+  `include "{{ agent.name }}_cov.svh"
   `include "{{ agent.name }}_driver.svh"
   `include "{{ agent.name }}_sequencer.svh"
   `include "{{ agent.name }}_monitor.svh"
@@ -42,12 +42,12 @@ package tb_pkg;
 {% endfor %}
 
   // Scoreboard
-  `include "sb_predictor.svh"
-  `include "sb_comparator.svh"
-  `include "tb_scoreboard.svh"
+  `include "{{ dut.name }}_predictor.svh"
+  `include "{{ dut.name }}_comparator.svh"
+  `include "{{ dut.name }}_scoreboard.svh"
 
   // Environment
-  `include "env_config.svh"
+  `include "{{ dut.name }}_env_cfg.svh"
 {% if register_model %}
   `include "{{ register_model.adapter }}.svh"
 {% if register_model.frontdoor %}
@@ -55,14 +55,14 @@ package tb_pkg;
 {% endif %}
 {% endif %}
 {% if virtual_sequences %}
-  `include "env_vsqr.svh"
-  `include "env_vseq_base.svh"
+  `include "{{ dut.name }}_virtual_sequencer.svh"
+  `include "{{ dut.name }}_base_vseq.svh"
 {% endif %}
-  `include "env.svh"
+  `include "{{ dut.name }}_env.svh"
 
   // Sequences (per agent)
 {% for agent in agents %}
-  `include "{{ agent.name }}_sequence.svh"
+  `include "{{ agent.name }}_seq.svh"
 {% for seq in agent.sequences %}
   `include "{{ seq.name }}.svh"
 {% endfor %}
@@ -74,16 +74,16 @@ package tb_pkg;
   // pragma quickuvm custom sequences_additional end
 
   // Tests
-  `include "test_base.svh"
+  `include "{{ dut.name }}_base_test.svh"
 {% for test in tests %}
   `include "{{ test.name }}.svh"
 {% endfor %}
 {% if register_model and register_model.reg_test %}
-  `include "reg_test.svh"
+  `include "{{ dut.name }}_reg_test.svh"
 {% endif %}
 
   // Scoreboard expected-value calculator (extern function body)
-  `include "sb_calc_exp.svh"
+  `include "{{ dut.name }}_reference_model.svh"
 
 endpackage
 

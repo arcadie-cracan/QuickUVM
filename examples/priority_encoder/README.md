@@ -10,8 +10,8 @@ shifter; the flag drops straight in.
 - `rtl/priority_encoder.sv` — clean MIT combinational DUT.
 - `priority_encoder.yaml` — config (`combinational: true`).
 - `gen/` — generated TB; two hand-filled pragmas:
-  - `sb_calc_exp.svh` `prediction_logic` — golden model (highest-set-bit + `|req`).
-  - `pe_sequence.svh` `do_item_constraints` — a `dist` biasing `req` toward `0x00`
+  - `priority_encoder_reference_model.svh` `prediction_logic` — golden `predict()` model (highest-set-bit + `|req`).
+  - `pe_seq.svh` `do_item_constraints` — a `dist` biasing `req` toward `0x00`
     (the `valid=0` corner) and `0xFF`.
 - `sim/xrun.f` — Xcelium filelist (real `rtl/` DUT, not the stub).
 

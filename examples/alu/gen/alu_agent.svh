@@ -10,7 +10,7 @@ class alu_agent extends uvm_agent;
   `uvm_component_utils(alu_agent)
 
   // is_active is inherited from uvm_agent; set from cfg in build_phase
-  alu_config  cfg;
+  alu_cfg  cfg;
   virtual alu_if vif;
 
   uvm_analysis_port #(alu_seq_item) ap;
@@ -27,8 +27,8 @@ class alu_agent extends uvm_agent;
 
   virtual function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    if (!uvm_config_db#(alu_config)::get(this, "", "cfg", cfg))
-      `uvm_fatal("NOCFG", {"No alu_config set for: ", get_full_name()})
+    if (!uvm_config_db#(alu_cfg)::get(this, "", "cfg", cfg))
+      `uvm_fatal("NOCFG", {"No alu_cfg set for: ", get_full_name()})
     is_active = cfg.is_active;
     vif       = cfg.vif;
     if (is_active == UVM_ACTIVE) begin

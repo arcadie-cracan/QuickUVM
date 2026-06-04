@@ -55,7 +55,7 @@ Legend: ✓ full · ◑ partial / skeleton-only · ✗ none · — n/a
 | Functional coverage from fields | ✗ (one empty covergroup) | ◑/✓ | ◑ | ◑ | ✗ |
 | Register coverage | ✗ | ✓ | ◑ | ◑ | ✗ |
 | **Pillar 4 — Reuse / architecture** |
-| Packaged reusable VIP (`<agent>_pkg`) | ✗ (flat monolithic `tb_pkg`) | ✓ | ◑ | ◑ | ✗ |
+| Packaged reusable VIP (`<agent>_pkg`) | ✗ (flat monolithic `<dut>_tb_pkg`) | ✓ | ◑ | ◑ | ✗ |
 | Hierarchical sub-environments | ✗ | ✓ | ◑ | ✗ | ✗ |
 | Parameterized interfaces/agents | ✗ | ✓ | ◑ | ✓ | ✗ |
 | Multi-agent analysis routing | ◑ per-agent (MVP) | ✓ | ◑ | ◑ | ◑ |

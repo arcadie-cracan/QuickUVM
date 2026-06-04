@@ -3,12 +3,12 @@
 A synchronous FIFO with **two interfaces** — a write port (`wr_en`/`wr_data`,
 sees `full`) and a read port (`rd_en`, sees `rd_data`/`empty`). It is QuickUVM's
 first multi-agent bench and the worked example for **C2**: a virtual sequencer
-(`env_vsqr`) and virtual sequences that coordinate the two agents.
+(`fifo_virtual_sequencer`) and virtual sequences that coordinate the two agents.
 
 ## What C2 generates
-- `env_vsqr.svh` — a virtual sequencer holding `wr_sqr`/`rd_sqr` handles (wired in
-  `env.connect_phase`).
-- `env_vseq_base.svh` — `` `uvm_declare_p_sequencer(env_vsqr) `` so virtual
+- `fifo_virtual_sequencer.svh` — a virtual sequencer holding `wr_sqr`/`rd_sqr` handles (wired in
+  the env's `connect_phase`).
+- `fifo_base_vseq.svh` — `` `uvm_declare_p_sequencer(fifo_virtual_sequencer) `` so virtual
   sequences reach each agent's sequencer via `p_sequencer.<agent>_sqr`.
 - `smoke_vseq.svh` (**sequential**) and `stress_vseq.svh` (**parallel**, `fork…join`).
 - The `smoke`/`stress` tests start their vseq on `e.vsqr`.

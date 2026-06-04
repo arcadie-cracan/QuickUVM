@@ -96,8 +96,8 @@ def test_library_sequences_included_in_tb_pkg(tmp_path):
             SequenceConfig(name="alu_incr", kind="incrementing", field="a"),
         ],
     )
-    pkg = (tmp_path / "tb_pkg.sv").read_text()
-    assert '`include "alu_sequence.svh"' in pkg  # the default is still there
+    pkg = (tmp_path / "d_tb_pkg.sv").read_text()
+    assert '`include "alu_seq.svh"' in pkg  # the default is still there
     assert '`include "alu_rand.svh"' in pkg
     assert '`include "alu_incr.svh"' in pkg
 
@@ -121,7 +121,7 @@ def test_no_selector_is_byte_identical_default(tmp_path):
     # the default run_phase starts <primary>_sequence on the primary sequencer
     _gen(tmp_path, tests=[TConf(name="t1")])
     test = (tmp_path / "t1.svh").read_text()
-    assert "alu_sequence seq;" in test
+    assert "alu_seq seq;" in test
     assert "seq.start(e.alu_agnt.sqr);" in test
 
 
@@ -160,7 +160,7 @@ def test_duplicate_sequence_name_rejected():
 
 def test_sequence_name_collides_with_default_rejected():
     with pytest.raises(Exception, match="collides with the generated default"):
-        _cfg(sequences=[SequenceConfig(name="alu_sequence", kind="random")])
+        _cfg(sequences=[SequenceConfig(name="alu_seq", kind="random")])
 
 
 def test_selector_unknown_agent_rejected():

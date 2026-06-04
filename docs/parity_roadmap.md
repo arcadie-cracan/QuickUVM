@@ -25,7 +25,7 @@ most universally:
 A third lever comes from MathWorks HDL Verifier (which UVMF/Easier UVM lack): it
 generates the **reference model / scoreboard checker** from an executable spec and bridges
 it into the SV scoreboard via **DPI-C**. The hand-written predictor is the biggest
-effort sink in a real bench (cf. the SPI bridge's `sb_calc_exp`), so a generated
+effort sink in a real bench (cf. the SPI bridge's `<dut>_reference_model` `predict()`), so a generated
 **predictor seam** (bring-your-own golden model over DPI-C) is high-leverage too.
 
 So this revision leads with **stimulus richness + coverage + a reference-model seam**,
@@ -38,7 +38,7 @@ the *wiring*, which is done.
 | Phase | Result | Version |
 |---|---|---|
 | Pragma preservation hardening (Track A) | fail-closed merge + rolling backups; latent `{%-` defect fixed | — |
-| F1 — Config objects + `uvm_config_db` | `<agent>_config`/`env_config`; `is_active` wired | v0.3.0 |
+| F1 — Config objects + `uvm_config_db` | `<agent>_cfg`/`<dut>_env_cfg`; `is_active` wired | v0.3.0 |
 | C1 — Analysis fabric (MVP per-agent routing) | opt-in `analysis:` (coverage list + scoreboards) | v0.4.0 |
 | C4a — RAL front-door wiring | adapter skeleton + build/lock/predictor + `reg_test` | v0.5.0 |
 | C4b — RAL backdoor | `backdoor_root` → `add_hdl_path`; backdoor `reg_test` | v0.6.0 |
@@ -147,7 +147,7 @@ write. Opt-in `coverage_models:` block; default stays the generic stub.
 
 **Status — first slice landed (config-driven covergroup):**
 - `coverage_models:` (a list, one entry per agent) → QuickUVM generates a real
-  covergroup in `<agent>_cover`: config-driven coverpoints with named **bins**
+  covergroup in `<agent>_cov`: config-driven coverpoints with named **bins**
   (`value` / `range` / `values`), **enum fields auto-bin** one-per-label, **crosses**
   (`[a, b]` → `a_x_b : cross a_cp, b_cp`), and per-coverpoint `at_least`. Sampled on
   the existing monitor analysis write — no new plumbing.
@@ -173,9 +173,9 @@ test → sequence selection (replace the bare `num_items`).
   `tr.<field> == <W>'(i)`) generate working bodies; `directed`/`reset`/`error`
   generate a skeleton with a `// pragma quickuvm custom body` region.
 - `tests[].sequence: {agent, name}` → the test starts the selected library
-  sequence on that agent's sequencer instead of the default `<primary>_sequence`.
+  sequence on that agent's sequencer instead of the default `<primary>_seq`.
 - Fail-closed validation: sequence names must be legal, non-reserved SV identifiers
-  and unique (and must not collide with `<agent>_sequence`); `incrementing` needs a
+  and unique (and must not collide with `<agent>_seq`); `incrementing` needs a
   plain (non-enum/typed, unconstrained) randomizable field; a selector must name a
   declared sequence on an **active** agent.
 - Byte-identical when unused. Validated on `examples/barrel_shifter/` — `rand_test`
@@ -185,23 +185,23 @@ test → sequence selection (replace the bare `num_items`).
   skeletons), and per-test sequence *parameters*.
 
 ### C2 — Virtual sequencer + virtual sequences
-`env_vsqr` (agent sequencer handles) + `env_vseq_base`; tests run vseqs. Required for any
+`<dut>_virtual_sequencer` (agent sequencer handles) + `<dut>_base_vseq`; tests run vseqs. Required for any
 multi-interface DUT (i.e. most DUTs).
 **Accept:** a vseq coordinating ≥2 agents.
 
 **Status — landed:**
-- `virtual_sequences:` → QuickUVM generates `env_vsqr` (a handle to each active agent's
-  sequencer, wired in `env.connect_phase`), `env_vseq_base`
-  (`` `uvm_declare_p_sequencer(env_vsqr) ``), and one class per vsequence whose body
+- `virtual_sequences:` → QuickUVM generates `<dut>_virtual_sequencer` (a handle to each active agent's
+  sequencer, wired in the env's `connect_phase`), `<dut>_base_vseq`
+  (`` `uvm_declare_p_sequencer(<dut>_virtual_sequencer) ``), and one class per vsequence whose body
   starts per-agent sub-sequences `sequential` (in order) or `parallel` (`fork…join`).
 - `tests[].sequence` vs `tests[].vseq` select single-agent vs virtual-sequence
   stimulus (mutually exclusive); a vseq runs on `e.vsqr`.
 - **Sane default (see [`defaults.md`](defaults.md)):** with **≥2 active agents and no
   explicit `virtual_sequences`**, QuickUVM auto-scaffolds the vsqr + a default
-  `<project>_vseq` (parallel) firing each agent's base sequence, and the default test
+  `<dut>_vseq` (parallel) firing each agent's base sequence, and the default test
   runs it. `auto_virtual_sequences: false` / `auto_vseq_mode:` are the knobs; single-agent
   and explicit-vseq benches are byte-identical.
-- The default `top.sv` DUT connection now wires **all** agents' ports (was
+- The default `tb_top.sv` DUT connection now wires **all** agents' ports (was
   primary-only), so a multi-interface DUT connects out of the box.
 - Fail-closed validation: vseq names are legal/unique/non-reserved; steps target an
   active agent and an existing library (or default) sequence; a test's vseq must exist.
@@ -218,7 +218,7 @@ The scoreboard predictor is the biggest hand-written-effort sink in a real bench
 UVMF/Easier UVM leave it entirely to the user. Rather than synthesize a predictor,
 generate the **seam** so a golden model drops in:
 - a defined predictor interface — a `uvm_component` with one `predict(req) → exp` method —
-  so the scoreboard is checker-agnostic (replaces today's ad-hoc `sb_calc_exp` blob);
+  so the scoreboard is checker-agnostic (replaces today's ad-hoc `<dut>_reference_model` blob);
 - optional **DPI-C scaffolding** (`import "DPI-C"` decls + a C/C++ header & stub whose
   signature is derived from the transaction fields) so the golden model can be written in
   C/C++ instead of SystemVerilog, then called per transaction;

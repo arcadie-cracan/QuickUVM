@@ -1,4 +1,4 @@
-tb_pkg.sv
+fifo_tb_pkg.sv
 wr_if.sv
 rd_if.sv
 

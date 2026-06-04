@@ -6,9 +6,9 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 // C2 virtual sequence 'stress_vseq' (parallel) — coordinates per-agent
-// sub-sequences through the env_vsqr.
+// sub-sequences through the fifo_virtual_sequencer.
 
-class stress_vseq extends env_vseq_base;
+class stress_vseq extends fifo_base_vseq;
   `uvm_object_utils(stress_vseq)
 
   // pragma quickuvm custom class_item_additional begin

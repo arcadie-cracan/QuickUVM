@@ -1,4 +1,4 @@
-tb_pkg.sv
+priority_encoder_tb_pkg.sv
 pe_if.sv
 
 // Add extra package/source files below (preserved across regeneration):

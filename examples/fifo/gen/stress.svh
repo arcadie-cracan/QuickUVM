@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-class stress extends test_base;
+class stress extends fifo_base_test;
   `uvm_component_utils(stress)
 
   function new (string name, uvm_component parent);

@@ -62,9 +62,9 @@ def _cfg(register_model=None, agents=None, uvm_version="1.2"):
 def test_no_register_model_emits_nothing(tmp_path):
     Generator(_cfg()).generate_all(tmp_path)
     assert not (tmp_path / "spi_reg_adapter.svh").exists()
-    assert not (tmp_path / "reg_test.svh").exists()
-    assert "reg_model" not in (tmp_path / "env.svh").read_text()
-    assert "uvm_reg" not in (tmp_path / "tb_pkg.sv").read_text()
+    assert not (tmp_path / "d_reg_test.svh").exists()
+    assert "reg_model" not in (tmp_path / "d_env.svh").read_text()
+    assert "uvm_reg" not in (tmp_path / "d_tb_pkg.sv").read_text()
 
 
 # ---- front-door RAL integration -------------------------------------------
@@ -79,14 +79,14 @@ def test_adapter_and_reg_test_generated(tmp_path):
     # protocol mapping is user code (pragmas)
     assert "pragma quickuvm custom reg2bus begin" in a
     assert "pragma quickuvm custom bus2reg begin" in a
-    rt = (tmp_path / "reg_test.svh").read_text()
+    rt = (tmp_path / "d_reg_test.svh").read_text()
     assert "uvm_reg_hw_reset_seq" in rt and "uvm_reg_bit_bash_seq" in rt
     assert "env_cfg.reg_model" in rt
 
 
 def test_model_built_and_locked_in_test_base(tmp_path):
     Generator(_cfg(_rm())).generate_all(tmp_path)
-    t = (tmp_path / "test_base.svh").read_text()
+    t = (tmp_path / "d_base_test.svh").read_text()
     assert 'angle_sensor_regs_c::type_id::create("reg_model")' in t
     assert "env_cfg.reg_model.build();" in t
     assert "env_cfg.reg_model.lock_model();" in t
@@ -94,7 +94,7 @@ def test_model_built_and_locked_in_test_base(tmp_path):
 
 def test_env_wires_sequencer_and_predictor(tmp_path):
     Generator(_cfg(_rm(use_predictor=True))).generate_all(tmp_path)
-    e = (tmp_path / "env.svh").read_text()
+    e = (tmp_path / "d_env.svh").read_text()
     assert "spi_reg_adapter reg_adapter;" in e
     assert "uvm_reg_predictor #(spi_trans) reg_predictor;" in e
     assert "default_map.set_sequencer(spi_agnt.sqr, reg_adapter);" in e
@@ -104,22 +104,22 @@ def test_env_wires_sequencer_and_predictor(tmp_path):
 
 def test_no_predictor_uses_auto_predict(tmp_path):
     Generator(_cfg(_rm(use_predictor=False))).generate_all(tmp_path)
-    e = (tmp_path / "env.svh").read_text()
+    e = (tmp_path / "d_env.svh").read_text()
     assert "reg_predictor" not in e
     assert "default_map.set_auto_predict(1);" in e
 
 
 def test_reg_test_can_be_disabled(tmp_path):
     Generator(_cfg(_rm(reg_test=False))).generate_all(tmp_path)
-    assert not (tmp_path / "reg_test.svh").exists()
-    assert "reg_test.svh" not in (tmp_path / "tb_pkg.sv").read_text()
+    assert not (tmp_path / "d_reg_test.svh").exists()
+    assert "d_reg_test.svh" not in (tmp_path / "d_tb_pkg.sv").read_text()
     # adapter still generated
     assert (tmp_path / "spi_reg_adapter.svh").exists()
 
 
 def test_tb_pkg_imports_reg_package(tmp_path):
     Generator(_cfg(_rm())).generate_all(tmp_path)
-    p = (tmp_path / "tb_pkg.sv").read_text()
+    p = (tmp_path / "d_tb_pkg.sv").read_text()
     assert "import angle_sensor_regs_uvm_pkg::*;" in p
     assert '`include "spi_reg_adapter.svh"' in p
 
@@ -129,13 +129,13 @@ def test_tb_pkg_imports_reg_package(tmp_path):
 
 def test_backdoor_root_adds_hdl_path(tmp_path):
     Generator(_cfg(_rm(backdoor_root="top.dut_inst.regs_inst"))).generate_all(tmp_path)
-    t = (tmp_path / "test_base.svh").read_text()
+    t = (tmp_path / "d_base_test.svh").read_text()
     assert 'env_cfg.reg_model.add_hdl_path("top.dut_inst.regs_inst");' in t
 
 
 def test_no_backdoor_root_no_hdl_path(tmp_path):
     Generator(_cfg(_rm())).generate_all(tmp_path)
-    assert "add_hdl_path(" not in (tmp_path / "test_base.svh").read_text()
+    assert "add_hdl_path(" not in (tmp_path / "d_base_test.svh").read_text()
 
 
 def test_backdoor_door_sets_default_door_uvm12(tmp_path):
@@ -143,7 +143,7 @@ def test_backdoor_door_sets_default_door_uvm12(tmp_path):
     Generator(_cfg(_rm(backdoor_root="top.r", reg_test_door="backdoor"))).generate_all(
         tmp_path
     )
-    rt = (tmp_path / "reg_test.svh").read_text()
+    rt = (tmp_path / "d_reg_test.svh").read_text()
     assert "set_default_door(UVM_BACKDOOR);" in rt
 
 
@@ -151,7 +151,7 @@ def test_backdoor_uvm11d_uses_explicit_mirror(tmp_path):
     Generator(
         _cfg(_rm(backdoor_root="top.r", reg_test_door="backdoor"), uvm_version="1.1d")
     ).generate_all(tmp_path)
-    rt = (tmp_path / "reg_test.svh").read_text()
+    rt = (tmp_path / "d_reg_test.svh").read_text()
     # 1.1d built-ins hardcode front-door -> explicit per-register backdoor mirror
     assert "mirror(status, UVM_CHECK, UVM_BACKDOOR)" in rt
     assert "set_default_door(UVM_BACKDOOR);" not in rt
@@ -160,7 +160,7 @@ def test_backdoor_uvm11d_uses_explicit_mirror(tmp_path):
 
 def test_frontdoor_door_no_backdoor_call(tmp_path):
     Generator(_cfg(_rm())).generate_all(tmp_path)
-    rt = (tmp_path / "reg_test.svh").read_text()
+    rt = (tmp_path / "d_reg_test.svh").read_text()
     assert "set_default_door(UVM_BACKDOOR);" not in rt
     assert "UVM_CHECK, UVM_BACKDOOR" not in rt
 
@@ -176,16 +176,16 @@ def test_frontdoor_generated_and_wired(tmp_path):
     assert "extends uvm_reg_frontdoor" in c
     assert "pragma quickuvm custom frontdoor_body begin" in c
     assert "rg.get_address(rw_info.map)" in c
-    t = (tmp_path / "test_base.svh").read_text()
+    t = (tmp_path / "d_base_test.svh").read_text()
     assert 'spi_reg_frontdoor::type_id::create("reg_fd")' in t
     assert "set_frontdoor(reg_fd," in t
-    assert '`include "spi_reg_frontdoor.svh"' in (tmp_path / "tb_pkg.sv").read_text()
+    assert '`include "spi_reg_frontdoor.svh"' in (tmp_path / "d_tb_pkg.sv").read_text()
 
 
 def test_no_frontdoor_no_file(tmp_path):
     Generator(_cfg(_rm())).generate_all(tmp_path)
     assert not list(tmp_path.glob("*frontdoor*"))
-    assert "set_frontdoor" not in (tmp_path / "test_base.svh").read_text()
+    assert "set_frontdoor" not in (tmp_path / "d_base_test.svh").read_text()
 
 
 # ---- validation ------------------------------------------------------------
@@ -203,8 +203,8 @@ def test_backdoor_door_requires_root():
 
 def test_reg_test_disables_datapath_scoreboard(tmp_path):
     Generator(_cfg(_rm())).generate_all(tmp_path)
-    rt = (tmp_path / "reg_test.svh").read_text()
+    rt = (tmp_path / "d_reg_test.svh").read_text()
     assert 'uvm_config_db#(bit)::set(this, "*", "sb_enable", 0);' in rt
-    cmp = (tmp_path / "sb_comparator.svh").read_text()
+    cmp = (tmp_path / "d_comparator.svh").read_text()
     assert 'uvm_config_db#(bit)::get(this, "", "sb_enable", enabled)' in cmp
     assert "if (!enabled) begin" in cmp

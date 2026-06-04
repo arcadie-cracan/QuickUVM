@@ -31,13 +31,13 @@ and the golden model reads `case (t.op) ADD: …` with no DUT import.
 - `alu.yaml` — config (`combinational: true`; `op` has an `enum:` → TB-owned `op_e`).
 - `gen/` — generated TB; user code:
   - `alu_seq_item.svh` — QuickUVM-generated `op_e` typedef + `rand op_e op`.
-  - `tb_pkg.sv` `imports` pragma — empty (no DUT package; the TB owns `op_e`).
-  - `sb_calc_exp.svh` `prediction_logic` — golden model, the spec by `op_e` names.
-  - `alu_sequence.svh` `do_item_constraints` — empty (the enum self-constrains).
-- `sim/xrun.f` — Xcelium filelist (`alu_pkg.sv` compiled before `tb_pkg`, for the DUT).
+  - `alu_tb_pkg.sv` `imports` pragma — empty (no DUT package; the TB owns `op_e`).
+  - `alu_reference_model.svh` `prediction_logic` — golden `predict()` model, the spec by `op_e` names.
+  - `alu_seq.svh` `do_item_constraints` — empty (the enum self-constrains).
+- `sim/xrun.f` — Xcelium filelist (`alu_pkg.sv` compiled before `alu_tb_pkg`, for the DUT).
 
 ## Functional coverage (V1)
-`alu.yaml` also carries a `coverage_models:` block, so `gen/alu_cover.svh` has a
+`alu.yaml` also carries a `coverage_models:` block, so `gen/alu_cov.svh` has a
 real covergroup instead of the generic stub: `op` auto-bins one-per-opcode, `a`/`b`
 get corner bins (`zero`/`max`/`mid`), `carry` covers `{0,1}`, and `op × a` / `op × b`
 crosses ask whether each opcode was exercised against each operand corner. Same

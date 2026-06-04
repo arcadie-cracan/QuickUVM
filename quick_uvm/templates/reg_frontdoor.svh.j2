@@ -9,7 +9,7 @@
 // to perform one register access, implementing the protocol specifics that a 1:1
 // uvm_reg_adapter cannot (e.g. address paging, pipelined reads, multi-byte access).
 //
-// Installed on every register by test_base (set_frontdoor). At runtime `rw_info`
+// Installed on every register by {{ dut.name }}_base_test (set_frontdoor). At runtime `rw_info`
 // (uvm_reg_item) carries: kind (UVM_READ/UVM_WRITE), value[], element (the uvm_reg),
 // and map. body() runs on the bus agent's sequencer.
 //----------------------------------------------------------------------
