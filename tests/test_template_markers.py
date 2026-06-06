@@ -16,6 +16,9 @@ from quick_uvm.models import (
     AgentConfig,
     AnalysisConfig,
     ClockConfig,
+    CoverageBin,
+    CoverageModel,
+    Coverpoint,
     DutConfig,
     FieldConfig,
     PortConfig,
@@ -24,6 +27,7 @@ from quick_uvm.models import (
     ReferenceModelConfig,
     RegisterModelConfig,
     ScoreboardSpec,
+    TransitionBin,
 )
 from quick_uvm.models import (
     TestConfig as TConf,  # aliased so pytest doesn't try to collect it
@@ -102,6 +106,25 @@ CONFIGS = {
                 "a0",
                 fields=[FieldConfig(name="payload", element_width=8, max_size=16)],
                 constraints=["din < payload.size()"],
+            )
+        ],
+    ),
+    # V1 closure — illegal_bins / ignore_bins / transition bins + option.goal
+    # (exercises the new coverpoint-body branches in the coverage template).
+    "coverage_closure": _cfg(
+        coverage_models=[
+            CoverageModel(
+                agent="a0",
+                goal=90,
+                coverpoints=[
+                    Coverpoint(
+                        field="din",
+                        bins=[CoverageBin(name="lo", range=(0, 127))],
+                        illegal_bins=[CoverageBin(name="bad", value=255)],
+                        ignore_bins=[CoverageBin(name="dontcare", value=128)],
+                        transitions=[TransitionBin(name="z2one", seq="0 => 1")],
+                    )
+                ],
             )
         ],
     ),

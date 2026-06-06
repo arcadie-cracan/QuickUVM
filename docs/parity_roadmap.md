@@ -176,8 +176,29 @@ write. Opt-in `coverage_models:` block; default stays the generic stub.
 - **Black box**: bins encode the spec's interesting values (corners/ranges), not DUT
   internals. Validated on `examples/alu/` — 28/64 bins, 55.56% after 1001 random
   vectors on Xcelium; verible-clean; CI gates it (the alu lint step).
-- *Remaining:* `illegal_bins`/`ignore_bins`, transition bins (`=>`), per-bin cross
-  selection (`binsof`), width-derived auto-bins, `option.goal` / coverage reports.
+
+**Status — second slice landed (closure machinery):**
+- Per-coverpoint **`illegal_bins:`** (flag a hit as an error) and **`ignore_bins:`**
+  (drop don't-cares from the denominator) — both reuse the `value`/`range`/`values`
+  bin schema and coexist with enum/wide auto-bins (only an explicit `bins` suppresses
+  auto-binning). Per-coverpoint **`transitions:`** (`{name, seq}`) emit temporal
+  `bins <name> = (a => b);`. Covergroup-level **`goal:`** → `option.goal`.
+- Fail-closed validation: bin names unique across all four lists; bin + integer
+  transition-endpoint values are storable — a **declared enum label** for an enum
+  field (an out-of-label value is silently *dropped* by the simulator, OBINRGE, so
+  it's rejected at config time) or within the width range for a plain field; a
+  transition `seq` needs ≥2 non-empty `=>`-separated states; `goal` is a 1..100
+  percent. A wide plain field is satisfied by bins **or** transitions.
+- Byte-identical when absent (no `goal`, no new lists → the first-slice output).
+- Validated on `examples/alu/` (`op` ignores a WIP opcode; `carry` gains rise/fall
+  transition bins; `goal: 90`) — **TEST PASSED 1001/1001 on Xcelium** — and on
+  `examples/packet/`, which carries an **enforceable** `illegal_bins` on the 16-bit
+  `sum`: a checksum of ≤16 bytes can never exceed `16*0xFF`, so values above that are
+  impossible-by-construction and the bin is *live* (storable) yet never hit by a
+  correct DUT — **61/61 with no illegal firing**. Both verible-clean; CI-gated.
+- *Remaining:* per-bin cross selection (`binsof`), width-derived auto-bin tuning
+  (`auto_bin_max`), a deliberate illegal-hit negative test, and the coverage-merge/
+  report flow (roadmap **R1**).
 
 ### S2 — Sequence library
 Generate more than one base sequence: a small library (incrementing/random/directed),

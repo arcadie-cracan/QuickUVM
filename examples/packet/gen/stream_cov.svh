@@ -18,9 +18,14 @@ class stream_cov extends uvm_subscriber #(stream_seq_item);
   covergroup cg;
     option.per_instance = 1;
     option.at_least     = 10;
-    sum_cp : coverpoint tr.sum {bins sum_bins[8] = {[0:$]};}
-    len_cp : coverpoint tr.len {bins len_bins[8] = {[0:$]};}
-    data_cp : coverpoint tr.data {bins data_bins[8] = {[0:$]};}
+    option.goal         = 100;
+    len_cp : coverpoint tr.len {
+      bins legal = {[1:16]};
+    }
+    sum_cp : coverpoint tr.sum {
+      bins in_range = {[0:4080]};
+      illegal_bins impossible = {[4081:65535]};
+    }
 
     // pragma quickuvm custom coverpoints_additional begin
     // pragma quickuvm custom coverpoints_additional end

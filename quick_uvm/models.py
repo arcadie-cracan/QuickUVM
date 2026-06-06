@@ -565,10 +565,55 @@ class CoverageBin(BaseModel):
         return "{" + ", ".join(str(v) for v in (self.values or [])) + "}"
 
 
+class TransitionBin(BaseModel):
+    """A transition (temporal) bin — `bins <name> = (<seq>);` where `<seq>` is a
+    SystemVerilog transition like `IDLE => BUSY` or `0 => 1 => 2`. The sequence is
+    a light-validated raw expression (enum labels or integer values); QuickUVM only
+    checks it names a legal bin and contains a `=>`.
+    """
+
+    name: str
+    seq: str
+
+    @model_validator(mode="after")
+    def _check(self) -> TransitionBin:
+        _check_sv_identifier(self.name, "transition bin name")
+        states = [s.strip() for s in self.seq.split("=>")]
+        if len(states) < 2 or any(not s for s in states):
+            raise ValueError(
+                f"transition bin '{self.name}': seq must be a transition "
+                f"'a => b [=> c ...]' with non-empty states (got '{self.seq}')."
+            )
+        return self
+
+    def int_endpoints(self) -> list[int]:
+        """Integer-literal states in the sequence (for width/enum range-checking).
+
+        Skipped entirely when the seq uses advanced transition syntax (`[* n]`,
+        `[-> n]`, `[= n]`, ranges) — those brackets carry repetition counts, not
+        values, so naive extraction would false-positive.
+        """
+        if "[" in self.seq:
+            return []
+        return [int(tok) for tok in re.findall(r"\b\d+\b", self.seq)]
+
+
 class Coverpoint(BaseModel):
     field: str  # must name a port on the covered agent
     bins: list[CoverageBin] = Field(default_factory=list)
+    # V1 closure — illegal_bins flag a hit as an error; ignore_bins exclude values
+    # from the coverage denominator; transitions are temporal (a => b) bins. All
+    # opt-in and orthogonal to `bins`; coexist with enum/wide auto-bins (only an
+    # explicit `bins` declaration suppresses automatic bin creation).
+    illegal_bins: list[CoverageBin] = Field(default_factory=list)
+    ignore_bins: list[CoverageBin] = Field(default_factory=list)
+    transitions: list[TransitionBin] = Field(default_factory=list)
     at_least: int | None = None  # per-coverpoint override of cg option.at_least
+
+    @property
+    def all_bins(self) -> list[CoverageBin]:
+        """Every value-form bin (normal + illegal + ignore), for width-checking."""
+        return [*self.bins, *self.illegal_bins, *self.ignore_bins]
 
     @model_validator(mode="after")
     def _check_cp(self) -> Coverpoint:
@@ -577,13 +622,20 @@ class Coverpoint(BaseModel):
                 f"coverpoint '{self.field}': at_least must be >= 1 (got "
                 f"{self.at_least})."
             )
+        # Bin names share one namespace across all four lists.
         seen: set[str] = set()
-        for b in self.bins:
-            if b.name in seen:
+        names = (
+            [b.name for b in self.bins]
+            + [b.name for b in self.illegal_bins]
+            + [b.name for b in self.ignore_bins]
+            + [t.name for t in self.transitions]
+        )
+        for nm in names:
+            if nm in seen:
                 raise ValueError(
-                    f"coverpoint '{self.field}': duplicate bin name '{b.name}'."
+                    f"coverpoint '{self.field}': duplicate bin name '{nm}'."
                 )
-            seen.add(b.name)
+            seen.add(nm)
         return self
 
 
@@ -599,9 +651,15 @@ class CoverageModel(BaseModel):
     agent: str
     coverpoints: list[Coverpoint] = Field(default_factory=list)
     crosses: list[list[str]] = Field(default_factory=list)
+    goal: int | None = None  # covergroup option.goal (closure target, percent 1..100)
 
     @model_validator(mode="after")
     def _check_shape(self) -> CoverageModel:
+        if self.goal is not None and not (1 <= self.goal <= 100):
+            raise ValueError(
+                f"coverage_model for agent '{self.agent}': goal must be a percent in "
+                f"1..100 (got {self.goal})."
+            )
         if not self.coverpoints:
             raise ValueError(
                 f"coverage_model for agent '{self.agent}': declare at least one "
@@ -792,21 +850,43 @@ class ProjectConfig(BaseModel):
                         f"not a port of agent '{cm.agent}'."
                     )
                 port = port_by_name[cp.field]
-                if not cp.bins and not port.enum and port.width > 1:
+                if (
+                    not cp.bins
+                    and not cp.transitions
+                    and not port.enum
+                    and port.width > 1
+                ):
                     raise ValueError(
                         f"coverage_model[{cm.agent}]: coverpoint '{cp.field}' "
-                        f"({port.width} bits) needs explicit bins (auto-partition is "
-                        f"only for enum/1-bit fields)."
+                        f"({port.width} bits) needs explicit bins or transitions "
+                        f"(auto-partition is only for enum/1-bit fields)."
                     )
                 hi = (1 << port.width) - 1
-                for b in cp.bins:
-                    for v in b.all_values():
-                        if not (0 <= v <= hi):
+                legal_enum = set(port.enum.values()) if port.enum else None
+                # Every binned value (bins + illegal + ignore + integer transition
+                # endpoints) must be storable by the coverpoint: a declared enum
+                # label for an enum field (others are silently dropped by the
+                # simulator, OBINRGE), or within the width range for a plain field.
+                checks: list[tuple[int, str]] = []
+                for b in cp.all_bins:
+                    checks += [(v, f"bin '{b.name}'") for v in b.all_values()]
+                for trb in cp.transitions:
+                    checks += [
+                        (v, f"transition '{trb.name}'") for v in trb.int_endpoints()
+                    ]
+                for v, where in checks:
+                    if legal_enum is not None:
+                        if v not in legal_enum:
                             raise ValueError(
-                                f"coverage_model[{cm.agent}]: bin '{b.name}' on "
-                                f"'{cp.field}' has value {v} outside 0..{hi} "
-                                f"({port.width} bits)."
+                                f"coverage_model[{cm.agent}]: {where} on enum field "
+                                f"'{cp.field}' has value {v}, which is not a declared "
+                                f"enum label (the simulator would silently drop it)."
                             )
+                    elif not (0 <= v <= hi):
+                        raise ValueError(
+                            f"coverage_model[{cm.agent}]: {where} on '{cp.field}' has "
+                            f"value {v} outside 0..{hi} ({port.width} bits)."
+                        )
         seqs_by_agent = {a.name: {s.name for s in a.sequences} for a in self.agents}
         for t in self.tests:
             if t.sequence is None:

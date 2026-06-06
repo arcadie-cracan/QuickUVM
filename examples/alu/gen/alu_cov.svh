@@ -18,7 +18,10 @@ class alu_cov extends uvm_subscriber #(alu_seq_item);
   covergroup cg;
     option.per_instance = 1;
     option.at_least     = 10;
-    op_cp : coverpoint tr.op;
+    option.goal         = 90;
+    op_cp : coverpoint tr.op {
+      ignore_bins slt_wip = {7};
+    }
     a_cp : coverpoint tr.a {
       bins zero = {0};
       bins max = {255};
@@ -29,7 +32,12 @@ class alu_cov extends uvm_subscriber #(alu_seq_item);
       bins max = {255};
       bins mid = {[1:254]};
     }
-    carry_cp : coverpoint tr.carry;
+    carry_cp : coverpoint tr.carry {
+      bins lo = {0};
+      bins hi = {1};
+      bins rise = (0 => 1);
+      bins fall = (1 => 0);
+    }
     op_x_a : cross op_cp, a_cp;
     op_x_b : cross op_cp, b_cp;
 

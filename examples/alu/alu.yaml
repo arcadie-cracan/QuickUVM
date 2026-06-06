@@ -40,11 +40,18 @@ tests:
 # V1 — functional coverage from fields. Black box: the bins encode the spec's
 # interesting operand values (corners + the bulk range), independent of the DUT.
 # The op coverpoint auto-bins one-per-opcode (enum); the crosses ask whether each
-# opcode was exercised against each operand corner.
+# opcode was exercised against each operand corner. `goal` sets the closure target;
+# ignore_bins drop a don't-care opcode and transition bins add temporal (a => b)
+# coverage on the carry. (See examples/packet for enforceable illegal_bins, which
+# need a field whose illegal values are storable — an enum coverpoint can only bin
+# its own labels.)
 coverage_models:
   - agent: alu
+    goal: 90                            # option.goal — closure target (percent)
     coverpoints:
-      - field: op                       # enum -> auto one bin per opcode
+      - field: op                       # enum -> auto one bin per opcode, plus:
+        ignore_bins:
+          - {name: slt_wip, value: 7}          # SLT (op 7) out of scope this regression
       - field: a
         bins:
           - {name: zero, value: 0}
@@ -55,7 +62,13 @@ coverage_models:
           - {name: zero, value: 0}
           - {name: max,  value: 255}
           - {name: mid,  range: [1, 254]}
-      - field: carry                    # 1-bit output -> {0,1}
+      - field: carry                    # 1-bit output: bins + toggle transitions
+        bins:
+          - {name: lo, value: 0}
+          - {name: hi, value: 1}
+        transitions:
+          - {name: rise, seq: "0 => 1"}
+          - {name: fall, seq: "1 => 0"}
     crosses:
       - [op, a]
       - [op, b]
