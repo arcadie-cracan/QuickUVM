@@ -28,7 +28,7 @@ class alu_base_test extends uvm_test;
     env_cfg.alu_cfg = alu_cfg::type_id::create("alu_cfg");
     env_cfg.alu_cfg.is_active = UVM_ACTIVE;
     if (!uvm_config_db#(virtual alu_if)::get(this, "", "alu_if_vif", env_cfg.alu_cfg.vif))
-      `uvm_fatal("NOVIF", "No virtual alu_if set as 'alu_if_vif' in the config DB (see top.sv)")
+      `uvm_fatal("NOVIF", "No virtual interface 'alu_if_vif' in config DB (see tb_top.sv)")
     uvm_config_db#(alu_env_cfg)::set(this, "e", "env_cfg", env_cfg);
 
     e = alu_env::type_id::create("e", this);

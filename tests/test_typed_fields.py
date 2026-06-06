@@ -131,14 +131,14 @@ def test_field_constraint_emitted_in_block(tmp_path):
         ]
     )
     txt = _trans(tmp_path, agent)
-    assert "constraint c_qcfg {" in txt
+    assert "constraint qcfg_c {" in txt
     assert "a != 0;" in txt
 
 
 def test_no_constraint_block_when_none(tmp_path):
     agent = _ag([PortConfig(name="a", width=8)])
     txt = _trans(tmp_path, agent)
-    assert "c_qcfg" not in txt
+    assert "qcfg_c" not in txt
 
 
 # ---- plain field stays byte-identical --------------------------------------
@@ -158,7 +158,7 @@ def test_plain_field_unchanged(tmp_path):
     assert "       bit en;" in txt
     assert "       logic [7:0] result;" in txt
     assert "typedef enum" not in txt
-    assert "c_qcfg" not in txt
+    assert "qcfg_c" not in txt
 
 
 # ---- validation + sv_type --------------------------------------------------

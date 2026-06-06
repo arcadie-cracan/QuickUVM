@@ -28,11 +28,11 @@ class fifo_base_test extends uvm_test;
     env_cfg.wr_cfg = wr_cfg::type_id::create("wr_cfg");
     env_cfg.wr_cfg.is_active = UVM_ACTIVE;
     if (!uvm_config_db#(virtual wr_if)::get(this, "", "wr_if_vif", env_cfg.wr_cfg.vif))
-      `uvm_fatal("NOVIF", "No virtual wr_if set as 'wr_if_vif' in the config DB (see top.sv)")
+      `uvm_fatal("NOVIF", "No virtual interface 'wr_if_vif' in config DB (see tb_top.sv)")
     env_cfg.rd_cfg = rd_cfg::type_id::create("rd_cfg");
     env_cfg.rd_cfg.is_active = UVM_ACTIVE;
     if (!uvm_config_db#(virtual rd_if)::get(this, "", "rd_if_vif", env_cfg.rd_cfg.vif))
-      `uvm_fatal("NOVIF", "No virtual rd_if set as 'rd_if_vif' in the config DB (see top.sv)")
+      `uvm_fatal("NOVIF", "No virtual interface 'rd_if_vif' in config DB (see tb_top.sv)")
     uvm_config_db#(fifo_env_cfg)::set(this, "e", "env_cfg", env_cfg);
 
     e = fifo_env::type_id::create("e", this);

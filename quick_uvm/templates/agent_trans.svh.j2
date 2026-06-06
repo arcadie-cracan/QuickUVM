@@ -37,6 +37,13 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
     `uvm_field_int({{ port.name }}, UVM_ALL_ON)
 {% endif %}
 {% endfor %}
+{% for fld in agent.fields %}
+{% if fld.kind == 'queue' %}
+    `uvm_field_queue_int({{ fld.name }}, UVM_ALL_ON{% if not fld.randomize %} | UVM_NOCOMPARE{% endif %})
+{% else %}
+    `uvm_field_array_int({{ fld.name }}, UVM_ALL_ON{% if not fld.randomize %} | UVM_NOCOMPARE{% endif %})
+{% endif %}
+{% endfor %}
   `uvm_object_utils_end
 {% else %}
   `uvm_object_utils({{ agent.sequence_item }})
@@ -67,12 +74,35 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
 {% endif %}
 {% endif %}
 {% endfor %}
+{% if agent.fields %}
+
+  // Transaction-only fields (var-length; (de)serialized in driver/monitor pragma)
+{% for fld in agent.fields %}
+{% set _rand = "rand " if fld.randomize else "" %}
+  {{ _rand }}{{ fld.sv_element_type }} {{ fld.name }}{{ fld.sv_decl_suffix }};
+{% endfor %}
+{% endif %}
 {% set constrained = agent.input_ports | selectattr('randomize') | selectattr('constraint') | list %}
 {% if constrained %}
 
-  constraint c_qcfg {
+  constraint qcfg_c {
 {% for port in constrained %}
     {{ port.constraint }};
+{% endfor %}
+  }
+{% endif %}
+{% set bounded = agent.fields | selectattr('randomize') | selectattr('bound_size') | list %}
+{% if agent.constraints or bounded %}
+
+  constraint trans_c {
+{% if bounded %}
+    // Auto size-bound (per-field min_size/max_size); set bound_size:false to own sizing.
+{% for fld in bounded %}
+    {{ fld.name }}.size() inside {[{{ fld.min_size }}:{{ fld.max_size }}]};
+{% endfor %}
+{% endif %}
+{% for c in agent.constraints %}
+    {{ c }};
 {% endfor %}
   }
 {% endif %}
@@ -94,6 +124,9 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
 {% endfor %}
 {% for port in agent.input_ports %}
     {{ port.name }} = tr.{{ port.name }};
+{% endfor %}
+{% for fld in agent.fields %}
+    {{ fld.name }} = tr.{{ fld.name }};
 {% endfor %}
 
     // pragma quickuvm custom do_copy_additional begin
@@ -130,6 +163,9 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
 {% else %}
     s = {s, $sformatf("{{ port.name }}=%0h  ", {{ port.name }})};
 {% endif %}
+{% endfor %}
+{% for fld in agent.fields %}
+    s = {s, $sformatf("{{ fld.name }}=%p  ", {{ fld.name }})};
 {% endfor %}
     return(s);
   endfunction

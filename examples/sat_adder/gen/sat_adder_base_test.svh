@@ -28,7 +28,7 @@ class sat_adder_base_test extends uvm_test;
     env_cfg.add_cfg = add_cfg::type_id::create("add_cfg");
     env_cfg.add_cfg.is_active = UVM_ACTIVE;
     if (!uvm_config_db#(virtual add_if)::get(this, "", "add_if_vif", env_cfg.add_cfg.vif))
-      `uvm_fatal("NOVIF", "No virtual add_if set as 'add_if_vif' in the config DB (see top.sv)")
+      `uvm_fatal("NOVIF", "No virtual interface 'add_if_vif' in config DB (see tb_top.sv)")
     uvm_config_db#(sat_adder_env_cfg)::set(this, "e", "env_cfg", env_cfg);
 
     e = sat_adder_env::type_id::create("e", this);
