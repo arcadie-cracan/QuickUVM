@@ -246,9 +246,15 @@ class SequenceConfig(BaseModel):
     """
 
     name: str
-    kind: Literal["random", "incrementing", "directed", "reset", "error"] = "random"
+    kind: Literal["random", "incrementing", "directed", "reset", "error", "nested"] = (
+        "random"
+    )
     count: int = 100
     field: str | None = None  # the input field to step — required by 'incrementing'
+    # 'nested' (sequence-of-sequences): sibling library sequences started in order
+    # on this sequence's sequencer. Each step must be a declared, non-nested
+    # sequence of the same agent (validated in AgentConfig).
+    steps: list[str] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod
@@ -269,16 +275,40 @@ class SequenceConfig(BaseModel):
                 f"sequence '{self.name}': 'field' only applies to kind "
                 f"'incrementing' (got '{self.kind}')."
             )
+        if self.kind == "nested" and not self.steps:
+            raise ValueError(
+                f"sequence '{self.name}': kind 'nested' requires a non-empty 'steps' "
+                f"list of sibling sequences to run."
+            )
+        if self.kind != "nested" and self.steps:
+            raise ValueError(
+                f"sequence '{self.name}': 'steps' only applies to kind 'nested' "
+                f"(got '{self.kind}')."
+            )
         if self.count < 1:
             raise ValueError(f"sequence '{self.name}': count must be >= 1.")
         return self
 
 
 class TestSeqSel(BaseModel):
-    """A test's selection of a single agent-library sequence to run (S2)."""
+    """A test's selection of a single agent-library sequence to run (S2).
+
+    `count` (optional) overrides the selected sequence's item count for this test
+    — the generated sequence exposes `count` as a settable member.
+    """
 
     agent: str
     name: str
+    count: int | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> TestSeqSel:
+        if self.count is not None and self.count < 1:
+            raise ValueError(
+                f"test sequence selector '{self.name}': count must be >= 1 (got "
+                f"{self.count})."
+            )
+        return self
 
 
 class VseqStep(BaseModel):
@@ -437,6 +467,29 @@ class AgentConfig(BaseModel):
                         f"agent '{self.name}': sequence '{s.name}' steps field "
                         f"'{s.field}', which also has a per-field constraint — "
                         f"stepping and constraining the same field conflict."
+                    )
+        # 'nested' steps must reference declared, non-nested sibling sequences
+        # (no self-reference / nesting-of-nested → no cycles).
+        kind_by_name = {s.name: s.kind for s in self.sequences}
+        for s in self.sequences:
+            if s.kind != "nested":
+                continue
+            for step in s.steps:
+                if step == s.name:
+                    raise ValueError(
+                        f"agent '{self.name}': nested sequence '{s.name}' lists "
+                        f"itself as a step."
+                    )
+                if step not in kind_by_name:
+                    raise ValueError(
+                        f"agent '{self.name}': nested sequence '{s.name}' step "
+                        f"'{step}' is not a declared sequence of this agent."
+                    )
+                if kind_by_name[step] == "nested":
+                    raise ValueError(
+                        f"agent '{self.name}': nested sequence '{s.name}' step "
+                        f"'{step}' is itself nested — only non-nested sequences may "
+                        f"be composed (avoids cycles)."
                     )
         return self
 
@@ -908,6 +961,13 @@ class ProjectConfig(BaseModel):
                 raise ValueError(
                     f"test '{t.name}': sequence selector targets passive agent "
                     f"'{sel.agent}' — a passive agent builds no sequencer to run on."
+                )
+            sel_seq = next(s for s in sel_agent.sequences if s.name == sel.name)
+            if sel.count is not None and sel_seq.kind == "nested":
+                raise ValueError(
+                    f"test '{t.name}': sequence '{sel.name}' is a nested "
+                    f"sequence-of-sequences and has no item count to override — set "
+                    f"count on its steps instead."
                 )
         # C2 — virtual sequences
         agents_by_name = {a.name: a for a in self.agents}

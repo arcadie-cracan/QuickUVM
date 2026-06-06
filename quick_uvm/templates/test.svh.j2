@@ -36,6 +36,9 @@ class {{ test.name }} extends {{ dut.name }}_base_test;
   task run_phase(uvm_phase phase);
     {{ seq_type }} seq;
     seq = {{ seq_type }}::type_id::create("seq");
+{% if test.sequence and test.sequence.count %}
+    seq.count = {{ test.sequence.count }};   // per-test count override (S2)
+{% endif %}
     //----------------------------------------------------
     phase.raise_objection(this);
     `uvm_info("{{ test.name }}", "about to start seq", UVM_FULL)
