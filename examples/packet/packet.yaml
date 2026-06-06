@@ -42,3 +42,20 @@ agents:
 
 tests:
   - {name: rand_test, num_items: 60}
+
+# V1 — functional coverage with an enforceable illegal_bins. The checksum of up to
+# 16 bytes can never exceed 16*0xFF = 4080, so a `sum` value above that is impossible
+# for a correct DUT: a live illegal_bins (storable in the 16-bit field) that flags a
+# broken DUT and is never hit by a correct one. `goal: 100` sets the closure target.
+coverage_models:
+  - agent: stream
+    goal: 100
+    coverpoints:
+      - field: len
+        bins:
+          - {name: legal, range: [1, 16]}        # in-spec packet lengths
+      - field: sum
+        bins:
+          - {name: in_range, range: [0, 4080]}   # 16 bytes * 0xFF max checksum
+        illegal_bins:
+          - {name: impossible, range: [4081, 65535]}  # checksum can't exceed 16*0xFF
