@@ -19,6 +19,7 @@ from quick_uvm.models import (
     PortConfig,
     ProjectConfig,
     ProjectMeta,
+    TransitionBin,
 )
 from quick_uvm.models import (
     TestConfig as TConf,
@@ -174,13 +175,14 @@ def test_wide_plain_field_without_bins_rejected():
 
 
 def test_bin_value_out_of_range_rejected():
-    with pytest.raises(Exception, match="outside 0..15"):
+    # `a` is a plain 8-bit field -> width range 0..255
+    with pytest.raises(Exception, match="outside 0..255"):
         _cfg(
             [
                 CoverageModel(
                     agent="alu",
                     coverpoints=[
-                        Coverpoint(field="op", bins=[CoverageBin(name="bad", value=99)])
+                        Coverpoint(field="a", bins=[CoverageBin(name="bad", value=300)])
                     ],
                 )
             ]
@@ -295,3 +297,186 @@ def test_sv_bin_property():
     assert CoverageBin(name="x", value=7).sv_bin == "{7}"
     assert CoverageBin(name="x", range=(1, 254)).sv_bin == "{[1:254]}"
     assert CoverageBin(name="x", values=[1, 2, 4]).sv_bin == "{1, 2, 4}"
+
+
+# ---- V1 closure: illegal/ignore bins, transitions, option.goal -------------
+
+
+def _closure_model():
+    return CoverageModel(
+        agent="alu",
+        goal=90,
+        coverpoints=[
+            # ignore a valid enum label (SLT=7) — legal on an enum coverpoint.
+            Coverpoint(field="op", ignore_bins=[CoverageBin(name="slt_wip", value=7)]),
+            # illegal_bins on a non-enum field whose values are storable.
+            Coverpoint(
+                field="result",
+                bins=[CoverageBin(name="ok", range=(0, 200))],
+                illegal_bins=[CoverageBin(name="bad", range=(201, 255))],
+                ignore_bins=[CoverageBin(name="dontcare", value=128)],
+            ),
+            Coverpoint(
+                field="carry",
+                bins=[CoverageBin(name="lo", value=0), CoverageBin(name="hi", value=1)],
+                transitions=[
+                    TransitionBin(name="rise", seq="0 => 1"),
+                    TransitionBin(name="fall", seq="1 => 0"),
+                ],
+            ),
+        ],
+    )
+
+
+def test_illegal_and_ignore_bins_emitted(tmp_path):
+    txt = _cover(tmp_path, [_closure_model()])
+    assert "illegal_bins bad = {[201:255]};" in txt
+    assert "ignore_bins dontcare = {128};" in txt
+    assert "ignore_bins slt_wip = {7};" in txt  # valid enum-label ignore
+
+
+def test_transition_bins_emitted(tmp_path):
+    txt = _cover(tmp_path, [_closure_model()])
+    assert "bins rise = (0 => 1);" in txt
+    assert "bins fall = (1 => 0);" in txt
+
+
+def test_option_goal_emitted(tmp_path):
+    txt = _cover(tmp_path, [_closure_model()])
+    assert "option.goal         = 90;" in txt
+
+
+def test_no_goal_no_option_goal(tmp_path):
+    # byte-identical-ish: a model without goal emits no option.goal line
+    txt = _cover(
+        tmp_path, [CoverageModel(agent="alu", coverpoints=[Coverpoint(field="op")])]
+    )
+    assert "option.goal" not in txt
+
+
+def test_transition_only_coverpoint_allowed_on_wide_field(tmp_path):
+    # a wide field with transitions (no value bins) is explicit enough -> allowed
+    txt = _cover(
+        tmp_path,
+        [
+            CoverageModel(
+                agent="alu",
+                coverpoints=[
+                    Coverpoint(
+                        field="result",
+                        transitions=[TransitionBin(name="z2nz", seq="0 => 1")],
+                    )
+                ],
+            )
+        ],
+    )
+    assert "bins z2nz = (0 => 1);" in txt
+
+
+# ---- V1 closure validation -------------------------------------------------
+
+
+def test_transition_seq_without_arrow_rejected():
+    with pytest.raises(Exception, match="non-empty states"):
+        TransitionBin(name="bad", seq="0 1 2")
+
+
+def test_transition_empty_state_rejected():
+    with pytest.raises(Exception, match="non-empty states"):
+        TransitionBin(name="bad", seq="0 => ")
+    with pytest.raises(Exception, match="non-empty states"):
+        TransitionBin(name="bad", seq="=> 1")
+
+
+def test_enum_coverpoint_out_of_label_bin_rejected():
+    # an enum coverpoint can only bin its declared labels (others are silently
+    # dropped by the simulator) -> reject at config time
+    with pytest.raises(Exception, match="not a declared enum label"):
+        _cfg(
+            [
+                CoverageModel(
+                    agent="alu",
+                    coverpoints=[
+                        Coverpoint(
+                            field="op",
+                            illegal_bins=[CoverageBin(name="resv", range=(8, 15))],
+                        )
+                    ],
+                )
+            ]
+        )
+
+
+def test_transition_int_endpoint_out_of_range_rejected():
+    # carry is 1-bit -> a transition endpoint of 5 is out of range
+    with pytest.raises(Exception, match="transition 'jump' on 'carry'.*outside 0..1"):
+        _cfg(
+            [
+                CoverageModel(
+                    agent="alu",
+                    coverpoints=[
+                        Coverpoint(
+                            field="carry",
+                            transitions=[TransitionBin(name="jump", seq="0 => 5")],
+                        )
+                    ],
+                )
+            ]
+        )
+
+
+def test_transition_repetition_count_not_width_checked(tmp_path):
+    # `[* 3]` is a repetition count, not a value -> must not be width-checked
+    txt = _cover(
+        tmp_path,
+        [
+            CoverageModel(
+                agent="alu",
+                coverpoints=[
+                    Coverpoint(
+                        field="carry",
+                        transitions=[TransitionBin(name="hold", seq="1 [* 3] => 0")],
+                    )
+                ],
+            )
+        ],
+    )
+    assert "bins hold = (1 [* 3] => 0);" in txt
+
+
+def test_transition_bad_name_rejected():
+    with pytest.raises(Exception, match="legal SystemVerilog identifier"):
+        TransitionBin(name="2bad", seq="0 => 1")
+
+
+def test_goal_out_of_range_rejected():
+    with pytest.raises(Exception, match="percent in 1..100"):
+        CoverageModel(agent="alu", coverpoints=[Coverpoint(field="op")], goal=120)
+
+
+def test_bin_name_collision_across_kinds_rejected():
+    with pytest.raises(Exception, match="duplicate bin name"):
+        Coverpoint(
+            field="op",
+            bins=[CoverageBin(name="dup", value=0)],
+            illegal_bins=[CoverageBin(name="dup", value=1)],
+        )
+
+
+def test_illegal_bin_value_width_checked(tmp_path):
+    # an illegal_bins value out of the field width is rejected like a normal bin
+    with pytest.raises(Exception, match="outside 0..255"):
+        _cfg(
+            [
+                CoverageModel(
+                    agent="alu",
+                    coverpoints=[
+                        Coverpoint(
+                            field="a",
+                            bins=[CoverageBin(name="ok", value=0)],
+                            illegal_bins=[CoverageBin(name="huge", value=300)],
+                        )
+                    ],
+                )
+            ]
+        )

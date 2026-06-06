@@ -18,15 +18,27 @@ class {{ agent.name }}_cov extends uvm_subscriber #({{ agent.sequence_item }});
   covergroup cg;
     option.per_instance = 1;
     option.at_least     = 10;
+{% if coverage_model and coverage_model.goal %}
+    option.goal         = {{ coverage_model.goal }};
+{% endif %}
 {% if coverage_model %}
 {% for cp in coverage_model.coverpoints %}
-{% if cp.bins or cp.at_least %}
+{% if cp.bins or cp.illegal_bins or cp.ignore_bins or cp.transitions or cp.at_least %}
     {{ cp.field }}_cp : coverpoint tr.{{ cp.field }} {
 {% if cp.at_least %}
       option.at_least = {{ cp.at_least }};
 {% endif %}
 {% for b in cp.bins %}
       bins {{ b.name }} = {{ b.sv_bin }};
+{% endfor %}
+{% for b in cp.illegal_bins %}
+      illegal_bins {{ b.name }} = {{ b.sv_bin }};
+{% endfor %}
+{% for b in cp.ignore_bins %}
+      ignore_bins {{ b.name }} = {{ b.sv_bin }};
+{% endfor %}
+{% for t in cp.transitions %}
+      bins {{ t.name }} = ({{ t.seq }});
 {% endfor %}
     }
 {% else %}
