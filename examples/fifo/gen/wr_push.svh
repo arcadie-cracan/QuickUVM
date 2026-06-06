@@ -17,10 +17,13 @@ class wr_push extends uvm_sequence #(wr_seq_item);
     super.new(name);
   endfunction
 
+  // Item count — a test may override it via `sequence: {... count: N}` (S2).
+  int unsigned count = 16;
+
   task body;
     wr_seq_item tr = wr_seq_item::type_id::create("tr");
     `uvm_info("body", "wr_push (incrementing wr_data): starting", UVM_FULL)
-    for (int unsigned i = 0; i < 16; i++) do_item(tr, i);
+    for (int unsigned i = 0; i < count; i++) do_item(tr, i);
   endtask
 
   task do_item (wr_seq_item tr, int unsigned i);

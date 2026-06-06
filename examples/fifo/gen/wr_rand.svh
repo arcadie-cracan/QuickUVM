@@ -17,10 +17,13 @@ class wr_rand extends uvm_sequence #(wr_seq_item);
     super.new(name);
   endfunction
 
+  // Item count — a test may override it via `sequence: {... count: N}` (S2).
+  int unsigned count = 32;
+
   task body;
     wr_seq_item tr = wr_seq_item::type_id::create("tr");
     `uvm_info("body", "wr_rand (random): starting", UVM_FULL)
-    repeat(32) do_item(tr);
+    repeat(count) do_item(tr);
   endtask
 
   task do_item (wr_seq_item tr);

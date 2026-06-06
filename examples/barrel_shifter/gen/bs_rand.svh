@@ -17,10 +17,13 @@ class bs_rand extends uvm_sequence #(bs_seq_item);
     super.new(name);
   endfunction
 
+  // Item count — a test may override it via `sequence: {... count: N}` (S2).
+  int unsigned count = 256;
+
   task body;
     bs_seq_item tr = bs_seq_item::type_id::create("tr");
     `uvm_info("body", "bs_rand (random): starting", UVM_FULL)
-    repeat(256) do_item(tr);
+    repeat(count) do_item(tr);
   endtask
 
   task do_item (bs_seq_item tr);
