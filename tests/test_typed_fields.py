@@ -165,7 +165,7 @@ def test_plain_field_unchanged(tmp_path):
 
 
 def test_enum_and_type_mutually_exclusive():
-    with pytest.raises(Exception, match="not both"):
+    with pytest.raises(Exception, match="at most one type specifier"):
         PortConfig(name="op", width=4, enum=OPS, type="alu_pkg::opcode_e")
 
 

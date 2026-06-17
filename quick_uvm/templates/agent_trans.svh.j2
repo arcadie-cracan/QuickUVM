@@ -16,6 +16,15 @@ typedef enum logic [{{ port.width - 1 }}:0] {
 } {{ port.name }}_e;
 
 {% endif %}
+{% if port.struct %}
+// TB-owned packed struct for '{{ port.name }}'.
+typedef struct packed {
+{% for m in port.struct %}
+  {{ m.sv_decl }};
+{% endfor %}
+} {{ port.name }}_t;
+
+{% endif %}
 {% endfor %}
 class {{ agent.sequence_item }} extends uvm_sequence_item;
 {% if agent.seq_item_style == 'field_macros' %}
@@ -51,7 +60,7 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
 
   // Output fields (not randomized — sampled from DUT)
 {% for port in agent.output_ports %}
-{% if port.enum or port.type %}
+{% if port.is_typed %}
        {{ port.sv_type }} {{ port.name }};
 {% else %}
        logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
@@ -61,13 +70,13 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
   // Input fields (driven to DUT)
 {% for port in agent.input_ports %}
 {% if port.randomize %}
-{% if port.enum or port.type %}
+{% if port.is_typed %}
   rand {{ port.sv_type }} {{ port.name }};
 {% else %}
   rand bit {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
 {% endif %}
 {% else %}
-{% if port.enum or port.type %}
+{% if port.is_typed %}
        {{ port.sv_type }} {{ port.name }};
 {% else %}
        bit {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
@@ -158,7 +167,7 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
 {% for port in agent.input_ports %}
 {% if port.enum %}
     s = {s, $sformatf("{{ port.name }}=%s  ", {{ port.name }}.name())};
-{% elif port.width <= 4 %}
+{% elif port.bit_width <= 4 %}
     s = {s, $sformatf("{{ port.name }}=%b  ", {{ port.name }})};
 {% else %}
     s = {s, $sformatf("{{ port.name }}=%0h  ", {{ port.name }})};
@@ -175,7 +184,7 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
 {% for port in agent.output_ports %}
 {% if port.enum %}
     s = {s, $sformatf("{{ port.name }}=%s  ", {{ port.name }}.name())};
-{% elif port.width <= 4 %}
+{% elif port.bit_width <= 4 %}
     s = {s, $sformatf("{{ port.name }}=%b  ", {{ port.name }})};
 {% else %}
     s = {s, $sformatf("{{ port.name }}=%0h  ", {{ port.name }})};

@@ -14,10 +14,10 @@
 interface {{ agent.interface }} (input clk{% if dut.external_reset %}, input {{ dut.reset }}{% endif %});
   // Generated signals from config
 {% for port in agent.output_ports %}
-  logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
+  logic {% if port.bit_width > 1 %}[{{ port.bit_width - 1 }}:0] {% endif %}{{ port.name }};
 {% endfor %}
 {% for port in agent.input_ports %}
-  logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
+  logic {% if port.bit_width > 1 %}[{{ port.bit_width - 1 }}:0] {% endif %}{{ port.name }};
 {% endfor %}
 
   // pragma quickuvm custom signals_additional begin

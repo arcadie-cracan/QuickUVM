@@ -84,6 +84,26 @@ def _check_sv_identifier(name: str, what: str) -> None:
         )
 
 
+class StructMember(BaseModel):
+    """One field of a packed struct (S1). Plain integral members only."""
+
+    name: str
+    width: int = 1
+
+    @model_validator(mode="after")
+    def _check(self) -> StructMember:
+        _check_sv_identifier(self.name, "struct member name")
+        if self.width < 1:
+            raise ValueError(f"struct member '{self.name}': width must be >= 1.")
+        return self
+
+    @property
+    def sv_decl(self) -> str:
+        """The member declaration body, e.g. `bit [7:0] addr` (no trailing ;)."""
+        span = f"[{self.width - 1}:0] " if self.width > 1 else ""
+        return f"bit {span}{self.name}"
+
+
 class PortConfig(BaseModel):
     name: str
     width: int = 1
@@ -98,16 +118,57 @@ class PortConfig(BaseModel):
     # filelist); a fully-qualified `pkg::type` works as-is, or add the package to
     # project.imports to also use its names unqualified in tb_pkg.
     type: str | None = None
+    # Packed composite fields (still interface wires, fixed-width). A multi-dim
+    # packed array `bit [d0-1:0]..[dn-1:0]` (packed_dims = [d0,..,dn]) or a packed
+    # struct typedef (`struct`). The interface carries the raw bits; the
+    # transaction declares the typed field. Mutually exclusive with enum/type.
+    packed_dims: list[int] | None = None
+    struct: list[StructMember] | None = None
     # SystemVerilog constraint expression for this field, emitted in a transaction
     # constraint block (e.g. "a != 0", "amt inside {[0:31]}", "a < b").
     constraint: str | None = None
 
     @model_validator(mode="after")
     def _check_field_type(self) -> PortConfig:
-        if self.enum and self.type:
+        set_specs = [
+            k
+            for k, v in (
+                ("enum", self.enum),
+                ("type", self.type),
+                ("packed_dims", self.packed_dims),
+                ("struct", self.struct),
+            )
+            if v
+        ]
+        if len(set_specs) > 1:
             raise ValueError(
-                f"port '{self.name}': set either 'enum' (generate a TB enum) or "
-                f"'type' (reference an external type), not both."
+                f"port '{self.name}': set at most one type specifier "
+                f"(got {set_specs}) — enum/type/packed_dims/struct are exclusive."
+            )
+        if self.packed_dims is not None and (
+            not self.packed_dims or any(d < 1 for d in self.packed_dims)
+        ):
+            raise ValueError(
+                f"port '{self.name}': packed_dims must be a non-empty list of "
+                f"dimensions >= 1 (got {self.packed_dims})."
+            )
+        if self.struct is not None:
+            if not self.struct:
+                raise ValueError(
+                    f"port '{self.name}': struct must declare at least one member."
+                )
+            seen: set[str] = set()
+            for m in self.struct:
+                if m.name in seen:
+                    raise ValueError(
+                        f"port '{self.name}': duplicate struct member '{m.name}'."
+                    )
+                seen.add(m.name)
+        if (self.packed_dims or self.struct) and self.width != 1:
+            raise ValueError(
+                f"port '{self.name}': do not set 'width' alongside packed_dims/struct "
+                f"— the total bit width is derived from the composite (got width="
+                f"{self.width})."
             )
         return self
 
@@ -142,18 +203,39 @@ class PortConfig(BaseModel):
         return self
 
     @property
+    def is_typed(self) -> bool:
+        """True if the field declares a non-scalar SV type (enum/struct/array/ext)."""
+        return bool(self.enum or self.type or self.packed_dims or self.struct)
+
+    @property
+    def bit_width(self) -> int:
+        """Total bits the field occupies on the wire (packed/struct → derived)."""
+        if self.packed_dims:
+            w = 1
+            for d in self.packed_dims:
+                w *= d
+            return w
+        if self.struct:
+            return sum(m.width for m in self.struct)
+        return self.width
+
+    @property
     def sv_type(self) -> str:
         """The SystemVerilog type for this field's declaration."""
         if self.enum:
             return f"{self.name}_e"
         if self.type:
             return self.type
+        if self.struct:
+            return f"{self.name}_t"
+        if self.packed_dims:
+            return "bit " + "".join(f"[{d - 1}:0]" for d in self.packed_dims)
         return f"bit [{self.width - 1}:0]" if self.width > 1 else "bit"
 
     @property
     def dpi_sv_type(self) -> str:
         """SV scalar type for this field as a DPI-C argument (by width, K0)."""
-        w = self.width
+        w = self.bit_width
         return (
             "byte"
             if w <= 8
@@ -167,7 +249,7 @@ class PortConfig(BaseModel):
     @property
     def dpi_c_type(self) -> str:
         """C scalar type matching dpi_sv_type (K0)."""
-        w = self.width
+        w = self.bit_width
         return (
             "char"
             if w <= 8
@@ -426,11 +508,11 @@ class AgentConfig(BaseModel):
                         f"agent '{self.name}': sequence '{s.name}' steps field "
                         f"'{s.field}', which is not a randomizable input port."
                     )
-                if fld.enum or fld.type:
+                if fld.is_typed:
                     raise ValueError(
                         f"agent '{self.name}': sequence '{s.name}' steps field "
-                        f"'{s.field}', which is enum/typed — 'incrementing' needs a "
-                        f"plain integral field."
+                        f"'{s.field}', which is enum/typed/composite — 'incrementing' "
+                        f"needs a plain integral field."
                     )
                 if fld.constraint:
                     raise ValueError(
@@ -854,14 +936,14 @@ class ProjectConfig(BaseModel):
                     not cp.bins
                     and not cp.transitions
                     and not port.enum
-                    and port.width > 1
+                    and port.bit_width > 1
                 ):
                     raise ValueError(
                         f"coverage_model[{cm.agent}]: coverpoint '{cp.field}' "
-                        f"({port.width} bits) needs explicit bins or transitions "
+                        f"({port.bit_width} bits) needs explicit bins or transitions "
                         f"(auto-partition is only for enum/1-bit fields)."
                     )
-                hi = (1 << port.width) - 1
+                hi = (1 << port.bit_width) - 1
                 legal_enum = set(port.enum.values()) if port.enum else None
                 # Every binned value (bins + illegal + ignore + integer transition
                 # endpoints) must be storable by the coverpoint: a declared enum
@@ -885,7 +967,7 @@ class ProjectConfig(BaseModel):
                     elif not (0 <= v <= hi):
                         raise ValueError(
                             f"coverage_model[{cm.agent}]: {where} on '{cp.field}' has "
-                            f"value {v} outside 0..{hi} ({port.width} bits)."
+                            f"value {v} outside 0..{hi} ({port.bit_width} bits)."
                         )
         seqs_by_agent = {a.name: {s.name for s in a.sequences} for a in self.agents}
         for t in self.tests:
@@ -952,10 +1034,10 @@ class ProjectConfig(BaseModel):
         # scalar DPI arg (≤64-bit). Wider fields need svBitVecVal (a follow-up).
         if self.reference_model.language == "c":
             for _, p in self.agents[0].all_ports:
-                if p.width > 64:
+                if p.bit_width > 64:
                     raise ValueError(
                         f"reference_model.language='c': field '{p.name}' is "
-                        f"{p.width} bits; DPI-C scalar marshaling supports ≤64-bit "
+                        f"{p.bit_width} bits; DPI-C scalar marshaling supports ≤64-bit "
                         f"fields (wider fields are not yet supported)."
                     )
         return self

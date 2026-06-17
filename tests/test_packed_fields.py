@@ -1,0 +1,197 @@
+"""S1 — packed composite port fields: packed arrays + packed structs.
+
+A port may declare a fixed-width composite type: a multi-dim packed array
+(`packed_dims`) or a packed struct (`struct`). These ride the interface as raw
+bits (width = `bit_width`) but are declared as their composite SV type in the
+transaction (a `<name>_t` typedef for a struct, inline `bit [..][..]` for an
+array). Mutually exclusive with enum/type; byte-identical when unused.
+"""
+
+import pytest
+
+from quick_uvm.generator import Generator
+from quick_uvm.models import (
+    AgentConfig,
+    DutConfig,
+    PortConfig,
+    ProjectConfig,
+    ProjectMeta,
+    ReferenceModelConfig,
+    SequenceConfig,
+    StructMember,
+)
+from quick_uvm.models import (
+    TestConfig as TConf,
+)
+
+HDR = [StructMember(name="tag", width=8), StructMember(name="en", width=1)]
+
+
+def _agent(inputs, outputs=None, name="a", **kw):
+    return AgentConfig(
+        name=name,
+        interface=f"{name}_if",
+        sequence_item=f"{name}_seq_item",
+        ports={"inputs": inputs, "outputs": outputs or [PortConfig(name="o", width=8)]},
+        **kw,
+    )
+
+
+def _cfg(inputs, **kw):
+    return ProjectConfig(
+        project=ProjectMeta(name="t"),
+        dut=DutConfig(name="d", reset="", combinational=True),
+        agents=[_agent(inputs)],
+        tests=[TConf(name="t1")],
+        **kw,
+    )
+
+
+def _gen(tmp_path, inputs):
+    Generator(_cfg(inputs)).generate_all(tmp_path)
+    return tmp_path
+
+
+# ---- properties ------------------------------------------------------------
+
+
+def test_bit_width():
+    assert PortConfig(name="p", width=12).bit_width == 12
+    assert PortConfig(name="p", packed_dims=[4, 8]).bit_width == 32
+    assert PortConfig(name="p", struct=HDR).bit_width == 9
+
+
+def test_sv_type():
+    assert PortConfig(name="m", packed_dims=[4, 8]).sv_type == "bit [3:0][7:0]"
+    assert PortConfig(name="hdr", struct=HDR).sv_type == "hdr_t"
+    assert PortConfig(name="p", packed_dims=[3]).sv_type == "bit [2:0]"
+
+
+# ---- generated transaction + interface -------------------------------------
+
+
+def test_struct_typedef_and_field(tmp_path):
+    txt = (
+        _gen(tmp_path, [PortConfig(name="hdr", struct=HDR)]) / "a_seq_item.svh"
+    ).read_text()
+    assert "typedef struct packed {" in txt
+    assert "bit [7:0] tag;" in txt
+    assert "bit en;" in txt
+    assert "} hdr_t;" in txt
+    assert "rand hdr_t hdr;" in txt
+
+
+def test_packed_array_field(tmp_path):
+    txt = (
+        _gen(tmp_path, [PortConfig(name="lanes", packed_dims=[4, 8])])
+        / "a_seq_item.svh"
+    ).read_text()
+    assert "rand bit [3:0][7:0] lanes;" in txt
+    assert "typedef" not in txt  # a packed array needs no typedef
+
+
+def test_interface_uses_total_bit_width(tmp_path):
+    p = _gen(
+        tmp_path,
+        [
+            PortConfig(name="hdr", struct=HDR),
+            PortConfig(name="lanes", packed_dims=[4, 8]),
+        ],
+    )
+    iface = (p / "a_if.sv").read_text()
+    assert "logic [8:0] hdr;" in iface  # 8 + 1 struct bits
+    assert "logic [31:0] lanes;" in iface  # 4 * 8 packed-array bits
+
+
+def test_scalar_port_byte_identical(tmp_path):
+    # a plain port still renders the legacy scalar form (bit_width == width)
+    txt = (
+        _gen(tmp_path, [PortConfig(name="x", width=8)]) / "a_seq_item.svh"
+    ).read_text()
+    assert "rand bit [7:0] x;" in txt
+
+
+# ---- DPI (K0) interaction --------------------------------------------------
+
+
+def test_packed_struct_marshals_in_dpi_when_small(tmp_path):
+    # a 9-bit struct is <=64 bits -> a single DPI scalar (shortint)
+    Generator(
+        _cfg(
+            [PortConfig(name="hdr", struct=HDR)],
+            reference_model=ReferenceModelConfig(language="c"),
+        )
+    ).generate_all(tmp_path)
+    bridge = (tmp_path / "d_reference_model.svh").read_text()
+    assert "shortint hdr" in bridge  # bit_width 9 -> shortint DPI arg
+
+
+def test_wide_packed_field_rejected_on_dpi():
+    # packed_dims [4, 32] = 128 bits > 64 -> rejected on the DPI-C path
+    with pytest.raises(Exception, match="128 bits|≤64-bit|<=64"):
+        _cfg(
+            [PortConfig(name="big", packed_dims=[4, 32])],
+            reference_model=ReferenceModelConfig(language="c"),
+        )
+
+
+# ---- validation ------------------------------------------------------------
+
+
+def test_struct_member_validation():
+    with pytest.raises(Exception, match="legal SystemVerilog identifier"):
+        StructMember(name="2bad")
+    with pytest.raises(Exception, match="width must be >= 1"):
+        StructMember(name="ok", width=0)
+
+
+def test_type_specifiers_mutually_exclusive():
+    with pytest.raises(Exception, match="at most one type specifier"):
+        PortConfig(name="p", struct=HDR, enum={"A": 0})
+    with pytest.raises(Exception, match="at most one type specifier"):
+        PortConfig(name="p", packed_dims=[4, 8], type="my_t")
+
+
+def test_packed_dims_must_be_positive():
+    with pytest.raises(Exception, match="dimensions >= 1"):
+        PortConfig(name="p", packed_dims=[4, 0])
+    with pytest.raises(Exception, match="non-empty"):
+        PortConfig(name="p", packed_dims=[])
+
+
+def test_struct_needs_members():
+    with pytest.raises(Exception, match="at least one member"):
+        PortConfig(name="p", struct=[])
+
+
+def test_explicit_width_with_composite_rejected():
+    with pytest.raises(Exception, match="do not set 'width'"):
+        PortConfig(name="p", width=8, struct=HDR)
+    with pytest.raises(Exception, match="do not set 'width'"):
+        PortConfig(name="p", width=8, packed_dims=[4, 8])
+
+
+def test_composite_in_dpi_input_is_cast(tmp_path):
+    # a composite input arg must be CAST to the DPI scalar type in the bridge call
+    Generator(
+        _cfg(
+            [PortConfig(name="hdr", struct=HDR)],
+            reference_model=ReferenceModelConfig(language="c"),
+        )
+    ).generate_all(tmp_path)
+    bridge = (tmp_path / "d_reference_model.svh").read_text()
+    assert "shortint'(t.hdr)" in bridge  # bit_width 9 -> cast to shortint in the call
+
+
+def test_struct_duplicate_member_rejected():
+    with pytest.raises(Exception, match="duplicate struct member"):
+        PortConfig(name="p", struct=[StructMember(name="x"), StructMember(name="x")])
+
+
+def test_incrementing_on_packed_field_rejected():
+    # the incrementing-needs-plain-field check fires at agent construction
+    with pytest.raises(Exception, match="incrementing"):
+        _agent(
+            [PortConfig(name="lanes", packed_dims=[4, 8])],
+            sequences=[SequenceConfig(name="s", kind="incrementing", field="lanes")],
+        )

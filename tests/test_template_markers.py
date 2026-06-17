@@ -27,6 +27,7 @@ from quick_uvm.models import (
     ReferenceModelConfig,
     RegisterModelConfig,
     ScoreboardSpec,
+    StructMember,
     TransitionBin,
 )
 from quick_uvm.models import (
@@ -125,6 +126,30 @@ CONFIGS = {
                         transitions=[TransitionBin(name="z2one", seq="0 => 1")],
                     )
                 ],
+            )
+        ],
+    ),
+    # S1 — packed composite fields: a packed struct + a packed array port
+    # (exercises the struct typedef + typed declarations in the transaction).
+    "packed_fields": _cfg(
+        agents=[
+            AgentConfig(
+                name="a0",
+                interface="a0_if",
+                sequence_item="a0_trans",
+                ports={
+                    "inputs": [
+                        PortConfig(
+                            name="hdr",
+                            struct=[
+                                StructMember(name="tag", width=8),
+                                StructMember(name="en", width=1),
+                            ],
+                        ),
+                        PortConfig(name="lanes", packed_dims=[4, 8]),
+                    ],
+                    "outputs": [PortConfig(name="dout", width=16, randomize=False)],
+                },
             )
         ],
     ),

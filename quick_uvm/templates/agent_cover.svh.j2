@@ -50,7 +50,7 @@ class {{ agent.name }}_cov extends uvm_subscriber #({{ agent.sequence_item }});
 {% endfor %}
 {% else %}
 {% for port in agent.output_ports %}
-{% if port.enum %}
+{% if port.is_typed %}
     {{ port.name }}_cp : coverpoint tr.{{ port.name }};
 {% else %}
     {{ port.name }}_cp : coverpoint tr.{{ port.name }} {bins {{ port.name }}_bins[8] = {[0:$]};}
@@ -60,7 +60,7 @@ class {{ agent.name }}_cov extends uvm_subscriber #({{ agent.sequence_item }});
 {% if port.name == dut.reset %}
     dorst   : coverpoint tr.{{ port.name }} {bins dorst  = {'0};}
     norst   : coverpoint tr.{{ port.name }} {bins norst  = {'1};}
-{% elif port.enum %}
+{% elif port.is_typed %}
     {{ port.name }}_cp : coverpoint tr.{{ port.name }};
 {% else %}
     {{ port.name }}_cp : coverpoint tr.{{ port.name }} {bins {{ port.name }}_bins[8] = {[0:$]};}
