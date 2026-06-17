@@ -1,0 +1,38 @@
+# vec_unit — QuickUVM S1 example: packed-struct + packed-array transaction fields.
+#
+# `hdr` is a packed struct (tag + enable) and `lanes` is a packed array of bytes —
+# both fixed-width composite fields that ride the interface as raw bits but are
+# declared as their composite SV type in the transaction (struct typedef / packed
+# array). The reference model reads them via typed access (hdr.en, hdr.tag,
+# lanes[i]). Combinational: one vector per transaction.
+project:
+  name: vec_unit
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: vec_unit
+  combinational: true
+
+clock: {}
+
+agents:
+  - name: vu
+    interface: vu_if
+    sequence_item: vu_seq_item
+    ports:
+      inputs:
+        # Packed struct: first member is the MSB end, matching `hdr[W:1]=tag,
+        # hdr[0]=en` in the DUT. 9 bits total.
+        - name: hdr
+          struct:
+            - {name: tag, width: 8}
+            - {name: en,  width: 1}
+        # Packed array of 4 bytes (bit [3:0][7:0]); lane i == lanes[i*8 +: 8].
+        - {name: lanes, packed_dims: [4, 8]}
+      outputs:
+        - {name: sum,     width: 10}   # sum of the 4 lanes (4*255 = 1020)
+        - {name: tag_out, width: 8}
+
+tests:
+  - {name: rand_test, num_items: 50}
