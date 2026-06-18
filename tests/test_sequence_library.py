@@ -64,7 +64,8 @@ def test_random_sequence_body(tmp_path):
     _gen(tmp_path, sequences=[SequenceConfig(name="alu_rand", kind="random", count=64)])
     seq = (tmp_path / "alu_rand.svh").read_text()
     assert "class alu_rand extends uvm_sequence #(alu_seq_item);" in seq
-    assert "repeat(64) do_item(tr);" in seq
+    assert "int unsigned count = 64;" in seq  # settable member (S2 override)
+    assert "repeat(count) do_item(tr);" in seq
     assert "tr.randomize()" in seq
 
 
@@ -76,8 +77,129 @@ def test_incrementing_sequence_body(tmp_path):
         ],
     )
     seq = (tmp_path / "alu_incr.svh").read_text()
-    assert "for (int unsigned i = 0; i < 16; i++) do_item(tr, i);" in seq
+    assert "int unsigned count = 16;" in seq
+    assert "for (int unsigned i = 0; i < count; i++) do_item(tr, i);" in seq
     assert "tr.a == 8'(i);" in seq  # field stepped, width-cast
+
+
+# ---- S2 deepening: sequence-of-sequences (nested) --------------------------
+
+
+def test_nested_sequence_body(tmp_path):
+    _gen(
+        tmp_path,
+        sequences=[
+            SequenceConfig(name="alu_rand", kind="random"),
+            SequenceConfig(name="alu_incr", kind="incrementing", field="a"),
+            SequenceConfig(
+                name="alu_combo", kind="nested", steps=["alu_incr", "alu_rand"]
+            ),
+        ],
+    )
+    seq = (tmp_path / "alu_combo.svh").read_text()
+    assert "alu_incr step_0;" in seq
+    assert "alu_rand step_1;" in seq
+    assert 'step_0 = alu_incr::type_id::create("step_0");' in seq
+    assert "step_0.start(m_sequencer);" in seq
+    assert "step_1.start(m_sequencer);" in seq
+    assert "int count" not in seq  # a nested seq has no item count
+
+
+def test_nested_repeated_step_gets_unique_handles(tmp_path):
+    _gen(
+        tmp_path,
+        sequences=[
+            SequenceConfig(name="alu_rand", kind="random"),
+            SequenceConfig(
+                name="alu_combo", kind="nested", steps=["alu_rand", "alu_rand"]
+            ),
+        ],
+    )
+    seq = (tmp_path / "alu_combo.svh").read_text()
+    assert "alu_rand step_0;" in seq
+    assert "alu_rand step_1;" in seq  # repeated step -> distinct handle
+
+
+# ---- S2 deepening: per-test count override ---------------------------------
+
+
+def test_count_override_emitted(tmp_path):
+    _gen(
+        tmp_path,
+        sequences=[SequenceConfig(name="alu_rand", kind="random", count=64)],
+        tests=[
+            TConf(name="t1", sequence=SeqSel(agent="alu", name="alu_rand", count=8))
+        ],
+    )
+    test = (tmp_path / "t1.svh").read_text()
+    assert "seq.count = 8;" in test
+
+
+def test_no_count_override_no_assignment(tmp_path):
+    _gen(
+        tmp_path,
+        sequences=[SequenceConfig(name="alu_rand", kind="random")],
+        tests=[TConf(name="t1", sequence=SeqSel(agent="alu", name="alu_rand"))],
+    )
+    test = (tmp_path / "t1.svh").read_text()
+    assert "seq.count" not in test
+
+
+# ---- S2 deepening validation -----------------------------------------------
+
+
+def test_nested_requires_steps():
+    with pytest.raises(Exception, match="requires a non-empty 'steps'"):
+        SequenceConfig(name="s", kind="nested")
+
+
+def test_steps_on_non_nested_rejected():
+    with pytest.raises(Exception, match="'steps' only applies to kind 'nested'"):
+        SequenceConfig(name="s", kind="random", steps=["x"])
+
+
+def test_nested_self_reference_rejected():
+    with pytest.raises(Exception, match="lists itself as a step"):
+        _cfg(sequences=[SequenceConfig(name="s", kind="nested", steps=["s"])])
+
+
+def test_nested_unknown_step_rejected():
+    with pytest.raises(Exception, match="not a declared sequence"):
+        _cfg(
+            sequences=[
+                SequenceConfig(name="alu_rand", kind="random"),
+                SequenceConfig(name="combo", kind="nested", steps=["ghost"]),
+            ]
+        )
+
+
+def test_nested_of_nested_rejected():
+    with pytest.raises(Exception, match="is itself nested"):
+        _cfg(
+            sequences=[
+                SequenceConfig(name="alu_rand", kind="random"),
+                SequenceConfig(name="inner", kind="nested", steps=["alu_rand"]),
+                SequenceConfig(name="outer", kind="nested", steps=["inner"]),
+            ]
+        )
+
+
+def test_count_override_on_nested_rejected():
+    with pytest.raises(Exception, match="nested sequence-of-sequences and has no"):
+        _cfg(
+            sequences=[
+                SequenceConfig(name="alu_rand", kind="random"),
+                SequenceConfig(name="combo", kind="nested", steps=["alu_rand"]),
+            ],
+            tests=[
+                TConf(name="t1", sequence=SeqSel(agent="alu", name="combo", count=5))
+            ],
+        )
+
+
+def test_count_override_below_one_rejected():
+    with pytest.raises(Exception, match="count must be >= 1"):
+        SeqSel(agent="alu", name="alu_rand", count=0)
 
 
 def test_skeleton_sequence_has_pragma_body(tmp_path):

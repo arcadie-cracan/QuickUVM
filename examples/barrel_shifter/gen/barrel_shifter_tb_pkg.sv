@@ -42,6 +42,7 @@ package barrel_shifter_tb_pkg;
   `include "bs_seq.svh"
   `include "bs_rand.svh"
   `include "bs_amt_walk.svh"
+  `include "bs_smoke.svh"
   // pragma quickuvm custom sequences_additional begin
   // pragma quickuvm custom sequences_additional end
 
@@ -49,6 +50,8 @@ package barrel_shifter_tb_pkg;
   `include "barrel_shifter_base_test.svh"
   `include "rand_test.svh"
   `include "amt_sweep.svh"
+  `include "short_sweep.svh"
+  `include "smoke_test.svh"
 
   // Scoreboard expected-value calculator (extern function body)
   `include "barrel_shifter_reference_model.svh"

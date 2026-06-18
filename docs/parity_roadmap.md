@@ -238,8 +238,25 @@ test → sequence selection (replace the bare `num_items`).
 - Byte-identical when unused. Validated on `examples/barrel_shifter/` — `rand_test`
   501/501 and `amt_sweep` (the incrementing `bs_amt_walk`) 33/33 on Xcelium;
   verible-lint-clean; CI gates it.
-- *Remaining:* a `sequence-of-sequences` kind, concrete reset/error bodies (vs
-  skeletons), and per-test sequence *parameters*.
+
+**Status — second slice landed (composition + per-test parameters):**
+- `kind: nested` + `steps: [...]` → a **sequence-of-sequences**: the named sibling
+  library sequences are created and `start(m_sequencer)`-ed in order on this
+  sequence's own sequencer (single-agent analogue of a C2 virtual sequence; a
+  repeated step gets a distinct `step_<i>` handle). Fail-closed: every step is a
+  declared, **non-nested** sequence of the same agent and not itself (no cycles).
+- **Per-test count override**: a library sequence's length is now a settable
+  `int count` member, and `tests[].sequence: {agent, name, count: N}` sets it before
+  `start` — the same sequence runs at different lengths per test (rejected on a
+  nested selector, which has no item count).
+- Byte-identical when neither is used (a library seq just gains the `count` member,
+  which is a deliberate, regenerated change for the two library-using examples).
+- Validated on `examples/barrel_shifter/`: `bs_smoke` (nested: walk-then-soak) runs
+  **289/289**, `short_sweep` (`bs_amt_walk` with `count: 8`) runs **9/9** vs the full
+  `amt_sweep` **33/33** — proving both composition and override on Xcelium;
+  verible-clean; CI-gated.
+- *Remaining:* concrete reset/error bodies (vs skeletons — genuinely
+  protocol-specific) and per-test constraint/knob overrides beyond `count`.
 
 ### C2 — Virtual sequencer + virtual sequences
 `<dut>_virtual_sequencer` (agent sequencer handles) + `<dut>_base_vseq`; tests run vseqs. Required for any

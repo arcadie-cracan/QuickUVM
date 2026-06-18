@@ -27,6 +27,7 @@ from quick_uvm.models import (
     ReferenceModelConfig,
     RegisterModelConfig,
     ScoreboardSpec,
+    SequenceConfig,
     StructMember,
     TransitionBin,
 )
@@ -108,6 +109,22 @@ CONFIGS = {
                 fields=[FieldConfig(name="payload", element_width=8, max_size=16)],
                 constraints=["din < payload.size()"],
             )
+        ],
+    ),
+    # S2 — a sequence library with a nested sequence-of-sequences + a count
+    # override (exercises the nested branch + count member in the seq template).
+    "nested_seq": _cfg(
+        agents=[
+            _agent(
+                "a0",
+                sequences=[
+                    SequenceConfig(name="warm", kind="random", count=4),
+                    SequenceConfig(name="combo", kind="nested", steps=["warm", "warm"]),
+                ],
+            )
+        ],
+        tests=[
+            TConf(name="test1", sequence={"agent": "a0", "name": "warm", "count": 3})
         ],
     ),
     # V1 closure — illegal_bins / ignore_bins / transition bins + option.goal
