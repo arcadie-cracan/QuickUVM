@@ -17,10 +17,13 @@ class bs_amt_walk extends uvm_sequence #(bs_seq_item);
     super.new(name);
   endfunction
 
+  // Item count — a test may override it via `sequence: {... count: N}` (S2).
+  int unsigned count = 32;
+
   task body;
     bs_seq_item tr = bs_seq_item::type_id::create("tr");
     `uvm_info("body", "bs_amt_walk (incrementing amt): starting", UVM_FULL)
-    for (int unsigned i = 0; i < 32; i++) do_item(tr, i);
+    for (int unsigned i = 0; i < count; i++) do_item(tr, i);
   endtask
 
   task do_item (bs_seq_item tr, int unsigned i);

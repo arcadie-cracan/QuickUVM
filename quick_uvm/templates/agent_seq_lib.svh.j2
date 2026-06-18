@@ -17,6 +17,11 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.sequence_item }});
     super.new(name);
   endfunction
 
+{% if sequence.kind != 'nested' %}
+  // Item count — a test may override it via `sequence: {... count: N}` (S2).
+  int unsigned count = {{ sequence.count }};
+
+{% endif %}
 {% set ns = namespace(has_reset=false) %}
 {% for port in agent.input_ports %}
 {% if port.name == dut.reset %}{% set ns.has_reset = true %}{% endif %}
@@ -25,7 +30,7 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.sequence_item }});
   task body;
     {{ agent.sequence_item }} tr = {{ agent.sequence_item }}::type_id::create("tr");
     `uvm_info("body", "{{ sequence.name }} (random): starting", UVM_FULL)
-    repeat({{ sequence.count }}) do_item(tr);
+    repeat(count) do_item(tr);
   endtask
 
   task do_item ({{ agent.sequence_item }} tr);
@@ -46,7 +51,7 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.sequence_item }});
   task body;
     {{ agent.sequence_item }} tr = {{ agent.sequence_item }}::type_id::create("tr");
     `uvm_info("body", "{{ sequence.name }} (incrementing {{ sequence.field }}): starting", UVM_FULL)
-    for (int unsigned i = 0; i < {{ sequence.count }}; i++) do_item(tr, i);
+    for (int unsigned i = 0; i < count; i++) do_item(tr, i);
   endtask
 
   task do_item ({{ agent.sequence_item }} tr, int unsigned i);
@@ -63,15 +68,28 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.sequence_item }});
     `uvm_info("do_item", tr.input2string(), UVM_FULL)
     finish_item(tr);
   endtask
+{% elif sequence.kind == 'nested' %}
+  // Sequence-of-sequences: run the sibling library sequences in order on this
+  // sequence's sequencer (S2).
+  task body;
+{% for step in sequence.steps %}
+    {{ step }} step_{{ loop.index0 }};
+{% endfor %}
+    `uvm_info("body", "{{ sequence.name }} (nested): starting", UVM_FULL)
+{% for step in sequence.steps %}
+    step_{{ loop.index0 }} = {{ step }}::type_id::create("step_{{ loop.index0 }}");
+    step_{{ loop.index0 }}.start(m_sequencer);
+{% endfor %}
+  endtask
 {% else %}
   // '{{ sequence.kind }}' sequence — write the body below. The default skeleton
-  // drives {{ sequence.count }} randomized item(s); replace it with the
+  // drives `count` randomized item(s); replace it with the
   // {{ sequence.kind }} stimulus.
   task body;
     {{ agent.sequence_item }} tr = {{ agent.sequence_item }}::type_id::create("tr");
     `uvm_info("body", "{{ sequence.name }} ({{ sequence.kind }}): starting", UVM_FULL)
     // pragma quickuvm custom body begin
-    repeat({{ sequence.count }}) begin
+    repeat(count) begin
       start_item(tr);
       if (!(tr.randomize(){% if ns.has_reset %} with { tr.{{ dut.reset }}=='1; }{% endif %}))
         `uvm_fatal("{{ sequence.name | upper }}", "{{ sequence.name }} randomization failed")

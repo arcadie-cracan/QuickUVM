@@ -26,13 +26,19 @@ agents:
       outputs:
         - {name: data_out, width: 32}
     # S2 — sequence library: a longer random soak + a directed sweep of the
-    # shift amount (walks amt = 0..31 while data_in/op stay random).
+    # shift amount (walks amt = 0..31 while data_in/op stay random). `bs_smoke` is
+    # a sequence-of-sequences that runs the amt walk, then the random soak.
     sequences:
       - {name: bs_rand,     kind: random,       count: 256}
       - {name: bs_amt_walk, kind: incrementing, count: 32, field: amt}
+      - {name: bs_smoke,    kind: nested,       steps: [bs_amt_walk, bs_rand]}
 
 tests:
   - name: rand_test
     num_items: 500
-  - name: amt_sweep            # runs bs_amt_walk instead of the default bs_sequence
+  - name: amt_sweep            # runs bs_amt_walk (full 0..31 walk) instead of default
     sequence: {agent: bs, name: bs_amt_walk}
+  - name: short_sweep          # S2: same sequence, count overridden to 8 (amt 0..7)
+    sequence: {agent: bs, name: bs_amt_walk, count: 8}
+  - name: smoke_test           # S2: nested sequence-of-sequences (walk, then soak)
+    sequence: {agent: bs, name: bs_smoke}
