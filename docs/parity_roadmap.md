@@ -168,11 +168,16 @@ constraints generates and randomizes.
   and non-empty; struct members are legal, unique identifiers; `incrementing` is
   rejected on a composite field.
 - Byte-identical when unused (a scalar port has `bit_width == width`).
+- A struct **member** may itself be a packed array (`packed_dims`) or a NESTED
+  packed struct (`struct`, recursive) — each nested struct is emitted as its own
+  **named** `<port>_<path>_t` typedef (innermost first; verible disallows anonymous
+  structs) and referenced by name, so the reference model can use deep typed access
+  (`hdr.tag.cls`). `bit_width` recurses through the tree.
 - Validated on `examples/vec_unit/` (a combinational unit with a packed-struct
-  header and a packed array of lanes; the reference model uses typed access
-  `hdr.en`/`hdr.tag`/`lanes[i]`) — **TEST PASSED 51/51 on Xcelium**; verible-clean;
-  CI-gated.
-- *Remaining:* per-field `rand_mode`, nested/typed struct members, and structured
+  header whose `tag` is a nested `{cls, id}` struct + a packed array of lanes; the
+  reference model uses typed access `hdr.en`/`hdr.tag.cls`/`lanes[i]`) — **TEST
+  PASSED 51/51 on Xcelium**; verible-clean; CI-gated.
+- *Remaining:* per-field `rand_mode`, **enum** struct members, and structured
   (schema) sugar for `dist`/`soft`.
 
 ### V1 — Functional coverage from fields  *(highest leverage; coverage)*

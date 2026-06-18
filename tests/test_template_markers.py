@@ -159,7 +159,14 @@ CONFIGS = {
                         PortConfig(
                             name="hdr",
                             struct=[
-                                StructMember(name="tag", width=8),
+                                # nested struct member -> exercises named typedefs
+                                StructMember(
+                                    name="tag",
+                                    struct=[
+                                        StructMember(name="cls", width=4),
+                                        StructMember(name="id", width=4),
+                                    ],
+                                ),
                                 StructMember(name="en", width=1),
                             ],
                         ),

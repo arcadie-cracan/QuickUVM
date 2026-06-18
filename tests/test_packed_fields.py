@@ -111,6 +111,95 @@ def test_scalar_port_byte_identical(tmp_path):
     assert "rand bit [7:0] x;" in txt
 
 
+# ---- nested / composite struct members -------------------------------------
+
+NESTED = PortConfig(
+    name="hdr",
+    struct=[
+        StructMember(
+            name="tag",
+            struct=[
+                StructMember(name="cls", width=4),
+                StructMember(name="id", width=4),
+            ],
+        ),
+        StructMember(name="lanes", packed_dims=[2, 8]),
+        StructMember(name="en", width=1),
+    ],
+)
+
+
+def test_nested_member_bit_width():
+    assert NESTED.bit_width == 8 + 16 + 1  # tag(4+4) + lanes(2*8) + en
+    assert NESTED.struct[0].bit_width == 8  # nested tag struct
+    assert NESTED.struct[1].bit_width == 16  # packed-array member
+
+
+def test_nested_struct_emits_named_typedefs(tmp_path):
+    txt = (_gen(tmp_path, [NESTED]) / "a_seq_item.svh").read_text()
+    # innermost typedef first, referenced by name in the outer struct
+    assert "} hdr_tag_t;" in txt
+    assert "hdr_tag_t tag;" in txt
+    assert "bit [1:0][7:0] lanes;" in txt  # packed-array member, inline
+    assert "} hdr_t;" in txt
+    assert "rand hdr_t hdr;" in txt
+    # named typedef precedes its use (verible: no anonymous structs)
+    assert txt.index("} hdr_tag_t;") < txt.index("hdr_tag_t tag;")
+
+
+def test_struct_typedefs_property():
+    tds = NESTED.struct_typedefs
+    assert [t["name"] for t in tds] == ["hdr_tag_t", "hdr_t"]  # innermost first
+
+
+def test_nested_member_validation():
+    with pytest.raises(Exception, match="duplicate nested member"):
+        StructMember(name="t", struct=[StructMember(name="x"), StructMember(name="x")])
+    with pytest.raises(Exception, match="packed_dims or struct, not both"):
+        StructMember(name="t", packed_dims=[2], struct=[StructMember(name="x")])
+    with pytest.raises(Exception, match="do not set 'width'"):
+        StructMember(name="t", width=4, struct=[StructMember(name="x")])
+
+
+def test_typedef_name_collision_rejected():
+    # underscores in names let distinct paths flatten to the same typedef name:
+    # member 'b_c' and member 'b' -> 'c' both produce 'a_b_c_t'
+    with pytest.raises(Exception, match="collides"):
+        _cfg(
+            [
+                PortConfig(
+                    name="a",
+                    struct=[
+                        StructMember(name="b_c", struct=[StructMember(name="x")]),
+                        StructMember(
+                            name="b",
+                            struct=[
+                                StructMember(name="c", struct=[StructMember(name="y")])
+                            ],
+                        ),
+                    ],
+                )
+            ]
+        )
+
+
+def test_cross_port_typedef_collision_rejected():
+    # port 'a' member 'b_c' and port 'a_b' member 'c' both flatten to 'a_b_c_t'
+    with pytest.raises(Exception, match="collides"):
+        _cfg(
+            [
+                PortConfig(
+                    name="a",
+                    struct=[StructMember(name="b_c", struct=[StructMember(name="x")])],
+                ),
+                PortConfig(
+                    name="a_b",
+                    struct=[StructMember(name="c", struct=[StructMember(name="y")])],
+                ),
+            ]
+        )
+
+
 # ---- DPI (K0) interaction --------------------------------------------------
 
 
