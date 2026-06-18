@@ -18,7 +18,7 @@
 {% set pa = agents[0] %}
 {% set ns = namespace(sig=[], call=[], outs=[]) %}
 {% for port in pa.input_ports %}
-{% set _arg = (port.dpi_sv_type ~ "'(t." ~ port.name ~ ")") if (port.enum or port.type) else ("t." ~ port.name) %}
+{% set _arg = (port.dpi_sv_type ~ "'(t." ~ port.name ~ ")") if port.is_typed else ("t." ~ port.name) %}
 {% set ns.sig = ns.sig + ["input " ~ port.dpi_sv_type ~ " " ~ port.name] %}
 {% set ns.call = ns.call + [_arg] %}
 {% endfor %}

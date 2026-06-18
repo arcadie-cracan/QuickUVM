@@ -154,8 +154,26 @@ constraints generates and randomizes.
   payload[]` packed onto a wide bus, with `len == payload.size()` and a length
   `dist` — **TEST PASSED 61/61 on Xcelium**, lengths span `[1:16]` with the dist's
   short-packet bias; verible-lint-clean; CI gates it.
-- *Remaining:* struct fields, **packed** arrays (fixed-width, stay in `ports`),
-  per-field `rand_mode`, and structured (schema) sugar for `dist`/`soft`.
+
+**Status — third slice landed (packed composite port fields):**
+- A port may declare a fixed-width composite: a multi-dim **packed array**
+  (`packed_dims: [4, 8]` → `bit [3:0][7:0]`) or a **packed struct**
+  (`struct: [{name, width}, ...]` → a generated `<name>_t` typedef). These ride the
+  interface as **raw bits** (`logic [bit_width-1:0]`, like enum), while the
+  transaction declares the composite SV type — the driver packs and the monitor
+  unpacks via plain integral assignment (no `$cast`). A new `bit_width` property
+  drives the interface/DUT widths, the coverage range-check, and the K0 DPI ≤64-bit
+  limit (a ≤64-bit packed field marshals as one DPI scalar; wider is rejected).
+- Fail-closed: `enum`/`type`/`packed_dims`/`struct` are mutually exclusive; dims ≥1
+  and non-empty; struct members are legal, unique identifiers; `incrementing` is
+  rejected on a composite field.
+- Byte-identical when unused (a scalar port has `bit_width == width`).
+- Validated on `examples/vec_unit/` (a combinational unit with a packed-struct
+  header and a packed array of lanes; the reference model uses typed access
+  `hdr.en`/`hdr.tag`/`lanes[i]`) — **TEST PASSED 51/51 on Xcelium**; verible-clean;
+  CI-gated.
+- *Remaining:* per-field `rand_mode`, nested/typed struct members, and structured
+  (schema) sugar for `dist`/`soft`.
 
 ### V1 — Functional coverage from fields  *(highest leverage; coverage)*
 Derive a real covergroup from the transaction/config fields the generator already has:

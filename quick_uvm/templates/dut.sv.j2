@@ -12,15 +12,15 @@ module {{ dut.name }} (
 {% set primary = agents[0] %}
 {% if dut.combinational %}
 {% for kind, port in primary.all_ports %}
-  {{ 'output logic ' if kind == 'output' else 'input  ' }}{% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }}{{ "," if not loop.last else "" }}
+  {{ 'output logic ' if kind == 'output' else 'input  ' }}{% if port.bit_width > 1 %}[{{ port.bit_width - 1 }}:0] {% endif %}{{ port.name }}{{ "," if not loop.last else "" }}
 {% endfor %}
   );
 {% else %}
 {% for port in primary.output_ports %}
-  output logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }},
+  output logic {% if port.bit_width > 1 %}[{{ port.bit_width - 1 }}:0] {% endif %}{{ port.name }},
 {% endfor %}
 {% for port in primary.input_ports %}
-  input  {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }},
+  input  {% if port.bit_width > 1 %}[{{ port.bit_width - 1 }}:0] {% endif %}{{ port.name }},
 {% endfor %}
   input               {{ dut.clock }}{% if dut.reset %},
   input               {{ dut.reset }}{% endif %});
@@ -36,7 +36,7 @@ module {{ dut.name }} (
   end
 {% else %}
 {% for port in primary.output_ports %}
-  logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}r_{{ port.name }};
+  logic {% if port.bit_width > 1 %}[{{ port.bit_width - 1 }}:0] {% endif %}r_{{ port.name }};
 {% endfor %}
 
 {% for port in primary.output_ports %}

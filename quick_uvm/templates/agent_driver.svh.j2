@@ -35,7 +35,7 @@ class {{ agent.name }}_driver extends uvm_driver #({{ agent.sequence_item }});
 {% for port in agent.input_ports %}
 {% if port.name == dut.reset %}
     vif.{{ port.name }} <= '0;
-{% elif port.width > 1 %}
+{% elif port.bit_width > 1 %}
     vif.{{ port.name }} <= '1;
 {% else %}
     vif.{{ port.name }} <= '0;
