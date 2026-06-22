@@ -6,9 +6,14 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-// TB-owned packed struct for 'hdr'.
+// TB-owned packed struct for 'hdr' (nested structs → named typedefs).
 typedef struct packed {
-  bit [7:0] tag;
+  bit [3:0] cls;
+  bit [3:0] id;
+} hdr_tag_t;
+
+typedef struct packed {
+  hdr_tag_t tag;
   bit en;
 } hdr_t;
 

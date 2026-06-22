@@ -23,10 +23,14 @@ agents:
     ports:
       inputs:
         # Packed struct: first member is the MSB end, matching `hdr[W:1]=tag,
-        # hdr[0]=en` in the DUT. 9 bits total.
+        # hdr[0]=en` in the DUT. 9 bits total. `tag` is itself a NESTED packed
+        # struct {cls, id} (high nibble = cls), so hdr[8:5]=cls, hdr[4:1]=id.
         - name: hdr
           struct:
-            - {name: tag, width: 8}
+            - name: tag
+              struct:
+                - {name: cls, width: 4}
+                - {name: id,  width: 4}
             - {name: en,  width: 1}
         # Packed array of 4 bytes (bit [3:0][7:0]); lane i == lanes[i*8 +: 8].
         - {name: lanes, packed_dims: [4, 8]}

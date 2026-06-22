@@ -25,12 +25,12 @@ function vu_seq_item vec_unit_predictor::predict(vu_seq_item t);
   extr.copy(t);
 
   // pragma quickuvm custom prediction_logic begin
-  // Typed access to the packed struct (hdr.en / hdr.tag) and packed array (lanes[i]).
+  // Typed access: nested struct members (hdr.en, hdr.tag.cls/.id) + packed array.
   extr.sum = '0;
   if (extr.hdr.en) begin
     for (int i = 0; i < 4; i++) extr.sum = extr.sum + 10'(extr.lanes[i]);
   end
-  extr.tag_out = extr.hdr.tag;
+  extr.tag_out = {extr.hdr.tag.cls, extr.hdr.tag.id};   // cls = high nibble
   // pragma quickuvm custom prediction_logic end
 
   `uvm_info("CALC #2", extr.convert2string(), UVM_FULL)

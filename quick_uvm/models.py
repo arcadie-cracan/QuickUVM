@@ -85,23 +85,104 @@ def _check_sv_identifier(name: str, what: str) -> None:
 
 
 class StructMember(BaseModel):
-    """One field of a packed struct (S1). Plain integral members only."""
+    """One field of a packed struct (S1).
+
+    A plain integral member (`width`), a packed array (`packed_dims`), or a
+    NESTED packed struct (`struct`, recursive). Composite members render inline
+    (SV allows an anonymous nested packed struct: `struct packed { ... } name`),
+    so no extra typedef is needed.
+    """
 
     name: str
     width: int = 1
+    packed_dims: list[int] | None = None
+    struct: list[StructMember] | None = None
 
     @model_validator(mode="after")
     def _check(self) -> StructMember:
         _check_sv_identifier(self.name, "struct member name")
+        if self.packed_dims is not None and self.struct is not None:
+            raise ValueError(
+                f"struct member '{self.name}': set either packed_dims or struct, "
+                f"not both."
+            )
+        if self.packed_dims is not None and (
+            not self.packed_dims or any(d < 1 for d in self.packed_dims)
+        ):
+            raise ValueError(
+                f"struct member '{self.name}': packed_dims must be a non-empty list "
+                f"of dimensions >= 1 (got {self.packed_dims})."
+            )
+        if self.struct is not None:
+            if not self.struct:
+                raise ValueError(
+                    f"struct member '{self.name}': struct must declare at least one "
+                    f"member."
+                )
+            seen: set[str] = set()
+            for m in self.struct:
+                if m.name in seen:
+                    raise ValueError(
+                        f"struct member '{self.name}': duplicate nested member "
+                        f"'{m.name}'."
+                    )
+                seen.add(m.name)
+        if (self.packed_dims or self.struct) and self.width != 1:
+            raise ValueError(
+                f"struct member '{self.name}': do not set 'width' alongside "
+                f"packed_dims/struct (the width is derived)."
+            )
         if self.width < 1:
             raise ValueError(f"struct member '{self.name}': width must be >= 1.")
         return self
 
     @property
+    def bit_width(self) -> int:
+        """Total bits this member occupies (composite → derived, recursive)."""
+        if self.packed_dims:
+            w = 1
+            for d in self.packed_dims:
+                w *= d
+            return w
+        if self.struct:
+            return sum(m.bit_width for m in self.struct)
+        return self.width
+
+    @property
     def sv_decl(self) -> str:
-        """The member declaration body, e.g. `bit [7:0] addr` (no trailing ;)."""
+        """The member declaration body, e.g. `bit [7:0] addr` (no trailing ;).
+
+        Composite members render inline and recursively: a packed array as
+        `bit [d-1:0]..[..] name`, a nested struct as `struct packed { .. } name`.
+        """
+        if self.struct:
+            inner = " ".join(f"{m.sv_decl};" for m in self.struct)
+            return f"struct packed {{ {inner} }} {self.name}"
+        if self.packed_dims:
+            dims = "".join(f"[{d - 1}:0]" for d in self.packed_dims)
+            return f"bit {dims} {self.name}"
         span = f"[{self.width - 1}:0] " if self.width > 1 else ""
         return f"bit {span}{self.name}"
+
+
+def _collect_struct_typedefs(members: list[StructMember], prefix: str) -> list[dict]:
+    """Depth-first NAMED packed-struct typedefs for a (possibly nested) struct.
+
+    Returns ``[{name, decls}, ...]`` innermost-first; the last entry is
+    ``<prefix>_t``. A nested-struct member contributes its own
+    ``<prefix>_<member>_t`` typedef and is referenced by name; other members use
+    their inline ``sv_decl``. Named (not anonymous) so verible stays clean.
+    """
+    out: list[dict] = []
+    decls: list[str] = []
+    for m in members:
+        if m.struct:
+            out += _collect_struct_typedefs(m.struct, f"{prefix}_{m.name}")
+            decls.append(f"{prefix}_{m.name}_t {m.name}")
+        else:
+            decls.append(m.sv_decl)
+    out.append({"name": f"{prefix}_t", "decls": decls})
+    return out
 
 
 class PortConfig(BaseModel):
@@ -216,7 +297,7 @@ class PortConfig(BaseModel):
                 w *= d
             return w
         if self.struct:
-            return sum(m.width for m in self.struct)
+            return sum(m.bit_width for m in self.struct)
         return self.width
 
     @property
@@ -231,6 +312,18 @@ class PortConfig(BaseModel):
         if self.packed_dims:
             return "bit " + "".join(f"[{d - 1}:0]" for d in self.packed_dims)
         return f"bit [{self.width - 1}:0]" if self.width > 1 else "bit"
+
+    @property
+    def struct_typedefs(self) -> list[dict]:
+        """Named packed-struct typedefs to emit (innermost first) for a struct port.
+
+        Each NESTED struct becomes its own `<port>_<path>_t` typedef — verible
+        requires named structs — and a member references the nested typedef by
+        name. Returns dicts `{name, decls}`; empty for a non-struct port.
+        """
+        if not self.struct:
+            return []
+        return _collect_struct_typedefs(self.struct, self.name)
 
     @property
     def dpi_sv_type(self) -> str:
@@ -1100,6 +1193,25 @@ class ProjectConfig(BaseModel):
                         f"{p.bit_width} bits; DPI-C scalar marshaling supports ≤64-bit "
                         f"fields (wider fields are not yet supported)."
                     )
+        # Packed-struct typedefs (`<port>_<path>_t`, possibly nested) all share the
+        # tb_pkg scope. Their names are paths joined by '_', so distinct paths can
+        # collide (e.g. port 'a' member 'b_c' vs member 'b' → 'c', both 'a_b_c_t';
+        # or two agents each with a struct port 'hdr'). A duplicate would emit two
+        # conflicting typedefs → a compile error, so reject it at config time.
+        seen_td: dict[str, str] = {}
+        for a in self.agents:
+            for _, p in a.all_ports:
+                for td in p.struct_typedefs:
+                    nm = td["name"]
+                    where = f"{a.name}.{p.name}"
+                    if nm in seen_td:
+                        raise ValueError(
+                            f"packed-struct typedef '{nm}' (from {where}) collides "
+                            f"with the one from {seen_td[nm]} — typedef names are "
+                            f"derived from port/member paths joined by '_' and must "
+                            f"be unique across the bench. Rename a port or member."
+                        )
+                    seen_td[nm] = where
         return self
 
     def coverage_model_for(self, agent_name: str) -> CoverageModel | None:

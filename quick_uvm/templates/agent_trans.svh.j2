@@ -17,13 +17,15 @@ typedef enum logic [{{ port.width - 1 }}:0] {
 
 {% endif %}
 {% if port.struct %}
-// TB-owned packed struct for '{{ port.name }}'.
+// TB-owned packed struct for '{{ port.name }}' (nested structs → named typedefs).
+{% for td in port.struct_typedefs %}
 typedef struct packed {
-{% for m in port.struct %}
-  {{ m.sv_decl }};
+{% for decl in td.decls %}
+  {{ decl }};
 {% endfor %}
-} {{ port.name }}_t;
+} {{ td.name }};
 
+{% endfor %}
 {% endif %}
 {% endfor %}
 class {{ agent.sequence_item }} extends uvm_sequence_item;
