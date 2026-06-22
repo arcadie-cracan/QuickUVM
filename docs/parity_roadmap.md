@@ -180,8 +180,14 @@ constraints generates and randomizes.
   header whose `tag` is a nested `{cls, id}` struct + a packed array of lanes; the
   reference model uses typed access `hdr.en`/`hdr.tag.cls`/`lanes[i]`) — **TEST
   PASSED 51/51 on Xcelium**; verible-clean; CI-gated.
-- *Remaining:* per-field `rand_mode`, **enum** struct members, and structured
-  (schema) sugar for `dist`/`soft`.
+- **Per-field `rand_mode`** (`rand_mode: false`) declares a field `rand` but disables
+  its randomization by default (`<field>.rand_mode(0)` in the transaction's `new()`),
+  so it holds its value until a sequence re-enables it (`tr.<field>.rand_mode(1)`).
+  Fail-closed: only valid on a rand input port. Validated on `examples/gated_add/`:
+  `bias` is held at 0 in `rand_test` (`y == a`) and randomized in `bias_on_test`
+  (`y == a + bias`) — both **41/41 on Xcelium**; byte-identical when unused.
+- *Remaining:* **enum** struct members, and structured (schema) sugar for
+  `dist`/`soft`.
 
 ### V1 — Functional coverage from fields  *(highest leverage; coverage)*
 Derive a real covergroup from the transaction/config fields the generator already has:

@@ -177,6 +177,24 @@ CONFIGS = {
             )
         ],
     ),
+    # S1 — a rand input with rand_mode disabled by default (exercises the
+    # rand_mode(0) call emitted into the transaction's new()).
+    "rand_mode": _cfg(
+        agents=[
+            AgentConfig(
+                name="a0",
+                interface="a0_if",
+                sequence_item="a0_trans",
+                ports={
+                    "inputs": [
+                        PortConfig(name="din", width=8),
+                        PortConfig(name="ctrl", width=4, rand_mode=False),
+                    ],
+                    "outputs": [PortConfig(name="dout", width=16, randomize=False)],
+                },
+            )
+        ],
+    ),
 }
 
 

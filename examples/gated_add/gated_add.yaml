@@ -1,0 +1,36 @@
+# gated_add — QuickUVM S1 example: per-field rand_mode.
+#
+# `bias` is declared `rand` but with rand_mode disabled by default (rand_mode(0)
+# in the transaction's new()), so it holds 0 and y == a in the default test. The
+# `bias_on` directed sequence re-enables it (bias.rand_mode(1)) so it randomizes.
+# The reference model just adds the sampled a + bias, so both tests pass.
+project:
+  name: gated_add
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: gated_add
+  combinational: true
+
+clock: {}
+
+agents:
+  - name: src
+    interface: src_if
+    sequence_item: src_seq_item
+    ports:
+      inputs:
+        - {name: a, width: 8}
+        # rand, but OFF by default — held at 0 until a sequence re-enables it.
+        - {name: bias, width: 8, rand_mode: false}
+      outputs:
+        - {name: y, width: 9}
+    sequences:
+      # Directed: its body re-enables bias.rand_mode(1) before randomizing.
+      - {name: bias_on, kind: directed, count: 40}
+
+tests:
+  - {name: rand_test, num_items: 40}   # bias held at 0 -> y == a
+  - name: bias_on_test                 # re-enables bias -> y == a + bias
+    sequence: {agent: src, name: bias_on}

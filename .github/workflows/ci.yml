@@ -114,3 +114,12 @@ jobs:
       - name: Verible lint (packed-composite generated SV/SVH)
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_vu/*.sv gen_vu/*.svh
+
+      # Gate the S1 rand_mode path: the gated_add example declares a rand field with
+      # rand_mode disabled by default (a rand_mode(0) call in the transaction new()).
+      - name: Generate the rand_mode example (S1)
+        run: quick-uvm generate -c examples/gated_add/gated_add.yaml -o gen_ga
+
+      - name: Verible lint (rand_mode generated SV/SVH)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_ga/*.sv gen_ga/*.svh

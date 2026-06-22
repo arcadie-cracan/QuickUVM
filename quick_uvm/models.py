@@ -189,6 +189,14 @@ class PortConfig(BaseModel):
     name: str
     width: int = 1
     randomize: bool = True  # only meaningful for input ports
+    # S1 — rand_mode: when false the field is still declared `rand` (so it CAN be
+    # randomized) but its rand_mode is disabled by default in the transaction's
+    # new() — it holds its value through randomize() until a sequence/test re-enables
+    # it via `tr.<field>.rand_mode(1)`. Only meaningful on a rand input port (a
+    # per-field constraint on it is rejected). NOTE: while disabled the field is a
+    # fixed state value, so a transaction-level `constraints:` entry referencing it
+    # solves against that held value. (No equivalent on the var-length `fields:` yet.)
+    rand_mode: bool = True
     # S1 — typed fields + constraints (all opt-in; a plain field is byte-identical).
     # BLACK BOX by default: declare named values and QuickUVM generates the
     # testbench's OWN enum (<name>_e) for this field, which self-constrains to its
@@ -572,11 +580,30 @@ class AgentConfig(BaseModel):
                     f"but outputs are sampled (non-rand). Constraints belong on rand "
                     f"inputs."
                 )
+            if not p.rand_mode:
+                raise ValueError(
+                    f"agent '{self.name}': output '{p.name}' sets rand_mode=false, but "
+                    f"outputs are sampled (non-rand) — rand_mode only applies to rand "
+                    f"input ports."
+                )
         for p in self.input_ports:
             if p.constraint and not p.randomize:
                 raise ValueError(
                     f"agent '{self.name}': input port '{p.name}' has a constraint but "
                     f"randomize=false (non-rand). Set randomize=true or drop it."
+                )
+            if not p.rand_mode and not p.randomize:
+                raise ValueError(
+                    f"agent '{self.name}': input port '{p.name}' sets rand_mode=false "
+                    f"with randomize=false — a non-rand field has no rand_mode. Set "
+                    f"randomize=true (rand, but disabled by default) or drop rand_mode."
+                )
+            if p.constraint and not p.rand_mode:
+                raise ValueError(
+                    f"agent '{self.name}': input port '{p.name}' has both a constraint "
+                    f"and rand_mode=false — the field is held at its default, so the "
+                    f"constraint is checked against that fixed value and may make "
+                    f"randomize() fail. Drop the constraint or set rand_mode=true."
                 )
         # A field name must be unique across inputs+outputs: the transaction
         # declares one member per field, and the DPI-C bridge (K0) emits one
