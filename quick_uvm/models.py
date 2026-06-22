@@ -87,24 +87,34 @@ def _check_sv_identifier(name: str, what: str) -> None:
 class StructMember(BaseModel):
     """One field of a packed struct (S1).
 
-    A plain integral member (`width`), a packed array (`packed_dims`), or a
-    NESTED packed struct (`struct`, recursive). Composite members render inline
-    (SV allows an anonymous nested packed struct: `struct packed { ... } name`),
-    so no extra typedef is needed.
+    A plain integral member (`width`), a packed array (`packed_dims`), a NESTED
+    packed struct (`struct`, recursive), or an `enum` (a generated `<path>_e`
+    typedef using `width` as the encoding width). Composite/enum members are
+    emitted as NAMED typedefs (see `_collect_struct_typedefs`).
     """
 
     name: str
     width: int = 1
     packed_dims: list[int] | None = None
     struct: list[StructMember] | None = None
+    enum: dict[str, int] | None = None
 
     @model_validator(mode="after")
     def _check(self) -> StructMember:
         _check_sv_identifier(self.name, "struct member name")
-        if self.packed_dims is not None and self.struct is not None:
+        specs = [
+            k
+            for k, v in (
+                ("packed_dims", self.packed_dims),
+                ("struct", self.struct),
+                ("enum", self.enum),
+            )
+            if v
+        ]
+        if len(specs) > 1:
             raise ValueError(
-                f"struct member '{self.name}': set either packed_dims or struct, "
-                f"not both."
+                f"struct member '{self.name}': set at most one of "
+                f"packed_dims/struct/enum (got {specs})."
             )
         if self.packed_dims is not None and (
             not self.packed_dims or any(d < 1 for d in self.packed_dims)
@@ -127,6 +137,27 @@ class StructMember(BaseModel):
                         f"'{m.name}'."
                     )
                 seen.add(m.name)
+        if self.enum is not None:
+            if not self.enum:
+                raise ValueError(
+                    f"struct member '{self.name}': enum must have at least one value."
+                )
+            hi = (1 << self.width) - 1
+            seen_v: dict[int, str] = {}
+            for label, val in self.enum.items():
+                _check_sv_identifier(label, f"struct member '{self.name}' enum label")
+                if not (0 <= val <= hi):
+                    raise ValueError(
+                        f"struct member '{self.name}': enum value {label}={val} does "
+                        f"not fit in {self.width} bit(s) (legal range 0..{hi})."
+                    )
+                if val in seen_v:
+                    raise ValueError(
+                        f"struct member '{self.name}': enum values must be unique — "
+                        f"'{label}' and '{seen_v[val]}' both = {val}."
+                    )
+                seen_v[val] = label
+        # packed_dims/struct DERIVE the width; enum and plain members USE `width`.
         if (self.packed_dims or self.struct) and self.width != 1:
             raise ValueError(
                 f"struct member '{self.name}': do not set 'width' alongside "
@@ -166,12 +197,15 @@ class StructMember(BaseModel):
 
 
 def _collect_struct_typedefs(members: list[StructMember], prefix: str) -> list[dict]:
-    """Depth-first NAMED packed-struct typedefs for a (possibly nested) struct.
+    """Depth-first NAMED typedefs for a (possibly nested) packed struct.
 
-    Returns ``[{name, decls}, ...]`` innermost-first; the last entry is
-    ``<prefix>_t``. A nested-struct member contributes its own
-    ``<prefix>_<member>_t`` typedef and is referenced by name; other members use
-    their inline ``sv_decl``. Named (not anonymous) so verible stays clean.
+    Returns typedef dicts in dependency order (a member's typedef precedes the
+    struct that references it); the last entry is the ``<prefix>_t`` struct.
+    Each dict is tagged ``kind``: ``"struct"`` (``{kind, name, decls}``) or
+    ``"enum"`` (``{kind, name, width, labels}``). A nested-struct member yields a
+    ``<prefix>_<member>_t`` typedef and an enum member a ``<prefix>_<member>_e``
+    one, both referenced by name; plain/array members use their inline
+    ``sv_decl``. Named (not anonymous) so verible stays clean.
     """
     out: list[dict] = []
     decls: list[str] = []
@@ -179,9 +213,13 @@ def _collect_struct_typedefs(members: list[StructMember], prefix: str) -> list[d
         if m.struct:
             out += _collect_struct_typedefs(m.struct, f"{prefix}_{m.name}")
             decls.append(f"{prefix}_{m.name}_t {m.name}")
+        elif m.enum:
+            nm = f"{prefix}_{m.name}_e"
+            out.append({"kind": "enum", "name": nm, "width": m.width, "labels": m.enum})
+            decls.append(f"{nm} {m.name}")
         else:
             decls.append(m.sv_decl)
-    out.append({"name": f"{prefix}_t", "decls": decls})
+    out.append({"kind": "struct", "name": f"{prefix}_t", "decls": decls})
     return out
 
 
@@ -278,6 +316,7 @@ class PortConfig(BaseModel):
         hi = (1 << self.width) - 1
         seen: dict[int, str] = {}
         for label, val in self.enum.items():
+            _check_sv_identifier(label, f"port '{self.name}' enum label")
             if not (0 <= val <= hi):
                 raise ValueError(
                     f"port '{self.name}': enum value {label}={val} does not fit in "
@@ -1220,23 +1259,26 @@ class ProjectConfig(BaseModel):
                         f"{p.bit_width} bits; DPI-C scalar marshaling supports ≤64-bit "
                         f"fields (wider fields are not yet supported)."
                     )
-        # Packed-struct typedefs (`<port>_<path>_t`, possibly nested) all share the
-        # tb_pkg scope. Their names are paths joined by '_', so distinct paths can
-        # collide (e.g. port 'a' member 'b_c' vs member 'b' → 'c', both 'a_b_c_t';
-        # or two agents each with a struct port 'hdr'). A duplicate would emit two
-        # conflicting typedefs → a compile error, so reject it at config time.
+        # All TB-owned typedefs — port enums (`<port>_e`), packed structs
+        # (`<port>_<path>_t`) and struct enum members (`<port>_<path>_e`) — share the
+        # tb_pkg scope. Names are paths joined by '_', so distinct paths can collide
+        # (port 'a' member 'b_c' vs member 'b' → 'c', both 'a_b_c_t'; two enum ports
+        # 'op' → 'op_e' x2; a port enum 'hdr_cls' vs a struct member 'hdr'.'cls', both
+        # 'hdr_cls_e'). A duplicate emits two conflicting typedefs → a compile error,
+        # so reject it at config time.
         seen_td: dict[str, str] = {}
         for a in self.agents:
             for _, p in a.all_ports:
-                for td in p.struct_typedefs:
-                    nm = td["name"]
-                    where = f"{a.name}.{p.name}"
+                names = [p.sv_type] if p.enum else []  # <port>_e
+                names += [td["name"] for td in p.struct_typedefs]
+                where = f"{a.name}.{p.name}"
+                for nm in names:
                     if nm in seen_td:
                         raise ValueError(
-                            f"packed-struct typedef '{nm}' (from {where}) collides "
-                            f"with the one from {seen_td[nm]} — typedef names are "
-                            f"derived from port/member paths joined by '_' and must "
-                            f"be unique across the bench. Rename a port or member."
+                            f"TB-owned typedef '{nm}' (from {where}) collides with the "
+                            f"one from {seen_td[nm]} — enum/struct typedef names are "
+                            f"derived from port + member names and must be unique "
+                            f"across the bench. Rename a port or member."
                         )
                     seen_td[nm] = where
         return self
