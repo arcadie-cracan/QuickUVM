@@ -123,6 +123,11 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
 
   function new (string name="{{ agent.sequence_item }}");
     super.new(name);
+{% for port in agent.input_ports %}
+{% if port.randomize and not port.rand_mode %}
+    {{ port.name }}.rand_mode(0);   // off by default; re-enable: {{ port.name }}.rand_mode(1)
+{% endif %}
+{% endfor %}
   endfunction
 
 {% if agent.seq_item_style == 'manual' %}

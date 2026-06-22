@@ -246,6 +246,57 @@ def test_same_name_in_inputs_and_outputs_rejected():
         )
 
 
+# ---- per-field rand_mode ---------------------------------------------------
+
+
+def test_rand_mode_false_disables_in_new(tmp_path):
+    # the field is still `rand`, but new() disables its rand_mode by default
+    agent = _ag(
+        [
+            PortConfig(name="a", width=8),
+            PortConfig(name="bias", width=8, rand_mode=False),
+        ]
+    )
+    txt = _trans(tmp_path, agent)
+    assert "rand bit [7:0] bias;" in txt  # still a rand field
+    assert "bias.rand_mode(0);" in txt  # disabled in new()
+
+
+def test_rand_mode_default_emits_no_call(tmp_path):
+    # default rand_mode=true -> byte-identical (no rand_mode call)
+    txt = _trans(tmp_path, _ag([PortConfig(name="a", width=8)]))
+    assert "rand_mode" not in txt
+
+
+def test_rand_mode_on_output_rejected():
+    with pytest.raises(Exception, match="rand_mode only applies to rand input"):
+        _agent_with(
+            [PortConfig(name="a", width=8)],
+            [PortConfig(name="result", width=8, rand_mode=False)],
+        )
+
+
+def test_rand_mode_on_nonrand_input_rejected():
+    with pytest.raises(Exception, match="non-rand field has no rand_mode"):
+        _agent_with(
+            [PortConfig(name="en", width=1, randomize=False, rand_mode=False)],
+            [PortConfig(name="result", width=8)],
+        )
+
+
+def test_rand_mode_false_with_constraint_rejected():
+    # a held field checked against its own constraint can fail randomize() -> reject
+    with pytest.raises(Exception, match="both a constraint and rand_mode=false"):
+        _agent_with(
+            [
+                PortConfig(
+                    name="b", width=8, rand_mode=False, constraint="b inside {[1:7]}"
+                )
+            ],
+            [PortConfig(name="result", width=8)],
+        )
+
+
 # ---- monitor casts logic->enum (IEEE 1800.2 strong typing) -----------------
 
 
