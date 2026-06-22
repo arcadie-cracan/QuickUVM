@@ -25,11 +25,13 @@ agents:
         # Packed struct: first member is the MSB end, matching `hdr[W:1]=tag,
         # hdr[0]=en` in the DUT. 9 bits total. `tag` is itself a NESTED packed
         # struct {cls, id} (high nibble = cls), so hdr[8:5]=cls, hdr[4:1]=id.
+        # `cls` is an ENUM member (a generated hdr_tag_cls_e typedef) — it
+        # self-constrains the high nibble to its legal class codes.
         - name: hdr
           struct:
             - name: tag
               struct:
-                - {name: cls, width: 4}
+                - {name: cls, width: 4, enum: {STD: 0, EXT: 1, MGMT: 2}}
                 - {name: id,  width: 4}
             - {name: en,  width: 1}
         # Packed array of 4 bytes (bit [3:0][7:0]); lane i == lanes[i*8 +: 8].

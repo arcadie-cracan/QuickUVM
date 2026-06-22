@@ -6,9 +6,15 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-// TB-owned packed struct for 'hdr' (nested structs → named typedefs).
+// TB-owned packed struct for 'hdr' (nested structs/enums → named typedefs).
+typedef enum logic [3:0] {
+  STD = 4'd0,
+  EXT = 4'd1,
+  MGMT = 4'd2
+} hdr_tag_cls_e;
+
 typedef struct packed {
-  bit [3:0] cls;
+  hdr_tag_cls_e cls;
   bit [3:0] id;
 } hdr_tag_t;
 
