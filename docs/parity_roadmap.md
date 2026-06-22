@@ -8,6 +8,9 @@ See `comparison.md` for the current capability matrix, `code_preservation.md` fo
 merge contract every phase must keep intact, and [`defaults.md`](defaults.md) for the
 **sane-defaults spec** (what a generated bench looks like out of the box, and the
 open-source evidence behind each choice).
+[`comparison_opentitan.md`](comparison_opentitan.md) is a structural gap analysis vs a
+mature industrial bench (OpenTitan `rv_timer`) — it surfaced **C5** below and raised the
+priority of **V2**/**R1**.
 
 ## Reprioritization note (why this differs from the v0.3 plan)
 
@@ -355,6 +358,18 @@ Generate an interface assertion module + SVA hook pragmas (protocol properties a
 code, but the binding/structure is scaffolded).
 **Accept:** an `*_if` emits a bound checker module with a sample property.
 
+### C5 — RAL-driven CSR test library  *(surfaced by the OpenTitan comparison; high leverage)*
+Generate the standard, register-model-driven CSR test suite that every real register block
+needs and that QuickUVM is ~90% positioned for (it already wires the RAL): `csr_rw`,
+`csr_bit_bash`, `csr_aliasing`, `csr_hw_reset`, and `mem_walk`. These are RAL-generic — the
+bodies are UVM `uvm_reg`-based sequences (or thin wrappers over them), parameterized by the
+external reg block QuickUVM already builds/locks/adapts. Today QuickUVM emits only a basic
+`reg_test` (read/write). See [`comparison_opentitan.md`](comparison_opentitan.md): the full
+CSR suite is the single biggest *generatable* gap vs an industrial bench (in OpenTitan every
+cip block inherits it for free from `csr_utils`).
+**Accept:** a register block generates a `csr_rw`/`bit_bash`/`hw_reset` test that runs
+against the RAL and passes.
+
 ## Priority tier 4 — clocking & infrastructure
 
 ### M1 — Multi-clock / multi-reset
@@ -371,6 +386,8 @@ coverage-merge flow (coverage closure needs all of these).
 
 - **V2 — Register functional coverage** (auto reg/field coverage models) — valuable but
   pairs with external reggen; do only when a register-heavy project needs closure.
+  *(The OpenTitan comparison raises this: cip blocks sample reggen-emitted reg covergroups
+  as a matter of course — promote V2 alongside C5 for register-heavy DUTs.)*
 - **A1 — QVIP / external-VIP integration** — niche.
 - **Mixed-language (VHDL) / BFM / emulation** — large effort, narrow audience; UVMF's
   domain.
