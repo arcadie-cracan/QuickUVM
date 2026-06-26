@@ -72,3 +72,12 @@ coverage_models:
     crosses:
       - [op, a]
       - [op, b]
+      # binsof selection: a named, refined cross that counts only ADD at the
+      # zero/max operand corners, and ignores the bulk mid-range — focusing
+      # closure on the interesting combinations.
+      - name: add_corners
+        fields: [op, a]
+        bins:
+          - name: add_at_corner
+            select: "binsof(op_cp) intersect {ADD} && !binsof(a_cp.mid)"
+          - {name: skip_mid, kind: ignore_bins, select: "binsof(a_cp.mid)"}

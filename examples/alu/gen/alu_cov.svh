@@ -40,6 +40,10 @@ class alu_cov extends uvm_subscriber #(alu_seq_item);
     }
     op_x_a : cross op_cp, a_cp;
     op_x_b : cross op_cp, b_cp;
+    add_corners : cross op_cp, a_cp {
+      bins add_at_corner = binsof(op_cp) intersect {ADD} && !binsof(a_cp.mid);
+      ignore_bins skip_mid = binsof(a_cp.mid);
+    }
 
     // pragma quickuvm custom coverpoints_additional begin
     // pragma quickuvm custom coverpoints_additional end
