@@ -19,6 +19,8 @@ from quick_uvm.models import (
     CoverageBin,
     CoverageModel,
     Coverpoint,
+    CrossBin,
+    CrossSpec,
     DutConfig,
     FieldConfig,
     PortConfig,
@@ -141,6 +143,27 @@ CONFIGS = {
                         illegal_bins=[CoverageBin(name="bad", value=255)],
                         ignore_bins=[CoverageBin(name="dontcare", value=128)],
                         transitions=[TransitionBin(name="z2one", seq="0 => 1")],
+                    )
+                ],
+            )
+        ],
+    ),
+    # V1 — a binsof-refined cross (exercises the cross-body branch in coverage).
+    "binsof_cross": _cfg(
+        coverage_models=[
+            CoverageModel(
+                agent="a0",
+                coverpoints=[
+                    Coverpoint(
+                        field="din", bins=[CoverageBin(name="lo", range=(0, 127))]
+                    ),
+                    Coverpoint(field="rst_n"),
+                ],
+                crosses=[
+                    CrossSpec(
+                        name="dr",
+                        fields=["din", "rst_n"],
+                        bins=[CrossBin(name="sel", select="binsof(din_cp.lo)")],
                     )
                 ],
             )

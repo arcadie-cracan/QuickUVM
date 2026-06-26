@@ -233,9 +233,16 @@ write. Opt-in `coverage_models:` block; default stays the generic stub.
   `sum`: a checksum of ≤16 bytes can never exceed `16*0xFF`, so values above that are
   impossible-by-construction and the bin is *live* (storable) yet never hit by a
   correct DUT — **61/61 with no illegal firing**. Both verible-clean; CI-gated.
-- *Remaining:* per-bin cross selection (`binsof`), width-derived auto-bin tuning
-  (`auto_bin_max`), a deliberate illegal-hit negative test, and the coverage-merge/
-  report flow (roadmap **R1**).
+- **`binsof` cross selection**: a cross may be the plain `[a, b]` form (unchanged) or
+  a `CrossSpec` `{fields, bins, name}` whose `bins`/`ignore_bins`/`illegal_bins` carry
+  raw `binsof(...)`/`intersect`/`&&`/`!` select expressions, and an optional `name`
+  (so two crosses can span the same fields). Fail-closed: duplicate cross names and
+  cross-bin names are rejected, names are SV identifiers, a select is non-empty.
+  Byte-identical for a plain cross. Validated on `examples/alu/` (`add_corners`
+  refines `op × a` to ADD at the operand corners, ignoring mid) — **1001/1001 on
+  Xcelium**; verible-clean.
+- *Remaining:* width-derived auto-bin tuning (`auto_bin_max`), a deliberate
+  illegal-hit negative test, and the coverage-merge/report flow (roadmap **R1**).
 
 ### S2 — Sequence library
 Generate more than one base sequence: a small library (incrementing/random/directed),
