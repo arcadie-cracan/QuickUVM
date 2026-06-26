@@ -201,6 +201,11 @@ def test_empty_enum_rejected():
         PortConfig(name="op", width=4, enum={})
 
 
+def test_enum_label_must_be_sv_identifier():
+    with pytest.raises(Exception, match="legal SystemVerilog identifier"):
+        PortConfig(name="op", width=4, enum={"2bad": 0})
+
+
 def test_enum_value_at_width_boundary_ok():
     # 7 is the max in 3 bits — must be accepted, 8 must not
     PortConfig(name="op", width=3, enum={"LO": 0, "HI": 7})

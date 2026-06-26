@@ -17,14 +17,23 @@ typedef enum logic [{{ port.width - 1 }}:0] {
 
 {% endif %}
 {% if port.struct %}
-// TB-owned packed struct for '{{ port.name }}' (nested structs → named typedefs).
+// TB-owned packed struct for '{{ port.name }}' (nested structs/enums → named typedefs).
 {% for td in port.struct_typedefs %}
+{% if td.kind == 'enum' %}
+typedef enum logic [{{ td.width - 1 }}:0] {
+{% for name, val in td.labels.items() %}
+  {{ name }} = {{ td.width }}'d{{ val }}{{ "," if not loop.last }}
+{% endfor %}
+} {{ td.name }};
+
+{% else %}
 typedef struct packed {
 {% for decl in td.decls %}
   {{ decl }};
 {% endfor %}
 } {{ td.name }};
 
+{% endif %}
 {% endfor %}
 {% endif %}
 {% endfor %}

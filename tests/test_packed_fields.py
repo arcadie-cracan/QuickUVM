@@ -155,10 +155,72 @@ def test_struct_typedefs_property():
 def test_nested_member_validation():
     with pytest.raises(Exception, match="duplicate nested member"):
         StructMember(name="t", struct=[StructMember(name="x"), StructMember(name="x")])
-    with pytest.raises(Exception, match="packed_dims or struct, not both"):
+    with pytest.raises(Exception, match="at most one of packed_dims/struct/enum"):
         StructMember(name="t", packed_dims=[2], struct=[StructMember(name="x")])
     with pytest.raises(Exception, match="do not set 'width'"):
         StructMember(name="t", width=4, struct=[StructMember(name="x")])
+
+
+# ---- enum struct members ---------------------------------------------------
+
+ENUM_HDR = PortConfig(
+    name="hdr",
+    struct=[
+        StructMember(name="cls", width=2, enum={"STD": 0, "EXT": 1, "MGMT": 2}),
+        StructMember(name="id", width=6),
+    ],
+)
+
+
+def test_enum_member_bit_width():
+    assert ENUM_HDR.bit_width == 8  # 2-bit enum + 6
+    assert ENUM_HDR.struct[0].bit_width == 2  # enum member uses its width
+
+
+def test_enum_member_emits_named_typedef_before_struct(tmp_path):
+    txt = (_gen(tmp_path, [ENUM_HDR]) / "a_seq_item.svh").read_text()
+    assert "typedef enum logic [1:0] {" in txt
+    assert "MGMT = 2'd2" in txt
+    assert "} hdr_cls_e;" in txt
+    assert "hdr_cls_e cls;" in txt  # member references the enum typedef by name
+    # the enum typedef precedes the struct that uses it
+    assert txt.index("} hdr_cls_e;") < txt.index("hdr_cls_e cls;")
+
+
+def test_enum_member_typedefs_property():
+    tds = ENUM_HDR.struct_typedefs
+    assert tds[0]["kind"] == "enum"
+    assert tds[0]["name"] == "hdr_cls_e"
+    assert tds[-1]["kind"] == "struct" and tds[-1]["name"] == "hdr_t"
+
+
+def test_enum_member_validation():
+    with pytest.raises(Exception, match="at most one of packed_dims/struct/enum"):
+        StructMember(name="m", enum={"A": 0}, struct=[StructMember(name="x")])
+    with pytest.raises(Exception, match="does not fit"):
+        StructMember(name="m", width=2, enum={"A": 0, "B": 9})  # 9 > 3
+    with pytest.raises(Exception, match="must be unique"):
+        StructMember(name="m", width=4, enum={"A": 0, "B": 0})
+
+
+def test_enum_member_label_must_be_identifier():
+    with pytest.raises(Exception, match="legal SystemVerilog identifier"):
+        StructMember(name="m", width=4, enum={"2bad": 0})
+
+
+def test_enum_member_typedef_collides_with_port_enum_rejected():
+    # port 'hdr_cls' (enum -> hdr_cls_e) and port 'hdr'.member 'cls' (enum ->
+    # hdr_cls_e) share the tb_pkg scope -> must be caught at config time
+    with pytest.raises(Exception, match="collides"):
+        _cfg(
+            [
+                PortConfig(name="hdr_cls", width=2, enum={"A": 0, "B": 1}),
+                PortConfig(
+                    name="hdr",
+                    struct=[StructMember(name="cls", width=2, enum={"X": 0, "Y": 1})],
+                ),
+            ]
+        )
 
 
 def test_typedef_name_collision_rejected():

@@ -159,11 +159,13 @@ CONFIGS = {
                         PortConfig(
                             name="hdr",
                             struct=[
-                                # nested struct member -> exercises named typedefs
+                                # nested struct + enum members -> named typedefs
                                 StructMember(
                                     name="tag",
                                     struct=[
-                                        StructMember(name="cls", width=4),
+                                        StructMember(
+                                            name="cls", width=4, enum={"A": 0, "B": 1}
+                                        ),
                                         StructMember(name="id", width=4),
                                     ],
                                 ),
