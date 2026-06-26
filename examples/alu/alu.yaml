@@ -69,6 +69,8 @@ coverage_models:
         transitions:
           - {name: rise, seq: "0 => 1"}
           - {name: fall, seq: "1 => 0"}
+      - field: result                   # 8-bit output auto-binned into 16 buckets
+        auto_bin_max: 16
     crosses:
       - [op, a]
       - [op, b]
