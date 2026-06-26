@@ -933,6 +933,53 @@ class Coverpoint(BaseModel):
         return self
 
 
+class CrossBin(BaseModel):
+    """A `binsof`-based selection bin inside a cross (V1 closure).
+
+    `select` is a raw SystemVerilog cross-bin select expression — e.g.
+    `binsof(op_cp) intersect {ADD}` or `binsof(a_cp.zero) && binsof(op_cp)` —
+    referencing coverpoints by their generated `<field>_cp` names. It is emitted
+    verbatim on one line, so keep it short (≈80 chars) to stay within the 100-col
+    verible line limit the CI enforces; split a complex selection across two bins.
+    """
+
+    name: str
+    kind: Literal["bins", "ignore_bins", "illegal_bins"] = "bins"
+    select: str
+
+    @model_validator(mode="after")
+    def _check(self) -> CrossBin:
+        _check_sv_identifier(self.name, "cross bin name")
+        if not self.select.strip():
+            raise ValueError(f"cross bin '{self.name}': select expression is empty.")
+        return self
+
+
+class CrossSpec(BaseModel):
+    """A cross of >=2 coverpoints with optional `binsof` bin selection (V1).
+
+    The plain `crosses: [[a, b]]` list form is still accepted (no selection); use
+    the object form `{fields: [a, b], bins: [...]}` to refine the cross. `name`
+    overrides the auto-derived `<f1>_x_<f2>` cross name (needed if two crosses
+    span the same fields).
+    """
+
+    fields: list[str]
+    bins: list[CrossBin] = Field(default_factory=list)
+    name: str | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> CrossSpec:
+        if self.name is not None:
+            _check_sv_identifier(self.name, "cross name")
+        return self
+
+    @property
+    def cross_name(self) -> str:
+        """The covergroup cross label — explicit `name` or `<f1>_x_<f2>`."""
+        return self.name or "_x_".join(self.fields)
+
+
 class CoverageModel(BaseModel):
     """Opt-in functional coverage model for one agent (V1).
 
@@ -944,8 +991,17 @@ class CoverageModel(BaseModel):
 
     agent: str
     coverpoints: list[Coverpoint] = Field(default_factory=list)
-    crosses: list[list[str]] = Field(default_factory=list)
+    # A cross is either a plain list of coverpoint fields (no selection) or a
+    # CrossSpec with optional binsof bins/ignore/illegal selection.
+    crosses: list[list[str] | CrossSpec] = Field(default_factory=list)
     goal: int | None = None  # covergroup option.goal (closure target, percent 1..100)
+
+    @property
+    def crosses_normalized(self) -> list[CrossSpec]:
+        """Every cross as a CrossSpec (a plain field-list → CrossSpec, no bins)."""
+        return [
+            c if isinstance(c, CrossSpec) else CrossSpec(fields=c) for c in self.crosses
+        ]
 
     @model_validator(mode="after")
     def _check_shape(self) -> CoverageModel:
@@ -967,18 +1023,34 @@ class CoverageModel(BaseModel):
                     f"for field '{cp.field}' (each field gets one coverpoint)."
                 )
             cp_fields.add(cp.field)
-        for cr in self.crosses:
-            if len(cr) < 2:
+        seen_cross: set[str] = set()
+        for cr in self.crosses_normalized:
+            if cr.cross_name in seen_cross:
+                raise ValueError(
+                    f"coverage_model for agent '{self.agent}': duplicate cross name "
+                    f"'{cr.cross_name}' — two crosses over the same fields need a "
+                    f"distinct `name`."
+                )
+            seen_cross.add(cr.cross_name)
+            if len(cr.fields) < 2:
                 raise ValueError(
                     f"coverage_model for agent '{self.agent}': a cross needs >= 2 "
-                    f"fields, got {cr}."
+                    f"fields, got {cr.fields}."
                 )
-            for f in cr:
+            for f in cr.fields:
                 if f not in cp_fields:
                     raise ValueError(
                         f"coverage_model for agent '{self.agent}': cross references "
                         f"'{f}', which is not a declared coverpoint."
                     )
+            seen_cb: set[str] = set()
+            for b in cr.bins:
+                if b.name in seen_cb:
+                    raise ValueError(
+                        f"coverage_model for agent '{self.agent}': cross "
+                        f"'{cr.cross_name}' has a duplicate bin name '{b.name}'."
+                    )
+                seen_cb.add(b.name)
         return self
 
 

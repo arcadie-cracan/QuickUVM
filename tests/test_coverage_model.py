@@ -15,6 +15,8 @@ from quick_uvm.models import (
     CoverageBin,
     CoverageModel,
     Coverpoint,
+    CrossBin,
+    CrossSpec,
     DutConfig,
     PortConfig,
     ProjectConfig,
@@ -142,6 +144,59 @@ def test_three_way_cross(tmp_path):
     )
     cov = _cover(tmp_path, [model])
     assert "op_x_a_x_carry : cross op_cp, a_cp, carry_cp;" in cov
+
+
+# ---- binsof cross selection ------------------------------------------------
+
+
+def _binsof_model():
+    return CoverageModel(
+        agent="alu",
+        coverpoints=[
+            Coverpoint(field="op"),
+            Coverpoint(field="a", bins=[CoverageBin(name="zero", value=0)]),
+        ],
+        crosses=[
+            ["op", "a"],  # plain cross (no body)
+            CrossSpec(
+                name="add_only",
+                fields=["op", "a"],
+                bins=[
+                    CrossBin(name="hit", select="binsof(op_cp) intersect {ADD}"),
+                    CrossBin(
+                        name="skip", kind="ignore_bins", select="binsof(a_cp.zero)"
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+def test_binsof_cross_emits_body(tmp_path):
+    cov = _cover(tmp_path, [_binsof_model()])
+    assert "op_x_a : cross op_cp, a_cp;" in cov  # plain cross, no body
+    assert "add_only : cross op_cp, a_cp {" in cov  # named refined cross
+    assert "bins hit = binsof(op_cp) intersect {ADD};" in cov
+    assert "ignore_bins skip = binsof(a_cp.zero);" in cov
+
+
+def test_duplicate_cross_name_rejected():
+    with pytest.raises(Exception, match="duplicate cross name"):
+        CoverageModel(
+            agent="alu",
+            coverpoints=[Coverpoint(field="op"), Coverpoint(field="carry")],
+            crosses=[["op", "carry"], CrossSpec(fields=["op", "carry"])],
+        )
+
+
+def test_cross_bin_empty_select_rejected():
+    with pytest.raises(Exception, match="select expression is empty"):
+        CrossBin(name="x", select="  ")
+
+
+def test_cross_bad_name_rejected():
+    with pytest.raises(Exception, match="legal SystemVerilog identifier"):
+        CrossSpec(fields=["op", "a"], name="2bad")
 
 
 # ---- byte-identical when absent --------------------------------------------

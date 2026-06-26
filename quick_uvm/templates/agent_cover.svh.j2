@@ -45,8 +45,16 @@ class {{ agent.name }}_cov extends uvm_subscriber #({{ agent.sequence_item }});
     {{ cp.field }}_cp : coverpoint tr.{{ cp.field }};
 {% endif %}
 {% endfor %}
-{% for cr in coverage_model.crosses %}
-    {{ cr | join('_x_') }} : cross {{ cr | join('_cp, ') }}_cp;
+{% for cr in coverage_model.crosses_normalized %}
+{% if cr.bins %}
+    {{ cr.cross_name }} : cross {{ cr.fields | join('_cp, ') }}_cp {
+{% for b in cr.bins %}
+      {{ b.kind }} {{ b.name }} = {{ b.select }};
+{% endfor %}
+    }
+{% else %}
+    {{ cr.cross_name }} : cross {{ cr.fields | join('_cp, ') }}_cp;
+{% endif %}
 {% endfor %}
 {% else %}
 {% for port in agent.output_ports %}
