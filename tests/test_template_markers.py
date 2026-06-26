@@ -158,6 +158,7 @@ CONFIGS = {
                         field="din", bins=[CoverageBin(name="lo", range=(0, 127))]
                     ),
                     Coverpoint(field="rst_n"),
+                    Coverpoint(field="dout", auto_bin_max=8),  # wide field auto-binned
                 ],
                 crosses=[
                     CrossSpec(

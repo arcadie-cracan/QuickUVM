@@ -38,6 +38,9 @@ class alu_cov extends uvm_subscriber #(alu_seq_item);
       bins rise = (0 => 1);
       bins fall = (1 => 0);
     }
+    result_cp : coverpoint tr.result {
+      option.auto_bin_max = 16;
+    }
     op_x_a : cross op_cp, a_cp;
     op_x_b : cross op_cp, b_cp;
     add_corners : cross op_cp, a_cp {

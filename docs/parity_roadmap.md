@@ -241,8 +241,14 @@ write. Opt-in `coverage_models:` block; default stays the generic stub.
   Byte-identical for a plain cross. Validated on `examples/alu/` (`add_corners`
   refines `op × a` to ADD at the operand corners, ignoring mid) — **1001/1001 on
   Xcelium**; verible-clean.
-- *Remaining:* width-derived auto-bin tuning (`auto_bin_max`), a deliberate
-  illegal-hit negative test, and the coverage-merge/report flow (roadmap **R1**).
+- **`auto_bin_max`**: a coverpoint may cap its automatic-bin count
+  (`option.auto_bin_max = N`) — and setting it lets a **wide plain field** be
+  auto-binned into N buckets instead of requiring explicit bins (the "needs bins"
+  rule is relaxed). Fail-closed: rejected alongside explicit `bins`/`transitions`
+  (which suppress auto-binning), and must be ≥1. Validated on `examples/alu/`
+  (`result` auto-binned into 16) — **1001/1001 on Xcelium**; byte-identical when unset.
+- *Remaining:* a deliberate illegal-hit negative test, and the coverage-merge/report
+  flow (roadmap **R1**).
 
 ### S2 — Sequence library
 Generate more than one base sequence: a small library (incrementing/random/directed),

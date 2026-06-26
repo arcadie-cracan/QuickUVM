@@ -23,10 +23,13 @@ class {{ agent.name }}_cov extends uvm_subscriber #({{ agent.sequence_item }});
 {% endif %}
 {% if coverage_model %}
 {% for cp in coverage_model.coverpoints %}
-{% if cp.bins or cp.illegal_bins or cp.ignore_bins or cp.transitions or cp.at_least %}
+{% if cp.bins or cp.illegal_bins or cp.ignore_bins or cp.transitions or cp.at_least or cp.auto_bin_max %}
     {{ cp.field }}_cp : coverpoint tr.{{ cp.field }} {
 {% if cp.at_least %}
       option.at_least = {{ cp.at_least }};
+{% endif %}
+{% if cp.auto_bin_max %}
+      option.auto_bin_max = {{ cp.auto_bin_max }};
 {% endif %}
 {% for b in cp.bins %}
       bins {{ b.name }} = {{ b.sv_bin }};
