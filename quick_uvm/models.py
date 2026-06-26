@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -1086,11 +1086,25 @@ class RegisterModelConfig(BaseModel):
     adapter: str = "reg_adapter"  # generated uvm_reg_adapter class name
     use_predictor: bool = True  # explicit prediction via the bus agent's ap
     reg_test: bool = True  # generate a hw_reset/bit_bash register test
+    # C5 — generate a separate runnable CSR test per kind, each running the matching
+    # UVM built-in register/memory sequence on the RAL (data-path scoreboard off).
+    # Each becomes a `<dut>_csr_<kind>_test`, run via +UVM_TESTNAME.
+    csr_tests: list[Literal["hw_reset", "bit_bash", "rw", "mem_walk", "shared"]] = (
+        Field(default_factory=list)
+    )
     backdoor_root: str | None = None  # absolute HDL path to the regfile instance;
     # set to enable backdoor (model.add_hdl_path)
     reg_test_door: Literal["frontdoor", "backdoor"] = "frontdoor"
     frontdoor: str | None = None  # custom uvm_reg_frontdoor class to generate +
     # install on all registers (protocol body = pragma)
+
+    # Handle names the env/base-test declare for the register model. A user-supplied
+    # class name (adapter/block/frontdoor) equal to one of these would have its local
+    # handle shadow the type, so `<name>::type_id::create` fails to bind (the original
+    # reg_adapter/reg_adapter collision). Reject the whole class up front.
+    _RESERVED_HANDLES: ClassVar[frozenset[str]] = frozenset(
+        {"reg_model", "bus_adapter", "reg_predictor", "reg_fd"}
+    )
 
     @model_validator(mode="after")
     def _check_backdoor(self) -> RegisterModelConfig:
@@ -1099,7 +1113,32 @@ class RegisterModelConfig(BaseModel):
                 "register_model.reg_test_door='backdoor' requires backdoor_root "
                 "(the HDL path to the regfile, e.g. 'top.dut_inst.regs_inst')."
             )
+        if len(self.csr_tests) != len(set(self.csr_tests)):
+            raise ValueError(
+                f"register_model.csr_tests has duplicate kinds: {self.csr_tests}."
+            )
+        for fld in ("block", "adapter", "frontdoor"):
+            val = getattr(self, fld)
+            if val in self._RESERVED_HANDLES:
+                raise ValueError(
+                    f"register_model.{fld}='{val}' collides with a generated env "
+                    f"handle of the same name (the handle would shadow the class). "
+                    f"Rename it; reserved: {sorted(self._RESERVED_HANDLES)}."
+                )
         return self
+
+    @property
+    def csr_test_specs(self) -> list[dict]:
+        """Per-kind CSR test specs: {kind, seq} mapping each selected kind to its
+        UVM built-in register/memory sequence."""
+        seqs = {
+            "hw_reset": "uvm_reg_hw_reset_seq",
+            "bit_bash": "uvm_reg_bit_bash_seq",
+            "rw": "uvm_reg_access_seq",
+            "mem_walk": "uvm_mem_walk_seq",
+            "shared": "uvm_reg_shared_access_seq",
+        }
+        return [{"kind": k, "seq": seqs[k]} for k in self.csr_tests]
 
 
 class ReferenceModelConfig(BaseModel):

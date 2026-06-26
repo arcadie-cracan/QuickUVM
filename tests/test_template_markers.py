@@ -93,6 +93,8 @@ CONFIGS = {
             bus_agent="a0",
             adapter="a0_reg_adapter",
             frontdoor="a0_reg_frontdoor",
+            # C5 — also exercises the csr_test template's csr_test_pre/post markers.
+            csr_tests=["hw_reset", "bit_bash", "rw"],
         ),
     ),
     # K0 — the DPI-C path is the only feature with a user-editable pragma in a

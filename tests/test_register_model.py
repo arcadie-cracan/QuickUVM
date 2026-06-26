@@ -95,9 +95,11 @@ def test_model_built_and_locked_in_test_base(tmp_path):
 def test_env_wires_sequencer_and_predictor(tmp_path):
     Generator(_cfg(_rm(use_predictor=True))).generate_all(tmp_path)
     e = (tmp_path / "d_env.svh").read_text()
-    assert "spi_reg_adapter reg_adapter;" in e
+    # Handle is named distinctly from the class so a user adapter named
+    # "reg_adapter" can't shadow its own type (uvm_reg_adapter create).
+    assert "spi_reg_adapter bus_adapter;" in e
     assert "uvm_reg_predictor #(spi_trans) reg_predictor;" in e
-    assert "default_map.set_sequencer(spi_agnt.sqr, reg_adapter);" in e
+    assert "default_map.set_sequencer(spi_agnt.sqr, bus_adapter);" in e
     assert "spi_agnt.ap.connect(reg_predictor.bus_in);" in e
     assert "default_map.set_auto_predict(0);" in e
 
@@ -208,3 +210,115 @@ def test_reg_test_disables_datapath_scoreboard(tmp_path):
     cmp = (tmp_path / "d_comparator.svh").read_text()
     assert 'uvm_config_db#(bit)::get(this, "", "sb_enable", enabled)' in cmp
     assert "if (!enabled) begin" in cmp
+
+
+def test_disabled_scoreboard_reports_info_not_novec(tmp_path):
+    # A deliberately-disabled scoreboard comparing 0 transactions must NOT warn
+    # (NOVEC); that warning is reserved for an *enabled* scoreboard that saw none.
+    Generator(_cfg(_rm())).generate_all(tmp_path)
+    cmp = (tmp_path / "d_comparator.svh").read_text()
+    assert "else if (!enabled)" in cmp
+    novec = cmp.index("NOVEC")
+    assert "else if (VECT_CNT == 0)" in cmp[:novec]  # NOVEC guarded by enabled+0
+
+
+# ---- handle/class collision regression -------------------------------------
+
+
+def test_adapter_handle_distinct_from_class(tmp_path):
+    # A user adapter literally named "reg_adapter" must not have the env handle
+    # shadow its own type (handle::type_id::create would fail to bind).
+    Generator(_cfg(_rm(adapter="reg_adapter"))).generate_all(tmp_path)
+    e = (tmp_path / "d_env.svh").read_text()
+    assert "reg_adapter bus_adapter;" in e
+    assert 'bus_adapter = reg_adapter::type_id::create("bus_adapter");' in e
+    assert "reg_adapter reg_adapter;" not in e
+
+
+# ---- C5 — RAL-driven CSR test library --------------------------------------
+
+
+def test_csr_test_specs_maps_kinds_to_builtin_seqs():
+    rm = _rm(csr_tests=["hw_reset", "bit_bash", "rw", "mem_walk", "shared"])
+    specs = rm.csr_test_specs
+    assert [s["kind"] for s in specs] == [
+        "hw_reset",
+        "bit_bash",
+        "rw",
+        "mem_walk",
+        "shared",
+    ]
+    assert [s["seq"] for s in specs] == [
+        "uvm_reg_hw_reset_seq",
+        "uvm_reg_bit_bash_seq",
+        "uvm_reg_access_seq",
+        "uvm_mem_walk_seq",
+        "uvm_reg_shared_access_seq",
+    ]
+
+
+def test_no_csr_tests_emits_none(tmp_path):
+    Generator(_cfg(_rm())).generate_all(tmp_path)
+    assert not list(tmp_path.glob("*_csr_*_test.svh"))
+    # byte-identical guarantee: no csr trace leaks into the package include list.
+    assert "csr" not in (tmp_path / "d_tb_pkg.sv").read_text()
+
+
+def test_csr_tests_coexist_with_reg_test(tmp_path):
+    # csr_tests adds tests alongside reg_test; it does not replace it.
+    Generator(_cfg(_rm(reg_test=True, csr_tests=["hw_reset"]))).generate_all(tmp_path)
+    assert (tmp_path / "d_reg_test.svh").exists()
+    assert (tmp_path / "d_csr_hw_reset_test.svh").exists()
+    p = (tmp_path / "d_tb_pkg.sv").read_text()
+    assert '`include "d_reg_test.svh"' in p
+    assert '`include "d_csr_hw_reset_test.svh"' in p
+
+
+def test_csr_tests_generate_per_kind_files(tmp_path):
+    Generator(_cfg(_rm(csr_tests=["hw_reset", "rw"]))).generate_all(tmp_path)
+    assert (tmp_path / "d_csr_hw_reset_test.svh").exists()
+    assert (tmp_path / "d_csr_rw_test.svh").exists()
+    assert not (tmp_path / "d_csr_bit_bash_test.svh").exists()
+
+
+def test_csr_test_runs_correct_builtin_seq(tmp_path):
+    Generator(_cfg(_rm(csr_tests=["bit_bash"]))).generate_all(tmp_path)
+    t = (tmp_path / "d_csr_bit_bash_test.svh").read_text()
+    assert "class d_csr_bit_bash_test extends d_base_test" in t
+    assert "uvm_reg_bit_bash_seq seq;" in t
+    assert "seq.model = env_cfg.reg_model;" in t
+    assert "seq.start(null);" in t
+    # RAL is the checker => data-path scoreboard disabled
+    assert 'uvm_config_db#(bit)::set(this, "*", "sb_enable", 0);' in t
+
+
+def test_csr_tests_included_in_tb_pkg(tmp_path):
+    Generator(_cfg(_rm(csr_tests=["hw_reset", "rw"]))).generate_all(tmp_path)
+    p = (tmp_path / "d_tb_pkg.sv").read_text()
+    assert '`include "d_csr_hw_reset_test.svh"' in p
+    assert '`include "d_csr_rw_test.svh"' in p
+
+
+def test_duplicate_csr_tests_rejected():
+    with pytest.raises(Exception, match="csr_tests has duplicate kinds"):
+        _rm(csr_tests=["rw", "hw_reset", "rw"])
+
+
+def test_unknown_csr_test_kind_rejected():
+    with pytest.raises(Exception, match="csr_tests"):
+        _rm(csr_tests=["nope"])
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("adapter", "bus_adapter"),
+        ("block", "reg_model"),
+        ("frontdoor", "reg_fd"),
+        ("adapter", "reg_predictor"),
+    ],
+)
+def test_class_name_colliding_with_env_handle_rejected(field, value):
+    # A user class name equal to a generated env handle would shadow its own type.
+    with pytest.raises(Exception, match="collides with a generated env handle"):
+        _rm(**{field: value})
