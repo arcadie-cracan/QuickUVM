@@ -33,6 +33,9 @@ dvt_build.log
 /tb/
 /tb_out/
 
+# Pragma-merger backups (<file>.bak.<n>, written on regeneration)
+*.bak.*
+
 # Simulator working dirs / logs (keep the xrun.f filelists)
 **/sim/xcelium.d/
 **/sim/*.log

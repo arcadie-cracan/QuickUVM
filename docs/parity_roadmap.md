@@ -387,7 +387,7 @@ Generate an interface assertion module + SVA hook pragmas (protocol properties a
 code, but the binding/structure is scaffolded).
 **Accept:** an `*_if` emits a bound checker module with a sample property.
 
-### C5 — RAL-driven CSR test library  *(surfaced by the OpenTitan comparison; high leverage)*
+### C5 — RAL-driven CSR test library — DONE  *(surfaced by the OpenTitan comparison)*
 Generate the standard, register-model-driven CSR test suite that every real register block
 needs and that QuickUVM is ~90% positioned for (it already wires the RAL): `csr_rw`,
 `csr_bit_bash`, `csr_aliasing`, `csr_hw_reset`, and `mem_walk`. These are RAL-generic — the
@@ -398,6 +398,29 @@ CSR suite is the single biggest *generatable* gap vs an industrial bench (in Ope
 cip block inherits it for free from `csr_utils`).
 **Accept:** a register block generates a `csr_rw`/`bit_bash`/`hw_reset` test that runs
 against the RAL and passes.
+
+**Status — landed:**
+- `register_model.csr_tests: [hw_reset, bit_bash, rw, mem_walk, shared]` → one
+  `<dut>_csr_<kind>_test` per kind, each running the matching UVM built-in register
+  sequence (`uvm_reg_hw_reset_seq` / `uvm_reg_bit_bash_seq` / `uvm_reg_access_seq` /
+  `uvm_mem_walk_seq` / `uvm_reg_shared_access_seq`) on the locked RAL, with the
+  data-path scoreboard disabled (the RAL is the checker). Run via `+UVM_TESTNAME`.
+  Sits alongside (does not replace) the existing `reg_test`. Kinds are deduped and
+  schema-validated; byte-identical when `csr_tests` is empty. Each kind uses its
+  built-in sequence's natural door (independent of `reg_test_door`); `rw` needs a
+  `backdoor_root`, and `mem_walk`/`shared` no-op without a `uvm_mem` / a 2nd map.
+- **Runnable RAL example (`examples/regfile/`)** — fills the long-standing "no
+  runnable RAL example" gap: a 4×16-bit register DUT, a hand-written external
+  `uvm_reg_block` (reggen-style, with backdoor HDL slices), the generated host
+  agent / adapter / predictor, and `csr_tests: [hw_reset, bit_bash, rw]`. On
+  Xcelium all four tests are GREEN (0 warn/err): the `rand_test` data-path
+  scoreboard (42/42 vs a golden model) **and** the three CSR tests; `rw`
+  (`uvm_reg_access_seq`) exercises the frontdoor↔backdoor path via `backdoor_root`.
+- Shook out two generator fixes: the env adapter **handle** is now `bus_adapter`
+  (was `reg_adapter`, which shadowed a user adapter class literally named
+  `reg_adapter` — `handle::type_id::create` failed to bind); and a
+  deliberately-disabled scoreboard now reports an info line instead of a spurious
+  `NOVEC` warning.
 
 ## Priority tier 4 — clocking & infrastructure
 

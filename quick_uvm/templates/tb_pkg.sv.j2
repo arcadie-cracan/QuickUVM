@@ -81,6 +81,11 @@ package {{ dut.name }}_tb_pkg;
 {% if register_model and register_model.reg_test %}
   `include "{{ dut.name }}_reg_test.svh"
 {% endif %}
+{% if register_model %}
+{% for csr in register_model.csr_test_specs %}
+  `include "{{ dut.name }}_csr_{{ csr.kind }}_test.svh"
+{% endfor %}
+{% endif %}
 
   // Scoreboard expected-value calculator (extern function body)
   `include "{{ dut.name }}_reference_model.svh"

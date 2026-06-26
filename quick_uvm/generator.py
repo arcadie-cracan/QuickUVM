@@ -184,6 +184,15 @@ class Generator:
                 specs.append(
                     FileSpec("reg_test.svh.j2", f"{dut}_reg_test.svh", base_ctx)
                 )
+            # C5 — one runnable CSR test per selected kind (UVM built-in reg seqs).
+            for csr in cfg.register_model.csr_test_specs:
+                specs.append(
+                    FileSpec(
+                        "csr_test.svh.j2",
+                        f"{dut}_csr_{csr['kind']}_test.svh",
+                        {**base_ctx, "csr": csr},
+                    )
+                )
 
         # ---- reference model: SV predict() body, or DPI-C bridge + C stub (K0)
         if cfg.reference_model.language == "c":

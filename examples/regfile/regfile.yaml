@@ -1,0 +1,49 @@
+# regfile — QuickUVM C5 example: a runnable RAL bench + the CSR test library.
+#
+# A `host` agent drives a minimal single-cycle register bus (addr/wdata/wr ->
+# rdata). `register_model:` wires the external uvm_reg_block (ral/regfile_ral_pkg.sv)
+# through the generated adapter, and `csr_tests:` generates a runnable test per kind
+# that runs the matching UVM built-in register sequence against the model.
+project:
+  name: regfile
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: regfile
+  reset: rst_n
+  external_reset: true       # reset driven by the generated reset_generator in top
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: host
+    interface: host_if
+    sequence_item: host_seq_item
+    seq_item_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: addr,  width: 4}
+        - {name: wdata, width: 16}
+        - {name: wr,    width: 1}
+      outputs:
+        - {name: rdata, width: 16}
+
+tests:
+  - {name: rand_test, num_items: 20}   # a basic random bus-traffic test
+
+register_model:
+  package: regfile_ral_pkg
+  block: regfile_reg_block
+  bus_agent: host
+  adapter: reg_adapter
+  # Backdoor root: the model's HDL slices (regs[0..3], set in the ral pkg) hang off
+  # the DUT instance. This gives the "rw" (uvm_reg_access_seq) test its frontdoor-
+  # vs-backdoor peek/poke; the generator emits reg_model.add_hdl_path(...) for it.
+  backdoor_root: tb_top.dut_inst
+  # C5 — generate a runnable CSR test per kind (run via +UVM_TESTNAME):
+  #   regfile_csr_hw_reset_test / _bit_bash_test / _rw_test
+  csr_tests: [hw_reset, bit_bash, rw]

@@ -123,3 +123,16 @@ jobs:
       - name: Verible lint (rand_mode generated SV/SVH)
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_ga/*.sv gen_ga/*.svh
+
+      # Gate the C5 RAL/CSR-test path: the regfile example generates the per-kind
+      # csr_<kind>_test classes (each running a UVM built-in register sequence), the
+      # backdoor add_hdl_path wiring, and the bus_adapter handle. Also lint the
+      # committed external reg block + DUT so the runnable RAL example stays clean.
+      - name: Generate the RAL/CSR-test example (C5)
+        run: quick-uvm generate -c examples/regfile/regfile.yaml -o gen_regfile
+
+      - name: Verible lint (RAL/CSR-test generated SV/SVH + reg block)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_regfile/*.sv gen_regfile/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules \
+            examples/regfile/ral/regfile_ral_pkg.sv examples/regfile/rtl/regfile.sv
