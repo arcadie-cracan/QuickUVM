@@ -199,6 +199,71 @@ def test_cross_bad_name_rejected():
         CrossSpec(fields=["op", "a"], name="2bad")
 
 
+# ---- auto_bin_max ----------------------------------------------------------
+
+
+def test_auto_bin_max_emitted(tmp_path):
+    # a wide plain field is auto-binned (no explicit bins) when auto_bin_max is set
+    model = CoverageModel(
+        agent="alu", coverpoints=[Coverpoint(field="result", auto_bin_max=16)]
+    )
+    cov = _cover(tmp_path, [model])
+    assert "result_cp : coverpoint tr.result {" in cov
+    assert "option.auto_bin_max = 16;" in cov
+
+
+def test_auto_bin_max_with_explicit_bins_rejected():
+    with pytest.raises(Exception, match="auto_bin_max applies only to an auto-binned"):
+        Coverpoint(field="a", auto_bin_max=8, bins=[CoverageBin(name="z", value=0)])
+
+
+def test_auto_bin_max_below_one_rejected():
+    with pytest.raises(Exception, match="auto_bin_max must be >= 1"):
+        Coverpoint(field="a", auto_bin_max=0)
+
+
+def test_wide_field_without_bins_but_auto_bin_max_ok(tmp_path):
+    # the "needs explicit bins" rule is relaxed when auto_bin_max is set
+    model = CoverageModel(
+        agent="alu", coverpoints=[Coverpoint(field="a", auto_bin_max=32)]
+    )
+    cov = _cover(tmp_path, [model])
+    assert "a_cp : coverpoint tr.a {" in cov
+
+
+def test_auto_bin_max_on_enum_rejected():
+    # auto bins are one-per-label on an enum -> auto_bin_max is a no-op; reject it
+    with pytest.raises(Exception, match="auto_bin_max on an enum field"):
+        _cfg(
+            [
+                CoverageModel(
+                    agent="alu", coverpoints=[Coverpoint(field="op", auto_bin_max=4)]
+                )
+            ]
+        )
+
+
+def test_auto_bin_max_coexists_with_illegal_ignore(tmp_path):
+    # illegal/ignore bins don't suppress auto-binning -> all three render together
+    model = CoverageModel(
+        agent="alu",
+        coverpoints=[
+            Coverpoint(
+                field="a",
+                auto_bin_max=16,
+                ignore_bins=[CoverageBin(name="skip", value=5)],
+                illegal_bins=[CoverageBin(name="bad", value=255)],
+            )
+        ],
+    )
+    cov = _cover(tmp_path, [model])
+    assert "option.auto_bin_max = 16;" in cov
+    assert "ignore_bins skip = {5};" in cov
+    assert "illegal_bins bad = {255};" in cov
+    # the option precedes the bin selections
+    assert cov.index("auto_bin_max") < cov.index("illegal_bins bad")
+
+
 # ---- byte-identical when absent --------------------------------------------
 
 

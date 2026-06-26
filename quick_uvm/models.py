@@ -903,6 +903,10 @@ class Coverpoint(BaseModel):
     ignore_bins: list[CoverageBin] = Field(default_factory=list)
     transitions: list[TransitionBin] = Field(default_factory=list)
     at_least: int | None = None  # per-coverpoint override of cg option.at_least
+    # Cap the number of AUTO bins (`option.auto_bin_max`). Only for an auto-binned
+    # coverpoint (no explicit `bins`/`transitions`) — and setting it lets a wide
+    # plain field be auto-binned into N buckets instead of requiring explicit bins.
+    auto_bin_max: int | None = None
 
     @property
     def all_bins(self) -> list[CoverageBin]:
@@ -916,6 +920,18 @@ class Coverpoint(BaseModel):
                 f"coverpoint '{self.field}': at_least must be >= 1 (got "
                 f"{self.at_least})."
             )
+        if self.auto_bin_max is not None:
+            if self.auto_bin_max < 1:
+                raise ValueError(
+                    f"coverpoint '{self.field}': auto_bin_max must be >= 1 (got "
+                    f"{self.auto_bin_max})."
+                )
+            if self.bins or self.transitions:
+                raise ValueError(
+                    f"coverpoint '{self.field}': auto_bin_max applies only to an "
+                    f"auto-binned coverpoint — explicit bins/transitions suppress "
+                    f"automatic bins, so it would have no effect."
+                )
         # Bin names share one namespace across all four lists.
         seen: set[str] = set()
         names = (
@@ -1219,13 +1235,22 @@ class ProjectConfig(BaseModel):
                 if (
                     not cp.bins
                     and not cp.transitions
+                    and cp.auto_bin_max is None
                     and not port.enum
                     and port.bit_width > 1
                 ):
                     raise ValueError(
                         f"coverage_model[{cm.agent}]: coverpoint '{cp.field}' "
-                        f"({port.bit_width} bits) needs explicit bins or transitions "
-                        f"(auto-partition is only for enum/1-bit fields)."
+                        f"({port.bit_width} bits) needs explicit bins/transitions or "
+                        f"an auto_bin_max (auto-partition is only for enum/1-bit "
+                        f"fields)."
+                    )
+                if cp.auto_bin_max is not None and port.enum:
+                    raise ValueError(
+                        f"coverage_model[{cm.agent}]: coverpoint '{cp.field}' sets "
+                        f"auto_bin_max on an enum field, where auto bins are "
+                        f"one-per-label — it has no effect (simulators ignore it). "
+                        f"Drop it, or add explicit bins."
                     )
                 hi = (1 << port.bit_width) - 1
                 legal_enum = set(port.enum.values()) if port.enum else None
