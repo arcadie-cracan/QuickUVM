@@ -5,18 +5,17 @@
 // Author:   {{ project.author }}
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
-{% set pa = agents[0] %}
 
 class {{ dut.name }}_comparator extends uvm_component;
   `uvm_component_utils({{ dut.name }}_comparator)
 
-  {{ pa.sequence_item }} exp_tr, out_tr;
+  {{ sb_out_item }} exp_tr, out_tr;
   static int VECT_CNT, PASS_CNT, ERROR_CNT;
 
-  uvm_analysis_export   #({{ pa.sequence_item }}) exp_ap;
-  uvm_analysis_export   #({{ pa.sequence_item }}) out_ap;
-  uvm_tlm_analysis_fifo #({{ pa.sequence_item }}) expfifo;
-  uvm_tlm_analysis_fifo #({{ pa.sequence_item }}) outfifo;
+  uvm_analysis_export   #({{ sb_out_item }}) exp_ap;
+  uvm_analysis_export   #({{ sb_out_item }}) out_ap;
+  uvm_tlm_analysis_fifo #({{ sb_out_item }}) expfifo;
+  uvm_tlm_analysis_fifo #({{ sb_out_item }}) outfifo;
 
   // Data-path scoreboard enable. A register test (RAL is the checker) clears this
   // via uvm_config_db "sb_enable" so the protocol predictor isn't run on
@@ -26,6 +25,10 @@ class {{ dut.name }}_comparator extends uvm_component;
   // Number of leading transactions to flush (DUT startup: pipeline fill + sync/
   // reset frames that aren't meaningful). Set via uvm_config_db "sb_flush".
   int unsigned flush_count = 0;
+
+  // Set while an expected has been dequeued but its actual hasn't arrived yet, so
+  // a test that ends mid-pair is reported (see report_phase / SB_LEFTOVER).
+  bit pending_exp = 0;
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -67,8 +70,10 @@ class {{ dut.name }}_comparator extends uvm_component;
     forever begin
       `uvm_info("SB_CMP", "WAITING for expected output", UVM_FULL)
       expfifo.get(exp_tr);
+      pending_exp = 1;  // hold an expected awaiting its actual (caught at report)
       `uvm_info("SB_CMP", "WAITING for actual output",   UVM_FULL)
       outfifo.get(out_tr);
+      pending_exp = 0;
       if (out_tr.compare(exp_tr)) PASS();
       else                        ERROR();
     end
@@ -76,6 +81,15 @@ class {{ dut.name }}_comparator extends uvm_component;
 
   function void report_phase(uvm_phase phase);
     super.report_phase(phase);
+    // Transactions still pending were never matched (the test ended before they
+    // drained, or the two streams desynced) — surface them rather than letting an
+    // undersized drain silently pass with fewer vectors than expected. Counts the
+    // queued items PLUS one held mid-pair (dequeued expected still awaiting actual).
+    if (enabled &&
+        ((expfifo.used() + pending_exp) != 0 || outfifo.used() != 0))
+      `uvm_warning("SB_LEFTOVER", $sformatf(
+        "%0d expected / %0d actual transaction(s) never matched (test ended early?)",
+        expfifo.used() + pending_exp, outfifo.used()))
     if (ERROR_CNT)
       `uvm_error("FAILED",
         $sformatf("\n\n\n*** TEST FAILED - Vectors: %0d Ran / %0d Passed / %0d Failed ***\n",

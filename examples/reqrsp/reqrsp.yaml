@@ -1,0 +1,61 @@
+# reqrsp — QuickUVM A2 (slice 1): a two-stream IN-ORDER scoreboard.
+#
+# Two agents on two interfaces: `req` drives a valid-qualified request stream;
+# `rsp` passively monitors the response stream. The `analysis:` block wires a
+# single two-stream scoreboard — source (req) feeds the predictor, monitor (rsp)
+# is the "actual" — so predict(req) is compared against the observed response.
+# `emit_when:` publishes only valid transactions, so pipeline-fill / idle cycles
+# never enter the scoreboard and the i-th request lines up with the i-th response.
+project:
+  name: reqrsp
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: reqrsp
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  # request stream (driven). req_valid qualifies a request; held to 1 per item.
+  - name: req
+    interface: req_if
+    sequence_item: req_seq_item
+    seq_item_style: manual
+    active: true
+    emit_when: req_valid
+    constraints:
+      - "req_valid == 1"
+    ports:
+      inputs:
+        - {name: req_valid, width: 1}
+        - {name: req_id,    width: 4}
+        - {name: req_data,  width: 8}
+
+  # response stream (observed only). rsp_valid qualifies a response.
+  - name: rsp
+    interface: rsp_if
+    sequence_item: rsp_seq_item
+    seq_item_style: manual
+    active: false
+    emit_when: rsp_valid
+    ports:
+      outputs:
+        - {name: rsp_valid, width: 1}
+        - {name: rsp_id,    width: 4}
+        - {name: rsp_data,  width: 8}
+
+tests:
+  - {name: rand_test, num_items: 30}
+
+analysis:
+  coverage: []
+  scoreboards:
+    # two-stream: predict(req) is matched in order against the rsp stream.
+    - name: sbd
+      source: req
+      monitor: rsp

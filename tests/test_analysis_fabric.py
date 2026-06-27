@@ -16,6 +16,7 @@ from quick_uvm.models import (
     PortConfig,
     ProjectConfig,
     ProjectMeta,
+    ReferenceModelConfig,
     ScoreboardSpec,
 )
 from quick_uvm.models import (
@@ -124,3 +125,135 @@ def test_duplicate_scoreboard_names_rejected():
                 ]
             ),
         )
+
+
+# ---- A2: two-stream scoreboard (source → predictor → monitor "actual") ------
+
+
+def _two_stream(source="req", monitor="rsp", agents=None, **over):
+    return ProjectConfig(
+        project=ProjectMeta(name="t"),
+        dut=DutConfig(name="d"),
+        agents=agents if agents is not None else [_ag("req"), _ag("rsp")],
+        tests=[TConf(name="t1")],
+        analysis=AnalysisConfig(
+            scoreboards=[ScoreboardSpec(name="sbd", source=source, monitor=monitor)]
+        ),
+        **over,
+    )
+
+
+def test_two_stream_predictor_and_comparator_typed(tmp_path):
+    Generator(_two_stream()).generate_all(tmp_path)
+    p = (tmp_path / "d_predictor.svh").read_text()
+    assert "uvm_subscriber #(req_trans)" in p
+    assert "uvm_analysis_port #(rsp_trans) results_ap;" in p
+    assert "extern function rsp_trans predict(req_trans t);" in p
+    c = (tmp_path / "d_comparator.svh").read_text()
+    assert "rsp_trans exp_tr, out_tr;" in c  # comparator typed on the OUTPUT stream
+
+
+def test_two_stream_scoreboard_and_env_wiring(tmp_path):
+    Generator(_two_stream()).generate_all(tmp_path)
+    sb = (tmp_path / "d_scoreboard.svh").read_text()
+    assert "uvm_analysis_export #(req_trans)  src_axp;" in sb
+    assert "uvm_analysis_export #(rsp_trans) mon_axp;" in sb
+    assert "src_axp.connect(prd.analysis_export);" in sb
+    assert "mon_axp.connect(cmp.out_ap);" in sb
+    e = (tmp_path / "d_env.svh").read_text()
+    assert "req_agnt.ap.connect(sbd.src_axp);" in e
+    assert "rsp_agnt.ap.connect(sbd.mon_axp);" in e
+
+
+def test_two_stream_reference_model_creates_not_copies(tmp_path):
+    Generator(_two_stream()).generate_all(tmp_path)
+    rm = (tmp_path / "d_reference_model.svh").read_text()
+    assert "function rsp_trans d_predictor::predict(req_trans t);" in rm
+    assert 'rsp_trans extr = rsp_trans::type_id::create("extr");' in rm
+    assert "extr.copy(t)" not in rm  # cross-type — cannot copy the request into a rsp
+
+
+def test_single_stream_predictor_unchanged(tmp_path):
+    # No monitor → predict(pa)→pa, a single axp (byte-identical to legacy).
+    Generator(_cfg([_ag("reg")])).generate_all(tmp_path)
+    p = (tmp_path / "d_predictor.svh").read_text()
+    assert "uvm_subscriber #(reg_trans)" in p
+    assert "extern function reg_trans predict(reg_trans t);" in p
+    sb = (tmp_path / "d_scoreboard.svh").read_text()
+    assert "uvm_analysis_export #(reg_trans) axp;" in sb
+    assert "src_axp" not in sb and "mon_axp" not in sb
+
+
+def test_unknown_monitor_agent_rejected():
+    with pytest.raises(Exception, match="unknown monitor agent"):
+        _two_stream(monitor="nope")
+
+
+def test_monitor_equal_source_rejected():
+    with pytest.raises(Exception, match="monitor must differ from"):
+        _two_stream(monitor="req")  # source is also "req"
+
+
+def test_two_stream_must_be_sole_scoreboard():
+    with pytest.raises(Exception, match="only"):
+        ProjectConfig(
+            project=ProjectMeta(name="t"),
+            dut=DutConfig(name="d"),
+            agents=[_ag("req"), _ag("rsp")],
+            tests=[TConf(name="t1")],
+            analysis=AnalysisConfig(
+                scoreboards=[
+                    ScoreboardSpec(name="a", source="req", monitor="rsp"),
+                    ScoreboardSpec(name="b", source="req"),
+                ]
+            ),
+        )
+
+
+def test_two_stream_rejects_dpi_c_reference_model():
+    with pytest.raises(Exception, match="reference_model.language"):
+        _two_stream(reference_model=ReferenceModelConfig(language="c"))
+
+
+# ---- A2: monitor emit_when (publish only qualified transactions) ------------
+
+
+def _ag_emit(n, emit_when):
+    return AgentConfig(
+        name=n,
+        interface=f"{n}_if",
+        sequence_item=f"{n}_trans",
+        ports={
+            "outputs": [PortConfig(name="dout", width=8, randomize=False)],
+            "inputs": [
+                PortConfig(name="vld", width=1),
+                PortConfig(name="din", width=8),
+            ],
+        },
+        emit_when=emit_when,
+    )
+
+
+def test_emit_when_gates_monitor_publish(tmp_path):
+    Generator(_cfg([_ag_emit("reg", "vld")])).generate_all(tmp_path)
+    m = (tmp_path / "reg_monitor.svh").read_text()
+    assert "if (tr.vld) ap.write(tr);" in m
+
+
+def test_no_emit_when_publishes_unconditionally(tmp_path):
+    Generator(_cfg([_ag("reg")])).generate_all(tmp_path)
+    m = (tmp_path / "reg_monitor.svh").read_text()
+    assert "      ap.write(tr);" in m
+    assert "if (tr." not in m
+
+
+def test_emit_when_unknown_port_rejected():
+    with pytest.raises(Exception, match="emit_when"):
+        _ag_emit("reg", "nope")
+
+
+def test_emit_when_multibit_port_rejected():
+    # the gate is `if (tr.x)` — a multi-bit field would be a reduction-OR, not a
+    # clean valid test, so a >1-bit qualifier is rejected.
+    with pytest.raises(Exception, match="1-bit valid/handshake"):
+        _ag_emit("reg", "din")  # din is 8 bits

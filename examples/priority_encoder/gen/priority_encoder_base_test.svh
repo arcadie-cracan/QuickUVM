@@ -28,7 +28,7 @@ class priority_encoder_base_test extends uvm_test;
     env_cfg.pe_cfg = pe_cfg::type_id::create("pe_cfg");
     env_cfg.pe_cfg.is_active = UVM_ACTIVE;
     if (!uvm_config_db#(virtual pe_if)::get(this, "", "pe_if_vif", env_cfg.pe_cfg.vif))
-      `uvm_fatal("NOVIF", "No virtual pe_if set as 'pe_if_vif' in the config DB (see top.sv)")
+      `uvm_fatal("NOVIF", "No virtual interface 'pe_if_vif' in config DB (see tb_top.sv)")
     uvm_config_db#(priority_encoder_env_cfg)::set(this, "e", "env_cfg", env_cfg);
 
     e = priority_encoder_env::type_id::create("e", this);

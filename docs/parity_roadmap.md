@@ -382,6 +382,31 @@ and multi-transaction-type scoreboards (the full fabric C1 deferred). K0 supplie
 swappable predictor; A2 supplies the comparison strategies around it.
 **Accept:** an out-of-order scoreboard matches a reordering DUT model.
 
+**Status — first slice landed (two-stream in-order topology):**
+- `analysis.scoreboards[].monitor:` turns a scoreboard two-stream: the `source`
+  agent (input/stimulus) feeds the predictor and the `monitor` agent (output) is
+  the comparator's "actual" — generalizing the "A drives → predictor → ← B monitors"
+  wiring the fifo example used to hand-wire. The predictor seam generalizes to
+  `predict(source_item) → monitor_item`, the comparator/expected are typed on the
+  monitor stream, and the scoreboard grows `src_axp`/`mon_axp`. Single-stream
+  (no `monitor`) is byte-identical: `predict(pa)→pa`, one `axp`.
+- `AgentConfig.emit_when:` — the monitor publishes a transaction only when a
+  valid/handshake port is high, so idle / pipeline-fill cycles never enter the
+  scoreboard and the i-th request lines up with the i-th response. Byte-identical
+  when unset.
+- Fail-closed validation: `monitor` names an existing agent and differs from
+  `source`; a two-stream scoreboard must be the sole scoreboard (one source/monitor
+  type pair) and requires `reference_model.language: sv` (DPI-C two-type marshaling
+  TBD); `emit_when` names a sampled port.
+- Validated on `examples/reqrsp/` (a tagged request/response unit, single in-order
+  lane): `predict(req) → expected rsp` matched against the observed response stream,
+  **30/30 on Xcelium**; a golden-model mutation is caught (27/30 fail), proving the
+  check is real; verible-lint-clean; CI gates it.
+- *Next slices:* out-of-order keyed matching (`match: out_of_order` + `match_key:`)
+  for a reordering DUT — the A2 **Accept** bar; then latency-windowed and
+  multi-transaction-type comparators. The reqrsp example grows a second lane (a
+  different latency → reordering) to drive the out-of-order slice.
+
 ### K1 — Assertion / protocol-checker scaffolding
 Generate an interface assertion module + SVA hook pragmas (protocol properties are user
 code, but the binding/structure is scaffolded).

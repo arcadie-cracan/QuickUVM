@@ -136,3 +136,14 @@ jobs:
           verible-verilog-lint --rules_config .verible-lint.rules gen_regfile/*.sv gen_regfile/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules \
             examples/regfile/ral/regfile_ral_pkg.sv examples/regfile/rtl/regfile.sv
+
+      # Gate the A2 two-stream-scoreboard path: the reqrsp example generates a
+      # two-stream scoreboard (source→predictor, monitor→actual), the cross-type
+      # predictor predict(req)→rsp, and the monitor emit_when gate.
+      - name: Generate the two-stream-scoreboard example (A2)
+        run: quick-uvm generate -c examples/reqrsp/reqrsp.yaml -o gen_reqrsp
+
+      - name: Verible lint (two-stream-scoreboard generated SV/SVH + DUT)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_reqrsp/*.sv gen_reqrsp/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/reqrsp/rtl/reqrsp.sv

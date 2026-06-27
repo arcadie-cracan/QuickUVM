@@ -579,6 +579,11 @@ class AgentConfig(BaseModel):
     # S1 — rich stimulus (opt-in, byte-identical when empty):
     fields: list[FieldConfig] = Field(default_factory=list)  # transaction-only data
     constraints: list[str] = Field(default_factory=list)  # transaction-level raw SV
+    # A2 — monitor publish qualifier: when set, the monitor writes a transaction to
+    # its analysis port only when this port (a valid/handshake signal) is non-zero.
+    # Needed for valid-qualified streams (e.g. a two-stream req/rsp scoreboard) so
+    # idle/pipeline-fill cycles don't enter the scoreboard. None → emit every cycle.
+    emit_when: str | None = None
 
     @property
     def input_ports(self) -> list[PortConfig]:
@@ -676,6 +681,29 @@ class AgentConfig(BaseModel):
             if not c.strip():
                 raise ValueError(
                     f"agent '{self.name}': empty transaction constraint expression."
+                )
+        # A2 — the emit qualifier must name a 1-bit port the monitor samples: the
+        # gate is `if (tr.<emit_when>)`, so a multi-bit field would be a surprising
+        # reduction-OR rather than a clean valid/handshake test.
+        if self.emit_when is not None:
+            ew = next(
+                (
+                    p
+                    for p in self.input_ports + self.output_ports
+                    if p.name == self.emit_when
+                ),
+                None,
+            )
+            if ew is None:
+                raise ValueError(
+                    f"agent '{self.name}': emit_when='{self.emit_when}' is not a port "
+                    f"of this agent (it must name a sampled valid/handshake signal)."
+                )
+            if ew.bit_width != 1:
+                raise ValueError(
+                    f"agent '{self.name}': emit_when='{self.emit_when}' is "
+                    f"{ew.bit_width} bits — it must be a 1-bit valid/handshake signal "
+                    f"(the monitor gates on `if (tr.{self.emit_when})`)."
                 )
         seen: set[str] = set()
         ports_by_name = {p.name: p for p in self.input_ports}
@@ -801,7 +829,12 @@ class TestConfig(BaseModel):
 
 class ScoreboardSpec(BaseModel):
     name: str = "sbd"
-    source: str  # name of the agent whose analysis port feeds this scoreboard
+    source: str  # input/stimulus stream agent → predictor
+    # A2 — two-stream topology: when set, this is the OUTPUT/response stream agent
+    # whose monitored transactions are the scoreboard's "actual" (predict(source) is
+    # compared against monitor). Omitted → single-stream (source feeds both the
+    # predictor and the comparator, today's behavior). monitor != source.
+    monitor: str | None = None
 
 
 class AnalysisConfig(BaseModel):
@@ -1205,6 +1238,32 @@ class ProjectConfig(BaseModel):
                     raise ValueError(
                         f"analysis.scoreboards '{s.name}' references unknown "
                         f"source agent '{s.source}'."
+                    )
+                if s.monitor is not None and s.monitor not in agent_names:
+                    raise ValueError(
+                        f"analysis.scoreboards '{s.name}' references unknown "
+                        f"monitor agent '{s.monitor}'."
+                    )
+                if s.monitor is not None and s.monitor == s.source:
+                    raise ValueError(
+                        f"analysis.scoreboards '{s.name}': monitor must differ from "
+                        f"source (a two-stream scoreboard needs distinct in/out "
+                        f"streams); omit monitor for a single-stream scoreboard."
+                    )
+            # A2 slice 1: a two-stream scoreboard re-types the shared predictor/
+            # comparator/scoreboard classes, so it must be the only scoreboard, and
+            # the golden model must be SystemVerilog (DPI-C two-type marshaling TBD).
+            two_stream = [s for s in self.analysis.scoreboards if s.monitor is not None]
+            if two_stream:
+                if len(self.analysis.scoreboards) != 1:
+                    raise ValueError(
+                        "a two-stream scoreboard (monitor set) must be the only "
+                        "scoreboard for now (one source/monitor type pair)."
+                    )
+                if self.reference_model.language != "sv":
+                    raise ValueError(
+                        "a two-stream scoreboard requires reference_model.language "
+                        "'sv' (DPI-C two-type marshaling is not yet supported)."
                     )
         if self.register_model is not None:
             if self.register_model.bus_agent not in {a.name for a in self.agents}:

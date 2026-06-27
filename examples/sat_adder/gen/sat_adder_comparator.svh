@@ -26,6 +26,10 @@ class sat_adder_comparator extends uvm_component;
   // reset frames that aren't meaningful). Set via uvm_config_db "sb_flush".
   int unsigned flush_count = 0;
 
+  // Set while an expected has been dequeued but its actual hasn't arrived yet, so
+  // a test that ends mid-pair is reported (see report_phase / SB_LEFTOVER).
+  bit pending_exp = 0;
+
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
 
@@ -66,8 +70,10 @@ class sat_adder_comparator extends uvm_component;
     forever begin
       `uvm_info("SB_CMP", "WAITING for expected output", UVM_FULL)
       expfifo.get(exp_tr);
+      pending_exp = 1;  // hold an expected awaiting its actual (caught at report)
       `uvm_info("SB_CMP", "WAITING for actual output",   UVM_FULL)
       outfifo.get(out_tr);
+      pending_exp = 0;
       if (out_tr.compare(exp_tr)) PASS();
       else                        ERROR();
     end
@@ -75,13 +81,27 @@ class sat_adder_comparator extends uvm_component;
 
   function void report_phase(uvm_phase phase);
     super.report_phase(phase);
+    // Transactions still pending were never matched (the test ended before they
+    // drained, or the two streams desynced) — surface them rather than letting an
+    // undersized drain silently pass with fewer vectors than expected. Counts the
+    // queued items PLUS one held mid-pair (dequeued expected still awaiting actual).
+    if (enabled &&
+        ((expfifo.used() + pending_exp) != 0 || outfifo.used() != 0))
+      `uvm_warning("SB_LEFTOVER", $sformatf(
+        "%0d expected / %0d actual transaction(s) never matched (test ended early?)",
+        expfifo.used() + pending_exp, outfifo.used()))
     if (ERROR_CNT)
       `uvm_error("FAILED",
         $sformatf("\n\n\n*** TEST FAILED - Vectors: %0d Ran / %0d Passed / %0d Failed ***\n",
                    VECT_CNT, PASS_CNT, ERROR_CNT))
+    else if (!enabled)
+      // Deliberately disabled (e.g. a RAL/CSR test that checks via the register
+      // model). Comparing 0 transactions is expected here — not a warning.
+      `uvm_info("SB_CMP",
+        "data-path scoreboard disabled — checking delegated to the RAL/CSR test", UVM_LOW)
     else if (VECT_CNT == 0)
-      // No transactions compared — e.g. a backdoor-only or register test that
-      // drives no bus traffic. Warn rather than fail the data-path scoreboard.
+      // Enabled but nothing compared — a data-path test that drove no bus
+      // traffic. Warn rather than silently pass.
       `uvm_warning("NOVEC",
         "scoreboard compared 0 transactions (no front-door bus traffic)")
     else
