@@ -375,12 +375,30 @@ via Jinja macros.
 
 ## Priority tier 3 — checking generality
 
-### A2 — Scoreboard / comparison-strategy library
+### A2 — Scoreboard / comparison-strategy library — ACCEPT MET
 Builds on the K0 predictor seam: in-order (today) **plus** out-of-order, latency-windowed,
 and multi-stream comparators; "A drives → predictor → scoreboard ← B monitors" topologies
 and multi-transaction-type scoreboards (the full fabric C1 deferred). K0 supplies the
 swappable predictor; A2 supplies the comparison strategies around it.
-**Accept:** an out-of-order scoreboard matches a reordering DUT model.
+**Accept:** an out-of-order scoreboard matches a reordering DUT model. ✅
+
+**Status — out-of-order matching landed (Accept bar met):**
+- `match: out_of_order` + `match_key:` on a two-stream scoreboard swaps the in-order
+  FIFO pair for a **queue-per-key pool**: the comparator pools expected responses by
+  tag (request order within a key) and matches each actual to its key's queue front,
+  so a reordered response stream is checked correctly. An actual with no pending
+  expected → error; pooled expected never matched → `SB_LEFTOVER`. Queue-per-key (not
+  a single slot) is robust to tag reuse — a reused tag stays in-order within its key.
+  `in_order` (default) is byte-identical.
+- Validated on `examples/reqrsp/` grown to **two latency lanes** (routed by
+  `req_id[0]`, latencies 2 and 5): responses overtake and reorder. **Out-of-order
+  matches 30/30 on Xcelium; the same DUT with `in_order` fails 18/30**, proving the
+  reordering is real and that keyed matching is what fixes it. A no-collision
+  invariant (odd latency difference + requests paced every two cycles → the lanes
+  never complete the same cycle) keeps the DUT to a clean OR-mux, guarded by an
+  assertion. verible-lint-clean; CI gates it.
+- *Remaining A2 (beyond Accept):* latency-windowed (bounded-delay) and
+  multi-transaction-type comparators.
 
 **Status — first slice landed (two-stream in-order topology):**
 - `analysis.scoreboards[].monitor:` turns a scoreboard two-stream: the `source`

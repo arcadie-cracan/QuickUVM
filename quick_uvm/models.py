@@ -835,6 +835,31 @@ class ScoreboardSpec(BaseModel):
     # compared against monitor). Omitted → single-stream (source feeds both the
     # predictor and the comparator, today's behavior). monitor != source.
     monitor: str | None = None
+    # A2 — comparison strategy. 'in_order' (default): a FIFO pair matches expected
+    # and actual in arrival order. 'out_of_order': a queue-per-key pool matches each
+    # actual to the pending expected with the same `match_key` (a reordering DUT).
+    match: Literal["in_order", "out_of_order"] = "in_order"
+    match_key: str | None = None  # monitor-item field to key on; required iff OOO
+
+    @model_validator(mode="after")
+    def _check_match(self) -> ScoreboardSpec:
+        if self.match == "out_of_order":
+            if self.monitor is None:
+                raise ValueError(
+                    f"scoreboard '{self.name}': match='out_of_order' requires a "
+                    f"two-stream scoreboard (set 'monitor')."
+                )
+            if not self.match_key:
+                raise ValueError(
+                    f"scoreboard '{self.name}': match='out_of_order' requires "
+                    f"'match_key' (the response field that tags each transaction)."
+                )
+        elif self.match_key is not None:
+            raise ValueError(
+                f"scoreboard '{self.name}': match_key is only used with "
+                f"match='out_of_order'."
+            )
+        return self
 
 
 class AnalysisConfig(BaseModel):
@@ -1250,6 +1275,38 @@ class ProjectConfig(BaseModel):
                         f"source (a two-stream scoreboard needs distinct in/out "
                         f"streams); omit monitor for a single-stream scoreboard."
                     )
+                # match_key must name a field of the monitor (output) item, since
+                # both the expected (predicted) and actual responses carry it; the
+                # comparator keys on `longint'(<match_key>)`, so it must be a scalar
+                # integral tag of at most 64 bits.
+                if s.match_key is not None and s.monitor is not None:
+                    mon = next(a for a in self.agents if a.name == s.monitor)
+                    mk = next(
+                        (
+                            p
+                            for p in mon.input_ports + mon.output_ports
+                            if p.name == s.match_key
+                        ),
+                        None,
+                    )
+                    if mk is None:
+                        raise ValueError(
+                            f"analysis.scoreboards '{s.name}': match_key "
+                            f"'{s.match_key}' is not a port of the monitor agent "
+                            f"'{s.monitor}' (it must tag each response)."
+                        )
+                    if mk.struct is not None or mk.packed_dims is not None:
+                        raise ValueError(
+                            f"analysis.scoreboards '{s.name}': match_key "
+                            f"'{s.match_key}' must be a scalar integral field, not a "
+                            f"struct/packed array (it is cast to longint for keying)."
+                        )
+                    if mk.bit_width > 64:
+                        raise ValueError(
+                            f"analysis.scoreboards '{s.name}': match_key "
+                            f"'{s.match_key}' is {mk.bit_width} bits; the key is a "
+                            f"64-bit longint, so the tag must be <= 64 bits."
+                        )
             # A2 slice 1: a two-stream scoreboard re-types the shared predictor/
             # comparator/scoreboard classes, so it must be the only scoreboard, and
             # the golden model must be SystemVerilog (DPI-C two-type marshaling TBD).
