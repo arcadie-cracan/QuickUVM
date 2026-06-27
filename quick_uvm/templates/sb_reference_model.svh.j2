@@ -13,6 +13,29 @@
 // Edit the "prediction_logic" user section below.
 //----------------------------------------------------------------------
 {% set pa = agents[0] %}
+{% if sb_two_stream %}
+// Two-stream scoreboard: `t` is the observed {{ sb_in_agent.name }} (request) item;
+// return the EXPECTED {{ sb_out_agent.name }} (response) item it should produce.
+function {{ sb_out_item }} {{ dut.name }}_predictor::predict({{ sb_in_item }} t);
+  // Declare static state variables needed between calls
+  // static logic [W-1:0] ex_prev;
+
+  {{ sb_out_item }} extr = {{ sb_out_item }}::type_id::create("extr");
+
+  `uvm_info("CALC #1", t.convert2string(), UVM_FULL)
+
+  // pragma quickuvm custom prediction_logic begin
+  // TODO: map the request `t` to the expected response `extr`, e.g.:
+{% for out in sb_out_agent.output_ports %}
+  //   extr.{{ out.name }} = ...;   // from t.<request field>
+{% endfor %}
+
+  // pragma quickuvm custom prediction_logic end
+
+  `uvm_info("CALC #2", extr.convert2string(), UVM_FULL)
+  return(extr);
+endfunction
+{% else %}
 
 function {{ pa.sequence_item }} {{ dut.name }}_predictor::predict({{ pa.sequence_item }} t);
   // Declare static state variables needed between calls
@@ -49,3 +72,4 @@ function {{ pa.sequence_item }} {{ dut.name }}_predictor::predict({{ pa.sequence
   `uvm_info("CALC #2", extr.convert2string(), UVM_FULL)
   return(extr);
 endfunction
+{% endif %}

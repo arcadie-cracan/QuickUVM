@@ -84,6 +84,29 @@ class Generator:
             "reference_model": cfg.reference_model,
         }
 
+        # A2 — scoreboard stream types. Single-stream (default): predict(pa) -> pa
+        # (sb_in_item == sb_out_item == primary agent, byte-identical). Two-stream:
+        # predict(source_item) -> monitor_item; comparator/expected typed on monitor.
+        pa = cfg.agents[0]
+        two_stream_sb = None
+        if cfg.analysis is not None:
+            two_stream_sb = next(
+                (s for s in cfg.analysis.scoreboards if s.monitor is not None), None
+            )
+        if two_stream_sb is not None:
+            assert two_stream_sb.monitor is not None  # selected via `if s.monitor`
+            by_name = {a.name: a for a in cfg.agents}
+            sb_in_agent = by_name[two_stream_sb.source]
+            sb_out_agent = by_name[two_stream_sb.monitor]
+        else:
+            sb_in_agent = pa
+            sb_out_agent = pa
+        base_ctx["sb_in_item"] = sb_in_agent.sequence_item
+        base_ctx["sb_out_item"] = sb_out_agent.sequence_item
+        base_ctx["sb_in_agent"] = sb_in_agent
+        base_ctx["sb_out_agent"] = sb_out_agent
+        base_ctx["sb_two_stream"] = two_stream_sb is not None
+
         specs: list[FileSpec] = []
 
         # ---- global files ------------------------------------------------

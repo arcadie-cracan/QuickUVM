@@ -223,6 +223,41 @@ CONFIGS = {
             )
         ],
     ),
+    # A2 — a two-stream scoreboard (source → predictor → monitor) with emit_when on
+    # both agents (exercises the two-stream reference_model predict body + the
+    # monitor emit-gate branch markers).
+    "two_stream": _cfg(
+        agents=[
+            AgentConfig(
+                name="req",
+                interface="req_if",
+                sequence_item="req_seq_item",
+                emit_when="req_valid",
+                ports={
+                    "inputs": [
+                        PortConfig(name="req_valid", width=1),
+                        PortConfig(name="req_data", width=8),
+                    ]
+                },
+            ),
+            AgentConfig(
+                name="rsp",
+                interface="rsp_if",
+                sequence_item="rsp_seq_item",
+                active=False,
+                emit_when="rsp_valid",
+                ports={
+                    "outputs": [
+                        PortConfig(name="rsp_valid", width=1, randomize=False),
+                        PortConfig(name="rsp_data", width=8, randomize=False),
+                    ]
+                },
+            ),
+        ],
+        analysis=AnalysisConfig(
+            scoreboards=[ScoreboardSpec(name="sbd", source="req", monitor="rsp")]
+        ),
+    ),
 }
 
 

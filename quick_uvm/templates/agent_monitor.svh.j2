@@ -35,7 +35,12 @@ class {{ agent.name }}_monitor extends uvm_monitor;
 {% endif %}
     forever begin
       sample_dut(tr);
+{% if agent.emit_when %}
+      // Publish only valid/qualified transactions (emit_when: {{ agent.emit_when }}).
+      if (tr.{{ agent.emit_when }}) ap.write(tr);
+{% else %}
       ap.write(tr);
+{% endif %}
     end
   endtask
 
