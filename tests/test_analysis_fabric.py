@@ -18,6 +18,7 @@ from quick_uvm.models import (
     ProjectMeta,
     ReferenceModelConfig,
     ScoreboardSpec,
+    StructMember,
 )
 from quick_uvm.models import (
     TestConfig as TConf,
@@ -130,14 +131,24 @@ def test_duplicate_scoreboard_names_rejected():
 # ---- A2: two-stream scoreboard (source → predictor → monitor "actual") ------
 
 
-def _two_stream(source="req", monitor="rsp", agents=None, **over):
+def _two_stream(
+    source="req", monitor="rsp", match="in_order", match_key=None, agents=None, **over
+):
     return ProjectConfig(
         project=ProjectMeta(name="t"),
         dut=DutConfig(name="d"),
         agents=agents if agents is not None else [_ag("req"), _ag("rsp")],
         tests=[TConf(name="t1")],
         analysis=AnalysisConfig(
-            scoreboards=[ScoreboardSpec(name="sbd", source=source, monitor=monitor)]
+            scoreboards=[
+                ScoreboardSpec(
+                    name="sbd",
+                    source=source,
+                    monitor=monitor,
+                    match=match,
+                    match_key=match_key,
+                )
+            ]
         ),
         **over,
     )
@@ -257,3 +268,89 @@ def test_emit_when_multibit_port_rejected():
     # clean valid test, so a >1-bit qualifier is rejected.
     with pytest.raises(Exception, match="1-bit valid/handshake"):
         _ag_emit("reg", "din")  # din is 8 bits
+
+
+# ---- A2: out-of-order matching (queue-per-key pool) -------------------------
+
+
+def test_out_of_order_comparator_pools_by_key(tmp_path):
+    Generator(_two_stream(match="out_of_order", match_key="dout")).generate_all(
+        tmp_path
+    )
+    c = (tmp_path / "d_comparator.svh").read_text()
+    assert "rsp_trans exp_pool [longint][$];" in c
+    assert "exp_pool[longint'(e.dout)].push_back(e);" in c  # pool by key
+    assert "exp_pool[k].pop_front();" in c  # match pops the key's front
+    assert "SB_NOEXP" in c  # actual with no pending expected → error
+    assert "fork" in c  # concurrent pool / match processes
+
+
+def test_in_order_comparator_has_no_pool(tmp_path):
+    Generator(_two_stream(match="in_order")).generate_all(tmp_path)
+    c = (tmp_path / "d_comparator.svh").read_text()
+    assert "exp_pool" not in c
+    assert "pending_exp" in c  # the in-order mid-pair guard
+
+
+def test_out_of_order_requires_two_stream():
+    with pytest.raises(Exception, match="requires a two-stream"):
+        ScoreboardSpec(name="s", source="reg", match="out_of_order", match_key="x")
+
+
+def test_out_of_order_requires_match_key():
+    with pytest.raises(Exception, match="requires 'match_key'"):
+        ScoreboardSpec(name="s", source="a", monitor="b", match="out_of_order")
+
+
+def test_match_key_without_out_of_order_rejected():
+    with pytest.raises(Exception, match="only used with"):
+        ScoreboardSpec(
+            name="s", source="a", monitor="b", match="in_order", match_key="x"
+        )
+
+
+def test_match_key_must_be_a_monitor_field():
+    with pytest.raises(Exception, match="not a port of the monitor"):
+        _two_stream(match="out_of_order", match_key="nope")
+
+
+def test_match_key_too_wide_rejected():
+    # the key is cast to a 64-bit longint, so a >64-bit tag would truncate/collide.
+    wide = AgentConfig(
+        name="rsp",
+        interface="rsp_if",
+        sequence_item="rsp_trans",
+        ports={"outputs": [PortConfig(name="tag", width=128, randomize=False)]},
+    )
+    with pytest.raises(Exception, match="64-bit longint"):
+        _two_stream(
+            monitor="rsp",
+            match="out_of_order",
+            match_key="tag",
+            agents=[_ag("req"), wide],
+        )
+
+
+def test_match_key_composite_rejected():
+    # longint'(struct) is illegal SV — a tag must be a scalar integral field.
+    structed = AgentConfig(
+        name="rsp",
+        interface="rsp_if",
+        sequence_item="rsp_trans",
+        ports={
+            "outputs": [
+                PortConfig(
+                    name="tag",
+                    struct=[StructMember(name="a", width=4)],
+                    randomize=False,
+                )
+            ]
+        },
+    )
+    with pytest.raises(Exception, match="scalar integral"):
+        _two_stream(
+            monitor="rsp",
+            match="out_of_order",
+            match_key="tag",
+            agents=[_ag("req"), structed],
+        )

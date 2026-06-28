@@ -106,6 +106,8 @@ class Generator:
         base_ctx["sb_in_agent"] = sb_in_agent
         base_ctx["sb_out_agent"] = sb_out_agent
         base_ctx["sb_two_stream"] = two_stream_sb is not None
+        base_ctx["sb_match"] = two_stream_sb.match if two_stream_sb else "in_order"
+        base_ctx["sb_match_key"] = two_stream_sb.match_key if two_stream_sb else None
 
         specs: list[FileSpec] = []
 

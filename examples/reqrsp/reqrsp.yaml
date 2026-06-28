@@ -1,11 +1,13 @@
-# reqrsp — QuickUVM A2 (slice 1): a two-stream IN-ORDER scoreboard.
+# reqrsp — QuickUVM A2: a two-stream OUT-OF-ORDER scoreboard.
 #
 # Two agents on two interfaces: `req` drives a valid-qualified request stream;
 # `rsp` passively monitors the response stream. The `analysis:` block wires a
 # single two-stream scoreboard — source (req) feeds the predictor, monitor (rsp)
 # is the "actual" — so predict(req) is compared against the observed response.
-# `emit_when:` publishes only valid transactions, so pipeline-fill / idle cycles
-# never enter the scoreboard and the i-th request lines up with the i-th response.
+# The DUT routes requests to two latency lanes (by req_id[0]), so responses are
+# REORDERED vs requests; `match: out_of_order` + `match_key: rsp_id` matches each
+# response to its predicted expected by tag (a queue-per-key pool). `emit_when:`
+# publishes only valid transactions, so idle / pipeline-fill cycles stay out.
 project:
   name: reqrsp
   author: QuickUVM
@@ -55,7 +57,10 @@ tests:
 analysis:
   coverage: []
   scoreboards:
-    # two-stream: predict(req) is matched in order against the rsp stream.
+    # two-stream + out-of-order: predict(req) is matched against the reordered rsp
+    # stream by tag (rsp_id), via a queue-per-key pool in the comparator.
     - name: sbd
       source: req
       monitor: rsp
+      match: out_of_order
+      match_key: rsp_id

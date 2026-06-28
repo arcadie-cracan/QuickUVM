@@ -26,9 +26,9 @@ class reqrsp_comparator extends uvm_component;
   // reset frames that aren't meaningful). Set via uvm_config_db "sb_flush".
   int unsigned flush_count = 0;
 
-  // Set while an expected has been dequeued but its actual hasn't arrived yet, so
-  // a test that ends mid-pair is reported (see report_phase / SB_LEFTOVER).
-  bit pending_exp = 0;
+  // Out-of-order matching: expected responses pending a match, queued per
+  // rsp_id (request order within a key). Each actual pops its key's front.
+  rsp_seq_item exp_pool [longint][$];
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -58,38 +58,48 @@ class reqrsp_comparator extends uvm_component;
       `uvm_info("SB_CMP", "data-path scoreboard disabled for this test (checked by RAL)", UVM_LOW)
       return;
     end
-    // Flush DUT-startup transactions (pipeline fill + sync/reset frames) that are
-    // not meaningful to compare. Count set per-DUT via uvm_config_db "sb_flush".
-    if (flush_count) begin
-      `uvm_info("SB_CMP", $sformatf("flushing %0d startup transaction(s)", flush_count), UVM_LOW)
-      repeat (flush_count) begin
-        expfifo.get(exp_tr);
-        outfifo.get(out_tr);
+    // Out-of-order: the response stream is reordered vs the request stream, so match
+    // by tag. One process pools expected (in request order) per rsp_id;
+    // the other pops each key's queue front for the matching actual.
+    if (flush_count)  // order-based flush is meaningless when matching by tag
+      `uvm_warning("SB_CMP",
+        "sb_flush is ignored for match=out_of_order (matching is by tag)")
+    fork
+      forever begin
+        rsp_seq_item e;
+        expfifo.get(e);
+        exp_pool[longint'(e.rsp_id)].push_back(e);
       end
-    end
-    forever begin
-      `uvm_info("SB_CMP", "WAITING for expected output", UVM_FULL)
-      expfifo.get(exp_tr);
-      pending_exp = 1;  // hold an expected awaiting its actual (caught at report)
-      `uvm_info("SB_CMP", "WAITING for actual output",   UVM_FULL)
-      outfifo.get(out_tr);
-      pending_exp = 0;
-      if (out_tr.compare(exp_tr)) PASS();
-      else                        ERROR();
-    end
+      forever begin
+        longint k;
+        outfifo.get(out_tr);
+        k = longint'(out_tr.rsp_id);
+        if (exp_pool.exists(k) && exp_pool[k].size() != 0) begin
+          exp_tr = exp_pool[k].pop_front();
+          if (out_tr.compare(exp_tr)) PASS();
+          else                        ERROR();
+        end
+        else begin
+          `uvm_error("SB_NOEXP", $sformatf(
+            "response with rsp_id=%0d has no pending request", k))
+          VECT_CNT++;
+          ERROR_CNT++;
+        end
+      end
+    join
   endtask
 
   function void report_phase(uvm_phase phase);
     super.report_phase(phase);
-    // Transactions still pending were never matched (the test ended before they
-    // drained, or the two streams desynced) — surface them rather than letting an
-    // undersized drain silently pass with fewer vectors than expected. Counts the
-    // queued items PLUS one held mid-pair (dequeued expected still awaiting actual).
-    if (enabled &&
-        ((expfifo.used() + pending_exp) != 0 || outfifo.used() != 0))
-      `uvm_warning("SB_LEFTOVER", $sformatf(
-        "%0d expected / %0d actual transaction(s) never matched (test ended early?)",
-        expfifo.used() + pending_exp, outfifo.used()))
+    // Pooled expected (and undrained actuals) never matched by tag — surface them
+    // rather than letting an undersized drain silently pass with fewer vectors.
+    if (enabled) begin
+      int unmatched = outfifo.used() + expfifo.used();  // not yet drained either way
+      foreach (exp_pool[k]) unmatched += exp_pool[k].size();  // pooled expected
+      if (unmatched != 0)
+        `uvm_warning("SB_LEFTOVER", $sformatf(
+          "%0d transaction(s) never matched by tag (test ended early?)", unmatched))
+    end
     if (ERROR_CNT)
       `uvm_error("FAILED",
         $sformatf("\n\n\n*** TEST FAILED - Vectors: %0d Ran / %0d Passed / %0d Failed ***\n",

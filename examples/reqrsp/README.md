@@ -1,50 +1,52 @@
-# reqrsp — two-stream in-order scoreboard (A2, slice 1)
+# reqrsp — two-stream out-of-order scoreboard (A2)
 
-A tagged request/response unit checked by a **two-stream** scoreboard: one agent
-drives the request stream, a second agent monitors the response stream, and the
-scoreboard predicts each expected response from the observed request. This is the
-worked example for **A2** (scoreboard / comparison-strategy library) — the
-generalized version of the two-stream check the [fifo example](../fifo/) used to
-hand-wire.
+A tagged request/response unit whose responses are **reordered** relative to the
+requests, checked by a two-stream scoreboard that matches each response to its
+predicted expected **by tag**. This is the worked example for **A2** (scoreboard /
+comparison-strategy library) and meets its Accept bar: *an out-of-order scoreboard
+matches a reordering DUT model.*
 
-## The DUT
-[`rtl/reqrsp.sv`](rtl/reqrsp.sv) is a single in-order lane: a valid-qualified
-request `{req_id, req_data}` enters and, `LAT` cycles later, the matching response
-`{rsp_id = req_id, rsp_data = req_data + req_id}` leaves — same tag, in request
-order. (The A2 out-of-order slice adds a second lane with a different latency so
-responses can overtake and must be matched by tag.)
+## The DUT — two latency lanes
+[`rtl/reqrsp.sv`](rtl/reqrsp.sv) routes each valid request by `req_id[0]` to one of
+two lanes — even ids to lane 0 (latency 2), odd ids to lane 1 (latency 5). A response
+from the fast lane therefore **overtakes** an earlier response from the slow lane, so
+the response stream is reordered vs the request stream. Each response carries its
+request's tag and `rsp_data = req_data + req_id`.
 
-## Two streams, one scoreboard
-`reqrsp.yaml` declares two agents and wires them with `analysis.scoreboards`:
+*No-collision invariant:* with the two lane latencies differing by an **odd** number
+and requests **paced one every two cycles** (the req driver does this), the two lanes
+can never complete on the same cycle, so the output is a simple OR-mux — no arbiter.
+An `assert property` guards the invariant.
+
+## Two streams, matched by tag
+`reqrsp.yaml` wires a single two-stream scoreboard and selects out-of-order matching:
 ```yaml
 analysis:
   scoreboards:
     - name: sbd
-      source: req      # input/stimulus stream → predictor
-      monitor: rsp      # output/response stream → comparator "actual"
+      source: req           # request stream → predictor
+      monitor: rsp          # response stream → comparator "actual"
+      match: out_of_order
+      match_key: rsp_id      # the tag both expected and actual carry
 ```
-The generator types the seam as `predict(req_seq_item) → rsp_seq_item`: the
-predictor consumes the **req** stream and emits the expected response; the
-comparator matches it, in order, against the observed **rsp** stream. The
-`req` agent is active (drives); `rsp` is a passive monitor.
-
-## `emit_when` — aligning the streams
-Both agents set `emit_when:` (`req_valid` / `rsp_valid`), so the monitor publishes a
-transaction only when its valid signal is high. That keeps idle and pipeline-fill
-cycles out of the scoreboard, so the i-th valid request lines up with the i-th valid
-response and the in-order FIFO match needs no cycle-counting — the pipeline latency
-is absorbed by the valid qualification. The golden model is therefore **stateless**:
-`predict(req)` just maps `req_data + req_id` onto the expected response.
+The comparator pools each predicted expected response by `rsp_id` (a **queue per key**,
+request-order within a key) and matches each observed response to its key's queue
+front. A response with no pending request is an error; expected never matched at the
+end raises `SB_LEFTOVER`. Queue-per-key is robust to tag reuse — a reused tag goes to
+the same lane, so it stays in order within its key. The predictor is **stateless**
+(`predict(req)` just maps `req_data + req_id`); `emit_when:` keeps idle / pipeline-fill
+cycles out of the scoreboard.
 
 ## Layout
-- `rtl/reqrsp.sv` — the DUT (`gen/reqrsp.sv` is the generated stub, unused by the sim).
+- `rtl/reqrsp.sv` — the two-lane DUT (`gen/reqrsp.sv` is the generated stub, unused).
 - `reqrsp.yaml` — two agents (`req` active / `rsp` passive), each with `emit_when`,
-  plus the `analysis` two-stream scoreboard.
+  plus the out-of-order two-stream scoreboard.
 - `gen/` — generated TB; the user-filled pragmas are:
   - `reqrsp_reference_model.svh` `prediction_logic` — the stateless `predict(req)→rsp`.
-  - `req_driver.svh` `drive_item_additional` — one valid pulse per request (paced).
+  - `req_driver.svh` `drive_item_additional` — one valid pulse per request (the
+    every-two-cycles pacing the no-collision invariant relies on).
   - `rand_test.svh` `run_phase_additional` — a drain so the last in-flight responses
-    are compared before the test ends.
+    are matched before the test ends.
 - `sim/xrun.f` — Xcelium filelist (`rtl/reqrsp.sv` as the DUT).
 
 ## Run it
@@ -52,6 +54,6 @@ is absorbed by the valid qualification. The golden model is therefore **stateles
 cd sim
 xrun -f xrun.f +UVM_TESTNAME=rand_test
 ```
-GREEN on Xcelium: **30/30 vectors, 0 UVM_ERROR**. Mutating the golden model (drop the
-`+ req_id`) makes the scoreboard report 27/30 failures — the two-stream check is real,
-not a vacuous echo.
+**Out-of-order matches 30/30 on Xcelium, 0 errors.** Flipping the scoreboard to
+`match: in_order` on the same DUT fails 18/30 — the responses really are reordered, and
+keyed matching is what fixes it. Removing the test's drain trips the `SB_LEFTOVER` net.

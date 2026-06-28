@@ -24,9 +24,9 @@ function rsp_seq_item reqrsp_predictor::predict(req_seq_item t);
 
   // pragma quickuvm custom prediction_logic begin
   // rtl/reqrsp.sv: each valid request yields one valid response carrying the same
-  // tag, with rsp_data = req_data + req_id. Stateless — emit_when + in-order pairing
-  // make the i-th valid request line up with the i-th valid response, so the
-  // pipeline latency needs no modelling here.
+  // tag (rsp_id = req_id), with rsp_data = req_data + req_id. Stateless — the
+  // comparator matches responses to requests by tag (match: out_of_order), so the
+  // two lanes' reordering and latency need no modelling here.
   extr.rsp_valid = 1'b1;
   extr.rsp_id    = t.req_id;
   extr.rsp_data  = t.req_data + {4'b0, t.req_id};
