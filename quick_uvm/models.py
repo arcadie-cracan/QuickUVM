@@ -840,6 +840,11 @@ class ScoreboardSpec(BaseModel):
     # actual to the pending expected with the same `match_key` (a reordering DUT).
     match: Literal["in_order", "out_of_order"] = "in_order"
     match_key: str | None = None  # monitor-item field to key on; required iff OOO
+    # A2 — latency window: max request→response latency in CLOCK CYCLES. When set,
+    # the comparator flags (SB_LATENCY) a response that matches its request but
+    # arrived later than this; a response that never arrives is caught by
+    # SB_LEFTOVER. Out-of-order only (the pool it stamps lives there).
+    max_latency: int | None = None
 
     @model_validator(mode="after")
     def _check_match(self) -> ScoreboardSpec:
@@ -859,6 +864,16 @@ class ScoreboardSpec(BaseModel):
                 f"scoreboard '{self.name}': match_key is only used with "
                 f"match='out_of_order'."
             )
+        if self.max_latency is not None:
+            if self.match != "out_of_order":
+                raise ValueError(
+                    f"scoreboard '{self.name}': max_latency is only supported with "
+                    f"match='out_of_order'."
+                )
+            if self.max_latency < 1:
+                raise ValueError(
+                    f"scoreboard '{self.name}': max_latency must be >= 1 cycle."
+                )
         return self
 
 

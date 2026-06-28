@@ -29,6 +29,11 @@ class reqrsp_comparator extends uvm_component;
   // Out-of-order matching: expected responses pending a match, queued per
   // rsp_id (request order within a key). Each actual pops its key's front.
   rsp_seq_item exp_pool [longint][$];
+  // Latency window: the $realtime each pooled expected was enqueued, parallel to
+  // exp_pool, so a too-late response is flagged. 8 cycles, emitted
+  // as a time literal so the threshold is independent of the sim timescale:
+  realtime exp_age [longint][$];
+  localparam realtime MaxLatency = 80ns;
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -69,6 +74,7 @@ class reqrsp_comparator extends uvm_component;
         rsp_seq_item e;
         expfifo.get(e);
         exp_pool[longint'(e.rsp_id)].push_back(e);
+        exp_age[longint'(e.rsp_id)].push_back($realtime);
       end
       forever begin
         longint k;
@@ -76,8 +82,19 @@ class reqrsp_comparator extends uvm_component;
         k = longint'(out_tr.rsp_id);
         if (exp_pool.exists(k) && exp_pool[k].size() != 0) begin
           exp_tr = exp_pool[k].pop_front();
-          if (out_tr.compare(exp_tr)) PASS();
-          else                        ERROR();
+          // Latency window: a too-late response fails even if its data matches, and a
+          // wrong-data response is still reported (the data check is not skipped).
+          begin
+            bit data_ok = out_tr.compare(exp_tr);
+            bit late    = ($realtime - exp_age[k].pop_front()) > MaxLatency;
+            if (late)
+              `uvm_error("SB_LATENCY", $sformatf(
+                "rsp_id=%0d response exceeded the 8-cycle window", k))
+            if (!data_ok)
+              `uvm_error("ERROR", {get_vector_str(), "\n"})
+            if (data_ok && !late) PASS();
+            else begin VECT_CNT++; ERROR_CNT++; end
+          end
         end
         else begin
           `uvm_error("SB_NOEXP", $sformatf(

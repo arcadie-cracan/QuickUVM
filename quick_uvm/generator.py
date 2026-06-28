@@ -108,6 +108,11 @@ class Generator:
         base_ctx["sb_two_stream"] = two_stream_sb is not None
         base_ctx["sb_match"] = two_stream_sb.match if two_stream_sb else "in_order"
         base_ctx["sb_match_key"] = two_stream_sb.match_key if two_stream_sb else None
+        # Latency window: cycles → sim time via the clock period (the comparator
+        # measures $realtime). None unless set on the (out-of-order) scoreboard.
+        max_lat = two_stream_sb.max_latency if two_stream_sb else None
+        base_ctx["sb_max_latency"] = max_lat
+        base_ctx["sb_max_lat_time"] = max_lat * cfg.clock.period if max_lat else None
 
         specs: list[FileSpec] = []
 

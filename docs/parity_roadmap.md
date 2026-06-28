@@ -397,8 +397,16 @@ swappable predictor; A2 supplies the comparison strategies around it.
   invariant (odd latency difference + requests paced every two cycles → the lanes
   never complete the same cycle) keeps the DUT to a clean OR-mux, guarded by an
   assertion. verible-lint-clean; CI gates it.
-- *Remaining A2 (beyond Accept):* latency-windowed (bounded-delay) and
-  multi-transaction-type comparators.
+- **Latency window landed:** `max_latency: <cycles>` on an out-of-order scoreboard
+  stamps each pooled expected with `$realtime` and flags (`SB_LATENCY`) a response
+  that arrived later than the window (cycles × clock period, emitted as a timescale-
+  independent time literal); a never-arriving response is caught by `SB_LEFTOVER`, and
+  the data check is not skipped on a late match. The window is end-to-end *monitored*
+  latency (req-monitor → rsp-monitor sample points). Validated on `reqrsp`:
+  `max_latency: 8` passes 30/30, `max_latency: 3` fails every slow-lane (5-cycle)
+  response while the fast lane passes.
+- *Remaining A2:* multi-transaction-type comparators (≥2 source/monitor type pairs
+  in one scoreboard) — its own slice.
 
 **Status — first slice landed (two-stream in-order topology):**
 - `analysis.scoreboards[].monitor:` turns a scoreboard two-stream: the `source`
