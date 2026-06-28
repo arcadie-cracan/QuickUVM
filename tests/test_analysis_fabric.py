@@ -132,7 +132,13 @@ def test_duplicate_scoreboard_names_rejected():
 
 
 def _two_stream(
-    source="req", monitor="rsp", match="in_order", match_key=None, agents=None, **over
+    source="req",
+    monitor="rsp",
+    match="in_order",
+    match_key=None,
+    max_latency=None,
+    agents=None,
+    **over,
 ):
     return ProjectConfig(
         project=ProjectMeta(name="t"),
@@ -147,6 +153,7 @@ def _two_stream(
                     monitor=monitor,
                     match=match,
                     match_key=match_key,
+                    max_latency=max_latency,
                 )
             ]
         ),
@@ -353,4 +360,45 @@ def test_match_key_composite_rejected():
             match="out_of_order",
             match_key="tag",
             agents=[_ag("req"), structed],
+        )
+
+
+# ---- A2: latency window (max_latency) --------------------------------------
+
+
+def test_max_latency_emits_window_check(tmp_path):
+    Generator(
+        _two_stream(match="out_of_order", match_key="dout", max_latency=8)
+    ).generate_all(tmp_path)
+    c = (tmp_path / "d_comparator.svh").read_text()
+    assert "realtime exp_age [longint][$];" in c
+    assert "localparam realtime MaxLatency =" in c  # cycles × clock period
+    assert "exp_age[longint'(e.dout)].push_back($realtime);" in c
+    assert "SB_LATENCY" in c
+
+
+def test_no_max_latency_no_window_check(tmp_path):
+    Generator(_two_stream(match="out_of_order", match_key="dout")).generate_all(
+        tmp_path
+    )
+    c = (tmp_path / "d_comparator.svh").read_text()
+    assert "exp_age" not in c
+    assert "MaxLatency" not in c
+    assert "SB_LATENCY" not in c
+
+
+def test_max_latency_requires_out_of_order():
+    with pytest.raises(Exception, match="max_latency is only supported with"):
+        ScoreboardSpec(name="s", source="a", monitor="b", max_latency=5)
+
+
+def test_max_latency_must_be_positive():
+    with pytest.raises(Exception, match="max_latency must be >= 1"):
+        ScoreboardSpec(
+            name="s",
+            source="a",
+            monitor="b",
+            match="out_of_order",
+            match_key="x",
+            max_latency=0,
         )

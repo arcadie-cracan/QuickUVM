@@ -139,7 +139,8 @@ jobs:
 
       # Gate the A2 two-stream out-of-order scoreboard path: the reqrsp example
       # generates the cross-type predictor predict(req)→rsp, the monitor emit_when
-      # gate, and the queue-per-key (match: out_of_order) comparator.
+      # gate, the queue-per-key (match: out_of_order) comparator, and the
+      # max_latency window check.
       - name: Generate the two-stream out-of-order scoreboard example (A2)
         run: quick-uvm generate -c examples/reqrsp/reqrsp.yaml -o gen_reqrsp
 

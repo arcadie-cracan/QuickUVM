@@ -28,6 +28,7 @@ analysis:
       monitor: rsp          # response stream → comparator "actual"
       match: out_of_order
       match_key: rsp_id      # the tag both expected and actual carry
+      max_latency: 8         # cycles; flag a response that arrives too late
 ```
 The comparator pools each predicted expected response by `rsp_id` (a **queue per key**,
 request-order within a key) and matches each observed response to its key's queue
@@ -36,6 +37,14 @@ end raises `SB_LEFTOVER`. Queue-per-key is robust to tag reuse — a reused tag 
 the same lane, so it stays in order within its key. The predictor is **stateless**
 (`predict(req)` just maps `req_data + req_id`); `emit_when:` keeps idle / pipeline-fill
 cycles out of the scoreboard.
+
+`max_latency: 8` adds a **latency window**: each pooled expected is stamped with its
+time, and a response that matches but arrives later than 8 cycles raises `SB_LATENCY`
+(a never-arriving response is still caught by `SB_LEFTOVER`). Tightening it to 3 cycles
+fails every slow-lane (5-cycle) response while the fast lane passes. The window is
+measured between **monitor sample points** (req-monitor → rsp-monitor), so it is
+end-to-end *monitored* latency — budget for the monitors' sampling, not just raw DUT
+cycles.
 
 ## Layout
 - `rtl/reqrsp.sv` — the two-lane DUT (`gen/reqrsp.sv` is the generated stub, unused).

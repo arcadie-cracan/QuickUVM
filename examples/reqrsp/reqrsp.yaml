@@ -64,3 +64,4 @@ analysis:
       monitor: rsp
       match: out_of_order
       match_key: rsp_id
+      max_latency: 8        # cycles; lane 1 (the slow lane) completes in 5
