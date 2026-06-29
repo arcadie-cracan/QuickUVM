@@ -1,0 +1,73 @@
+# splitter — QuickUVM A2 multi-transaction-type: TWO typed scoreboards.
+#
+# One request stream feeds a DUT with two different-typed output channels (sum and
+# flag). The `analysis:` block declares TWO two-stream scoreboards — one per channel
+# — so QuickUVM generates a separate typed predictor/comparator/reference-model set
+# per scoreboard (splitter_sum_sb_* and splitter_flag_sb_*). emit_when keeps idle /
+# pipeline-fill cycles out so each channel's i-th response lines up with the i-th
+# request (in-order per channel).
+project:
+  name: splitter
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: splitter
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  # request stream (driven)
+  - name: req
+    interface: req_if
+    sequence_item: req_seq_item
+    seq_item_style: manual
+    active: true
+    emit_when: req_valid
+    constraints:
+      - "req_valid == 1"
+    ports:
+      inputs:
+        - {name: req_valid, width: 1}
+        - {name: req_id,    width: 4}
+        - {name: req_data,  width: 8}
+
+  # channel A: sum response (observed)
+  - name: cha
+    interface: cha_if
+    sequence_item: cha_seq_item
+    seq_item_style: manual
+    active: false
+    emit_when: a_valid
+    ports:
+      outputs:
+        - {name: a_valid, width: 1}
+        - {name: a_id,    width: 4}
+        - {name: a_sum,   width: 8}
+
+  # channel B: flag response (observed) — a DIFFERENT transaction type
+  - name: chb
+    interface: chb_if
+    sequence_item: chb_seq_item
+    seq_item_style: manual
+    active: false
+    emit_when: b_valid
+    ports:
+      outputs:
+        - {name: b_valid, width: 1}
+        - {name: b_id,    width: 4}
+        - {name: b_flag,  width: 1}
+
+tests:
+  - {name: rand_test, num_items: 30}
+
+analysis:
+  coverage: []
+  scoreboards:
+    # one typed scoreboard per channel → splitter_sum_sb_* and splitter_flag_sb_*
+    - {name: sum_sb,  source: req, monitor: cha}
+    - {name: flag_sb, source: req, monitor: chb}

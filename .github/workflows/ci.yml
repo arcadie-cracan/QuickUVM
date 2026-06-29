@@ -148,3 +148,14 @@ jobs:
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_reqrsp/*.sv gen_reqrsp/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/reqrsp/rtl/reqrsp.sv
+
+      # Gate the A2 multi-transaction-type path: the splitter example has >=2
+      # scoreboards, so each gets its own typed predictor/comparator/scoreboard set
+      # (<dut>_<sbname>_*) for a DUT with two different-typed output channels.
+      - name: Generate the multi-transaction-type example (A2)
+        run: quick-uvm generate -c examples/splitter/splitter.yaml -o gen_splitter
+
+      - name: Verible lint (multi-scoreboard generated SV/SVH + DUT)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_splitter/*.sv gen_splitter/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/splitter/rtl/splitter.sv

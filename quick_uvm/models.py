@@ -848,6 +848,9 @@ class ScoreboardSpec(BaseModel):
 
     @model_validator(mode="after")
     def _check_match(self) -> ScoreboardSpec:
+        # The name appears in generated class names (<dut>_<name>_predictor, ...) when
+        # there are >=2 scoreboards, so it must be a legal SV identifier.
+        _check_sv_identifier(self.name, "scoreboard name")
         if self.match == "out_of_order":
             if self.monitor is None:
                 raise ValueError(
@@ -1322,21 +1325,15 @@ class ProjectConfig(BaseModel):
                             f"'{s.match_key}' is {mk.bit_width} bits; the key is a "
                             f"64-bit longint, so the tag must be <= 64 bits."
                         )
-            # A2 slice 1: a two-stream scoreboard re-types the shared predictor/
-            # comparator/scoreboard classes, so it must be the only scoreboard, and
-            # the golden model must be SystemVerilog (DPI-C two-type marshaling TBD).
+            # A two-stream scoreboard's predict() is SystemVerilog (DPI-C two-type
+            # marshaling is not yet supported). With >=2 scoreboards each gets its
+            # own typed predictor/comparator set (<dut>_<sbname>_*).
             two_stream = [s for s in self.analysis.scoreboards if s.monitor is not None]
-            if two_stream:
-                if len(self.analysis.scoreboards) != 1:
-                    raise ValueError(
-                        "a two-stream scoreboard (monitor set) must be the only "
-                        "scoreboard for now (one source/monitor type pair)."
-                    )
-                if self.reference_model.language != "sv":
-                    raise ValueError(
-                        "a two-stream scoreboard requires reference_model.language "
-                        "'sv' (DPI-C two-type marshaling is not yet supported)."
-                    )
+            if two_stream and self.reference_model.language != "sv":
+                raise ValueError(
+                    "a two-stream scoreboard requires reference_model.language "
+                    "'sv' (DPI-C two-type marshaling is not yet supported)."
+                )
         if self.register_model is not None:
             if self.register_model.bus_agent not in {a.name for a in self.agents}:
                 raise ValueError(

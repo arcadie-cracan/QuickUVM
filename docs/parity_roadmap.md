@@ -375,12 +375,27 @@ via Jinja macros.
 
 ## Priority tier 3 — checking generality
 
-### A2 — Scoreboard / comparison-strategy library — ACCEPT MET
+### A2 — Scoreboard / comparison-strategy library — DONE
 Builds on the K0 predictor seam: in-order (today) **plus** out-of-order, latency-windowed,
 and multi-stream comparators; "A drives → predictor → scoreboard ← B monitors" topologies
 and multi-transaction-type scoreboards (the full fabric C1 deferred). K0 supplies the
 swappable predictor; A2 supplies the comparison strategies around it.
 **Accept:** an out-of-order scoreboard matches a reordering DUT model. ✅
+Complete: two-stream topology, in-order + out-of-order matching, the latency window, and
+multi-transaction-type scoreboards all landed (see the status blocks below).
+
+**Status — multi-transaction-type landed (A2 complete):**
+- With **≥2 scoreboards** in the `analysis:` block, each gets its OWN typed
+  predictor/comparator/scoreboard/reference-model set, prefixed `<dut>_<sbname>_*`,
+  so a DUT with several differently-typed output channels is checked by one
+  scoreboard per channel. With ≤1 scoreboard the single `<dut>_*` set is kept
+  **byte-identical**. The "sole two-stream scoreboard" guard is lifted (two-stream
+  still requires `reference_model.language: sv`).
+- Validated on `examples/splitter/` (one request stream → two different-typed
+  channels: an 8-bit *sum* and a 1-bit *flag*): the `sum_sb` and `flag_sb`
+  scoreboards each match **30/30 on Xcelium**; breaking one channel's golden model
+  fails only that scoreboard (27/30) while the other stays 30/30, proving they check
+  independently. verible-lint-clean; CI gates it.
 
 **Status — out-of-order matching landed (Accept bar met):**
 - `match: out_of_order` + `match_key:` on a two-stream scoreboard swaps the in-order
