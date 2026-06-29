@@ -212,20 +212,95 @@ def test_monitor_equal_source_rejected():
         _two_stream(monitor="req")  # source is also "req"
 
 
-def test_two_stream_must_be_sole_scoreboard():
-    with pytest.raises(Exception, match="only"):
-        ProjectConfig(
-            project=ProjectMeta(name="t"),
-            dut=DutConfig(name="d"),
-            agents=[_ag("req"), _ag("rsp")],
-            tests=[TConf(name="t1")],
-            analysis=AnalysisConfig(
-                scoreboards=[
-                    ScoreboardSpec(name="a", source="req", monitor="rsp"),
-                    ScoreboardSpec(name="b", source="req"),
-                ]
+def test_multiple_scoreboards_get_per_sb_typed_classes(tmp_path):
+    # Multi-transaction-type: >=2 scoreboards each get their OWN typed predictor/
+    # comparator/scoreboard/reference_model, prefixed <dut>_<sbname>_.
+    cfg = ProjectConfig(
+        project=ProjectMeta(name="t"),
+        dut=DutConfig(name="d"),
+        agents=[_ag("req"), _ag("ra"), _ag("rb")],
+        tests=[TConf(name="t1")],
+        analysis=AnalysisConfig(
+            scoreboards=[
+                ScoreboardSpec(name="sa", source="req", monitor="ra"),
+                ScoreboardSpec(name="sb", source="req", monitor="rb"),
+            ]
+        ),
+    )
+    Generator(cfg).generate_all(tmp_path)
+    # per-scoreboard typed sets exist; the shared <dut>_* set does NOT
+    assert (tmp_path / "d_sa_predictor.svh").exists()
+    assert (tmp_path / "d_sb_scoreboard.svh").exists()
+    assert (tmp_path / "d_sa_reference_model.svh").exists()
+    assert not (tmp_path / "d_predictor.svh").exists()
+    # each predictor typed to its own monitor (output) stream
+    assert (
+        "ra_trans predict(req_trans t)" in (tmp_path / "d_sa_predictor.svh").read_text()
+    )
+    assert (
+        "rb_trans predict(req_trans t)" in (tmp_path / "d_sb_predictor.svh").read_text()
+    )
+    # env instantiates each with its own class; tb_pkg includes each set
+    e = (tmp_path / "d_env.svh").read_text()
+    assert "d_sa_scoreboard sa;" in e
+    assert "d_sb_scoreboard sb;" in e
+    p = (tmp_path / "d_tb_pkg.sv").read_text()
+    assert '`include "d_sa_predictor.svh"' in p
+    assert '`include "d_sb_reference_model.svh"' in p
+
+
+def test_single_two_stream_scoreboard_keeps_dut_prefix(tmp_path):
+    # exactly one scoreboard → the shared <dut>_* set (byte-identical), no _<sbname>_
+    Generator(_two_stream()).generate_all(tmp_path)
+    assert (tmp_path / "d_predictor.svh").exists()
+    assert not list(tmp_path.glob("d_sbd_*.svh"))
+
+
+def _multi(*sbs):
+    return ProjectConfig(
+        project=ProjectMeta(name="t"),
+        dut=DutConfig(name="d"),
+        agents=[_ag("req"), _ag("ra"), _ag("rb")],
+        tests=[TConf(name="t1")],
+        analysis=AnalysisConfig(scoreboards=list(sbs)),
+    )
+
+
+def test_multi_scoreboards_carry_their_own_match(tmp_path):
+    # two scoreboards in one bench, different match strategies → different comparators
+    Generator(
+        _multi(
+            ScoreboardSpec(name="ord", source="req", monitor="ra"),
+            ScoreboardSpec(
+                name="ooo",
+                source="req",
+                monitor="rb",
+                match="out_of_order",
+                match_key="dout",
             ),
         )
+    ).generate_all(tmp_path)
+    assert "exp_pool" not in (tmp_path / "d_ord_comparator.svh").read_text()
+    assert "exp_pool" in (tmp_path / "d_ooo_comparator.svh").read_text()
+
+
+def test_multi_single_stream_scoreboard_typed_to_its_source(tmp_path):
+    # a single-stream scoreboard in a multi bench must type predict() to its OWN
+    # source agent, not agents[0] (regression: the else-branch hardcoded pa).
+    Generator(
+        _multi(
+            ScoreboardSpec(name="ss", source="ra"),  # single-stream, source != pa
+            ScoreboardSpec(name="ts", source="req", monitor="rb"),
+        )
+    ).generate_all(tmp_path)
+    rm = (tmp_path / "d_ss_reference_model.svh").read_text()
+    assert "function ra_trans d_ss_predictor::predict(ra_trans t)" in rm
+    assert "req_trans" not in rm  # not typed to the primary agent
+
+
+def test_scoreboard_illegal_name_rejected():
+    with pytest.raises(Exception, match="scoreboard name"):
+        ScoreboardSpec(name="sum-sb", source="req")  # appears in a class name
 
 
 def test_two_stream_rejects_dpi_c_reference_model():

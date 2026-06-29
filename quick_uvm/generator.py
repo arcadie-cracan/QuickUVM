@@ -11,7 +11,7 @@ from pathlib import Path
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from .merger import merge
-from .models import ProjectConfig, TestConfig
+from .models import ProjectConfig, ScoreboardSpec, TestConfig
 
 # ---------------------------------------------------------------------------
 # Jinja2 environment
@@ -68,6 +68,29 @@ class Generator:
     # Build the ordered list of files to generate
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _sb_set_ctx(base_ctx: dict, cfg: ProjectConfig, sb: ScoreboardSpec) -> dict:
+        """Per-scoreboard render context for a multi-scoreboard bench: its own class
+        prefix (<dut>_<sbname>) plus its source→monitor types and match strategy."""
+        by_name = {a.name: a for a in cfg.agents}
+        in_agent = by_name[sb.source]
+        out_agent = by_name[sb.monitor] if sb.monitor else in_agent
+        return {
+            **base_ctx,
+            "sb_prefix": f"{cfg.dut.name}_{sb.name}",
+            "sb_in_item": in_agent.sequence_item,
+            "sb_out_item": out_agent.sequence_item,
+            "sb_in_agent": in_agent,
+            "sb_out_agent": out_agent,
+            "sb_two_stream": sb.monitor is not None,
+            "sb_match": sb.match,
+            "sb_match_key": sb.match_key,
+            "sb_max_latency": sb.max_latency,
+            "sb_max_lat_time": (
+                sb.max_latency * cfg.clock.period if sb.max_latency else None
+            ),
+        }
+
     def files_to_generate(self) -> list[FileSpec]:
         cfg = self.config
         base_ctx = {
@@ -113,6 +136,12 @@ class Generator:
         max_lat = two_stream_sb.max_latency if two_stream_sb else None
         base_ctx["sb_max_latency"] = max_lat
         base_ctx["sb_max_lat_time"] = max_lat * cfg.clock.period if max_lat else None
+        # Multi-transaction-type: with >=2 scoreboards each gets its OWN typed
+        # predictor/comparator/scoreboard/reference_model, prefixed <dut>_<sbname>.
+        # With <=1 the single set stays <dut>_* (byte-identical).
+        sb_multi = cfg.analysis is not None and len(cfg.analysis.scoreboards) >= 2
+        base_ctx["sb_multi"] = sb_multi
+        base_ctx["sb_prefix"] = cfg.dut.name
 
         specs: list[FileSpec] = []
 
@@ -144,15 +173,24 @@ class Generator:
             specs.append(FileSpec("agent_agent.svh.j2", f"{agent.name}_agent.svh", ctx))
             specs.append(FileSpec("agent_cover.svh.j2", f"{agent.name}_cov.svh", ctx))
 
-        # ---- scoreboard (prefixed by the DUT/block name) -----------------
+        # ---- scoreboard(s) (prefixed by the DUT/block name) --------------
         dut = cfg.dut.name
-        specs.append(FileSpec("sb_predictor.svh.j2", f"{dut}_predictor.svh", base_ctx))
-        specs.append(
-            FileSpec("sb_comparator.svh.j2", f"{dut}_comparator.svh", base_ctx)
-        )
-        specs.append(
-            FileSpec("tb_scoreboard.svh.j2", f"{dut}_scoreboard.svh", base_ctx)
-        )
+        # Each scoreboard "set" is a (predictor, comparator, scoreboard) triple typed
+        # to one source→monitor pair. With <=1 effective scoreboard the set is named
+        # <dut>_* (base_ctx, byte-identical). With >=2, one <dut>_<sbname>_* set per
+        # scoreboard, each carrying its own types/match.
+        if sb_multi:
+            assert cfg.analysis is not None  # sb_multi implies an analysis block
+            sb_sets = [
+                self._sb_set_ctx(base_ctx, cfg, sb) for sb in cfg.analysis.scoreboards
+            ]
+        else:
+            sb_sets = [base_ctx]
+        for sbx in sb_sets:
+            p = sbx["sb_prefix"]
+            specs.append(FileSpec("sb_predictor.svh.j2", f"{p}_predictor.svh", sbx))
+            specs.append(FileSpec("sb_comparator.svh.j2", f"{p}_comparator.svh", sbx))
+            specs.append(FileSpec("tb_scoreboard.svh.j2", f"{p}_scoreboard.svh", sbx))
 
         # ---- environment -------------------------------------------------
         specs.append(FileSpec("env_config.svh.j2", f"{dut}_env_cfg.svh", base_ctx))
@@ -224,8 +262,18 @@ class Generator:
                     )
                 )
 
-        # ---- reference model: SV predict() body, or DPI-C bridge + C stub (K0)
-        if cfg.reference_model.language == "c":
+        # ---- reference model(s): SV predict() body, or DPI-C bridge + C stub (K0).
+        # Multi-scoreboard is two-stream → SV only (one predict per pair).
+        if sb_multi:
+            for sbx in sb_sets:
+                specs.append(
+                    FileSpec(
+                        "sb_reference_model.svh.j2",
+                        f"{sbx['sb_prefix']}_reference_model.svh",
+                        sbx,
+                    )
+                )
+        elif cfg.reference_model.language == "c":
             specs.append(
                 FileSpec(
                     "sb_reference_model_dpi.svh.j2",
