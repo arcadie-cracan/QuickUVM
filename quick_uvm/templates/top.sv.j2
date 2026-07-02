@@ -9,7 +9,11 @@
 `include "uvm_macros.svh"
 module tb_top;
   import uvm_pkg::*;
+{% if layout == 'packaged' %}
+  import {{ dut.name }}_test_pkg::*;
+{% else %}
   import {{ dut.name }}_tb_pkg::*;
+{% endif %}
 
   logic clk;
 {% if dut.external_reset %}

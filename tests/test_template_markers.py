@@ -258,6 +258,9 @@ CONFIGS = {
             scoreboards=[ScoreboardSpec(name="sbd", source="req", monitor="rsp")]
         ),
     ),
+    # F2 — packaged layout exercises the per-package pragma markers (custom imports
+    # in each package, sequences_additional in agent/env, *_extra_files in the .f's).
+    "packaged": _cfg(agents=[_agent("a0"), _agent("a1")], layout="packaged"),
 }
 
 

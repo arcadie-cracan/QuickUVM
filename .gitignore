@@ -48,3 +48,12 @@ dvt_build.log
 **/sim/waves.shm/
 **/sim/cov_work/
 **/sim/*.key
+
+# Xcelium artifacts can also land in gen/ (the F2 packaged example compiles the
+# per-package .f filelists from there) — keep the generated .sv/.svh/.f.
+**/gen/xcelium.d/
+**/gen/INCA_libs/
+**/gen/*.log
+**/gen/*.history
+**/gen/*.shm/
+**/gen/.simvision/

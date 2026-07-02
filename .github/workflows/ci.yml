@@ -159,3 +159,14 @@ jobs:
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_splitter/*.sv gen_splitter/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/splitter/rtl/splitter.sv
+
+      # Gate the F2 packaged-layout path: the vip example emits a standalone
+      # <agent>_pkg, a <dut>_env_pkg, and a <dut>_test_pkg (+ per-package .f files)
+      # instead of the flat <dut>_tb_pkg.
+      - name: Generate the packaged-layout example (F2)
+        run: quick-uvm generate -c examples/vip/vip.yaml -o gen_vip
+
+      - name: Verible lint (packaged-layout generated SV/SVH + DUT)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_vip/*.sv gen_vip/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/vip/rtl/vip.sv

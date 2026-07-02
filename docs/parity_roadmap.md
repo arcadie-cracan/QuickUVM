@@ -359,10 +359,23 @@ field-derived coverage, multi-agent coordination, and a bring-your-own golden mo
 
 ## Priority tier 2 — reuse / architecture
 
-### F2 — VIP package restructuring
+### F2 — VIP package restructuring — DONE
 `layout: flat | packaged`. `packaged`: standalone `<agent>_pkg`, `<env>_pkg`, thin bench,
 per-package `.f`. Unlocks separate compilation, versioning, and cross-project reuse.
-**Accept:** `<agent>_pkg` compiles standalone; `layout: flat` stays byte-identical.
+**Accept:** `<agent>_pkg` compiles standalone; `layout: flat` stays byte-identical. ✅
+
+**Status — landed:**
+- `layout: packaged` splits the flat `<dut>_tb_pkg` along its dependency seams into a
+  standalone `<agent>_pkg` per agent (the reusable VIP — imports only `uvm_pkg` + the
+  interface), a `<dut>_env_pkg` (scoreboard + env, imports the agent packages), and a
+  `<dut>_test_pkg` (the tests, imports the env). Each gets its own `.f` filelist
+  (`<agent>_pkg.f`, `<dut>_env_pkg.f`, `<dut>_test_pkg.f`) chained via `-f`, and the
+  bench (`tb_top`) just imports the test package. `layout: flat` (default) keeps the
+  single `<dut>_tb_pkg` + `pkg.f` — **byte-identical** (the per-component `.svh` files
+  are unchanged; only their grouping into packages differs).
+- Validated on `examples/vip/`: the agent VIP compiles **standalone**
+  (`xrun -uvm -compile -f io_pkg.f` → 0 errors, the Accept criterion), and the full
+  packaged bench runs **51/51 on Xcelium**. verible-lint-clean; CI gates it.
 
 ### C3 — Parameterization
 `parameters:` at interface/agent/env/bench; param refs in field widths; `#(...)` threaded
