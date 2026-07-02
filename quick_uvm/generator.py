@@ -78,8 +78,8 @@ class Generator:
         return {
             **base_ctx,
             "sb_prefix": f"{cfg.dut.name}_{sb.name}",
-            "sb_in_item": in_agent.sequence_item,
-            "sb_out_item": out_agent.sequence_item,
+            "sb_in_item": in_agent.sequence_item + in_agent.param_args_values,
+            "sb_out_item": out_agent.sequence_item + out_agent.param_args_values,
             "sb_in_agent": in_agent,
             "sb_out_agent": out_agent,
             "sb_two_stream": sb.monitor is not None,
@@ -125,8 +125,15 @@ class Generator:
         else:
             sb_in_agent = pa
             sb_out_agent = pa
-        base_ctx["sb_in_item"] = sb_in_agent.sequence_item
-        base_ctx["sb_out_item"] = sb_out_agent.sequence_item
+        # C3: the scoreboard connects to the agent's ap at concrete param values, so
+        # its expected/actual type is the parameterized transaction (io_seq_item#(8));
+        # param_args_values is empty for a non-parameterized agent → byte-identical.
+        base_ctx["sb_in_item"] = (
+            sb_in_agent.sequence_item + sb_in_agent.param_args_values
+        )
+        base_ctx["sb_out_item"] = (
+            sb_out_agent.sequence_item + sb_out_agent.param_args_values
+        )
         base_ctx["sb_in_agent"] = sb_in_agent
         base_ctx["sb_out_agent"] = sb_out_agent
         base_ctx["sb_two_stream"] = two_stream_sb is not None

@@ -6,10 +6,10 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-class {{ agent.name }}_cov extends uvm_subscriber #({{ agent.sequence_item }});
-  `uvm_component_utils({{ agent.name }}_cov)
+class {{ agent.name }}_cov{{ agent.param_decl }} extends uvm_subscriber #({{ agent.sequence_item }}{{ agent.param_args }});
+  `uvm_component_{{ 'param_' if agent.parameters else '' }}utils({{ agent.name }}_cov{{ agent.param_args }})
 
-  {{ agent.sequence_item }} tr;
+  {{ agent.sequence_item }}{{ agent.param_args }} tr;
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -88,7 +88,7 @@ class {{ agent.name }}_cov extends uvm_subscriber #({{ agent.sequence_item }});
     cg = new();
   endfunction
 
-  function void write ({{ agent.sequence_item }} t);
+  function void write ({{ agent.sequence_item }}{{ agent.param_args }} t);
     tr = t;
     `uvm_info("{{ agent.name }}_cov", "Taking covergroup sample ...", UVM_FULL)
     cg.sample();

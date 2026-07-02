@@ -37,10 +37,10 @@ typedef struct packed {
 {% endfor %}
 {% endif %}
 {% endfor %}
-class {{ agent.sequence_item }} extends uvm_sequence_item;
+class {{ agent.sequence_item }}{{ agent.param_decl }} extends uvm_sequence_item;
 {% if agent.seq_item_style == 'field_macros' %}
   // Field macro style (transy.svh pattern)
-  `uvm_object_utils_begin({{ agent.sequence_item }})
+  `uvm_object_{{ 'param_' if agent.parameters else '' }}utils_begin({{ agent.sequence_item }}{{ agent.param_args }})
 {% for port in agent.output_ports %}
 {% if port.enum %}
     `uvm_field_enum({{ port.name }}_e, {{ port.name }}, UVM_ALL_ON | UVM_NOCOMPARE)
@@ -66,7 +66,7 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
 {% endfor %}
   `uvm_object_utils_end
 {% else %}
-  `uvm_object_utils({{ agent.sequence_item }})
+  `uvm_object_{{ 'param_' if agent.parameters else '' }}utils({{ agent.sequence_item }}{{ agent.param_args }})
 {% endif %}
 
   // Output fields (not randomized — sampled from DUT)
@@ -74,7 +74,7 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
 {% if port.is_typed %}
        {{ port.sv_type }} {{ port.name }};
 {% else %}
-       logic {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
+       logic {{ port.sv_span }}{{ port.name }};
 {% endif %}
 {% endfor %}
 
@@ -84,13 +84,13 @@ class {{ agent.sequence_item }} extends uvm_sequence_item;
 {% if port.is_typed %}
   rand {{ port.sv_type }} {{ port.name }};
 {% else %}
-  rand bit {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
+  rand bit {{ port.sv_span }}{{ port.name }};
 {% endif %}
 {% else %}
 {% if port.is_typed %}
        {{ port.sv_type }} {{ port.name }};
 {% else %}
-       bit {% if port.width > 1 %}[{{ port.width - 1 }}:0] {% endif %}{{ port.name }};
+       bit {{ port.sv_span }}{{ port.name }};
 {% endif %}
 {% endif %}
 {% endfor %}

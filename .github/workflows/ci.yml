@@ -170,3 +170,14 @@ jobs:
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_vip/*.sv gen_vip/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/vip/rtl/vip.sv
+
+      # Gate the C3 parameterized-VIP path: the pwidth example makes the agent's
+      # interface + all UVM classes #(W)-parameterized (uvm_*_param_utils, a
+      # parameterized virtual interface / config_db), with port widths referencing W.
+      - name: Generate the parameterized-VIP example (C3)
+        run: quick-uvm generate -c examples/pwidth/pwidth.yaml -o gen_pwidth
+
+      - name: Verible lint (parameterized-VIP generated SV/SVH + DUT)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_pwidth/*.sv gen_pwidth/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/pwidth/rtl/pwidth.sv

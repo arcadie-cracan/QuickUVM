@@ -226,6 +226,9 @@ def _collect_struct_typedefs(members: list[StructMember], prefix: str) -> list[d
 class PortConfig(BaseModel):
     name: str
     width: int = 1
+    # C3 — parameterized width: this scalar port's width is the named agent parameter
+    # (e.g. width_param: W -> `logic [W-1:0]`). Scalar only (no enum/struct/packed).
+    width_param: str | None = None
     randomize: bool = True  # only meaningful for input ports
     # S1 — rand_mode: when false the field is still declared `rand` (so it CAN be
     # randomized) but its rand_mode is disabled by default in the transaction's
@@ -297,6 +300,18 @@ class PortConfig(BaseModel):
                 f"— the total bit width is derived from the composite (got width="
                 f"{self.width})."
             )
+        # C3 — a parameterized-width port is a plain scalar (the width is symbolic).
+        if self.width_param is not None:
+            _check_sv_identifier(self.width_param, f"port '{self.name}' width_param")
+            if self.enum or self.type or self.packed_dims or self.struct:
+                raise ValueError(
+                    f"port '{self.name}': width_param is only for a scalar port "
+                    f"(not enum/type/packed_dims/struct)."
+                )
+            if self.width != 1:
+                raise ValueError(
+                    f"port '{self.name}': set width_param OR width, not both."
+                )
         return self
 
     @model_validator(mode="after")
@@ -346,6 +361,16 @@ class PortConfig(BaseModel):
         if self.struct:
             return sum(m.bit_width for m in self.struct)
         return self.width
+
+    @property
+    def sv_span(self) -> str:
+        """Declaration span, e.g. ``[7:0] `` (with a trailing space) or ``[W-1:0] ``
+        for a parameterized width (C3); empty for a 1-bit scalar. Used for the raw
+        interface signal and the scalar transaction field."""
+        if self.width_param:
+            return f"[{self.width_param}-1:0] "
+        w = self.bit_width
+        return f"[{w - 1}:0] " if w > 1 else ""
 
     @property
     def sv_type(self) -> str:
@@ -568,6 +593,24 @@ class VseqConfig(BaseModel):
         return self
 
 
+class ParamConfig(BaseModel):
+    """C3 — a SystemVerilog parameter on an agent VIP (e.g. a data width).
+
+    Makes the agent's interface AND all its UVM classes parameterized `#(...)`, so
+    the same VIP can be reused at different widths. Port widths reference it via
+    `width_param`. Opt-in: an agent with no `parameters` is byte-identical.
+    """
+
+    name: str
+    type: str = "int"
+    default: int
+
+    @model_validator(mode="after")
+    def _check(self) -> ParamConfig:
+        _check_sv_identifier(self.name, "parameter name")
+        return self
+
+
 class AgentConfig(BaseModel):
     name: str
     interface: str
@@ -584,6 +627,36 @@ class AgentConfig(BaseModel):
     # Needed for valid-qualified streams (e.g. a two-stream req/rsp scoreboard) so
     # idle/pipeline-fill cycles don't enter the scoreboard. None → emit every cycle.
     emit_when: str | None = None
+    # C3 — SystemVerilog parameters (opt-in, byte-identical when empty). Make the
+    # interface + all UVM classes of this agent `#(...)`-parameterized.
+    parameters: list[ParamConfig] = Field(default_factory=list)
+
+    @property
+    def param_decl(self) -> str:
+        """The `#(...)` formal parameter declaration, e.g. ` #(parameter int W = 8)`;
+        empty when the agent has no parameters (byte-identical)."""
+        if not self.parameters:
+            return ""
+        inner = ", ".join(
+            f"parameter {p.type} {p.name} = {p.default}" for p in self.parameters
+        )
+        return f" #({inner})"
+
+    @property
+    def param_args(self) -> str:
+        """The `#(W)` formal reference (parameter names) used inside the parameterized
+        classes when they name each other's types; empty when unparameterized."""
+        if not self.parameters:
+            return ""
+        return "#(" + ", ".join(p.name for p in self.parameters) + ")"
+
+    @property
+    def param_args_values(self) -> str:
+        """The `#(8)` concrete reference (default values) used by the env/top to
+        instantiate the VIP; empty when unparameterized."""
+        if not self.parameters:
+            return ""
+        return "#(" + ", ".join(str(p.default) for p in self.parameters) + ")"
 
     @property
     def input_ports(self) -> list[PortConfig]:
@@ -760,6 +833,17 @@ class AgentConfig(BaseModel):
                         f"'{step}' is itself nested — only non-nested sequences may "
                         f"be composed (avoids cycles)."
                     )
+        # C3 — parameters: unique names; a port width_param must name a declared one.
+        pnames = [p.name for p in self.parameters]
+        if len(pnames) != len(set(pnames)):
+            raise ValueError(f"agent '{self.name}': duplicate parameter name.")
+        for p in self.input_ports + self.output_ports:
+            if p.width_param is not None and p.width_param not in pnames:
+                raise ValueError(
+                    f"agent '{self.name}': port '{p.name}' width_param "
+                    f"'{p.width_param}' is not a declared parameter of this agent "
+                    f"(parameters: {pnames})."
+                )
         return self
 
 
@@ -1344,6 +1428,43 @@ class ProjectConfig(BaseModel):
                 raise ValueError(
                     f"register_model.bus_agent references unknown agent "
                     f"'{self.register_model.bus_agent}'."
+                )
+        # C3 — a parameterized agent is not yet wired through every path. Fail closed
+        # on the combinations that would generate a concrete (non-parameterized) width.
+        param_agents = {a.name for a in self.agents if a.parameters}
+        if param_agents:
+            if self.reference_model.language != "sv":
+                raise ValueError(
+                    "a parameterized agent requires reference_model.language 'sv' "
+                    "(DPI-C marshaling needs concrete field widths)."
+                )
+            for cm in self.coverage_models:
+                if cm.agent in param_agents:
+                    raise ValueError(
+                        f"coverage_models on the parameterized agent '{cm.agent}' are "
+                        f"not supported yet (covergroups need concrete widths)."
+                    )
+            if self.analysis is not None:
+                for ag in self.analysis.coverage:
+                    if ag in param_agents:
+                        raise ValueError(
+                            f"a parameterized agent ('{ag}') in analysis.coverage is "
+                            f"not supported yet."
+                        )
+            if self.effective_virtual_sequences:
+                raise ValueError(
+                    "parameterized agents + virtual sequences are not supported yet "
+                    "(the vseq classes are not parameterized) — set "
+                    "auto_virtual_sequences: false or avoid vseqs."
+                )
+            if (
+                self.register_model is not None
+                and self.register_model.bus_agent in param_agents
+            ):
+                raise ValueError(
+                    f"a parameterized register_model.bus_agent "
+                    f"('{self.register_model.bus_agent}') is not supported yet "
+                    f"(the RAL adapter/predictor need a concrete transaction type)."
                 )
         if self.dut.external_reset:
             if not self.dut.reset:
