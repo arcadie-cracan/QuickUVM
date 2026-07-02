@@ -1257,6 +1257,11 @@ class ProjectConfig(BaseModel):
     # base sequence (the "add a vsqr as a habit" convention). Set false to opt out.
     auto_virtual_sequences: bool = True
     auto_vseq_mode: Literal["parallel", "sequential"] = "parallel"
+    # F2 — VIP packaging. 'flat' (default): one <dut>_tb_pkg with everything
+    # (byte-identical). 'packaged': a standalone <agent>_pkg per agent, a
+    # <dut>_env_pkg, and a <dut>_test_pkg, with per-package .f filelists — for
+    # separate compilation and cross-project reuse of the agent VIP.
+    layout: Literal["flat", "packaged"] = "flat"
 
     @model_validator(mode="after")
     def validate_agents(self) -> ProjectConfig:

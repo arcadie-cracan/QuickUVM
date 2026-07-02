@@ -1,5 +1,9 @@
 -timescale 1{{ clock.unit }}/1{{ clock.unit }}
+{% if layout == 'packaged' %}
+-f {{ dut.name }}_test_pkg.f
+{% else %}
 -f pkg.f
+{% endif %}
 +incdir+..
 clkgen.sv
 {{ dut.name }}.sv

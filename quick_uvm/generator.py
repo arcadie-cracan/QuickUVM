@@ -105,6 +105,7 @@ class Generator:
             "virtual_sequences": cfg.effective_virtual_sequences,
             "auto_vseq": cfg.auto_vseq_name,
             "reference_model": cfg.reference_model,
+            "layout": cfg.layout,
         }
 
         # A2 — scoreboard stream types. Single-stream (default): predict(pa) -> pa
@@ -293,10 +294,22 @@ class Generator:
                 )
             )
 
-        # ---- top + package + filelists -----------------------------------
+        # ---- top + package(s) + filelists --------------------------------
         specs.append(FileSpec("top.sv.j2", "tb_top.sv", base_ctx))
-        specs.append(FileSpec("tb_pkg.sv.j2", f"{dut}_tb_pkg.sv", base_ctx))
-        specs.append(FileSpec("pkg.f.j2", "pkg.f", base_ctx))
+        if cfg.layout == "packaged":
+            # F2: a standalone <agent>_pkg per agent + a <dut>_env_pkg + a
+            # <dut>_test_pkg, each with its own .f filelist.
+            for agent in cfg.agents:
+                actx = {**base_ctx, "agent": agent}
+                specs.append(FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx))
+                specs.append(FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx))
+            specs.append(FileSpec("env_pkg.sv.j2", f"{dut}_env_pkg.sv", base_ctx))
+            specs.append(FileSpec("env_pkg.f.j2", f"{dut}_env_pkg.f", base_ctx))
+            specs.append(FileSpec("test_pkg.sv.j2", f"{dut}_test_pkg.sv", base_ctx))
+            specs.append(FileSpec("test_pkg.f.j2", f"{dut}_test_pkg.f", base_ctx))
+        else:
+            specs.append(FileSpec("tb_pkg.sv.j2", f"{dut}_tb_pkg.sv", base_ctx))
+            specs.append(FileSpec("pkg.f.j2", "pkg.f", base_ctx))
         specs.append(FileSpec("run.f.j2", "run.f", base_ctx))
 
         return specs

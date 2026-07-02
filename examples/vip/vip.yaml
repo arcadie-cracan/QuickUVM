@@ -1,0 +1,37 @@
+# vip — QuickUVM F2: the PACKAGED testbench layout.
+#
+# layout: packaged splits the flat <dut>_tb_pkg into a standalone agent VIP package
+# per agent (io_pkg), a vip_env_pkg (scoreboard + env, imports the agent pkgs), and a
+# vip_test_pkg (the tests, imports the env), each with its own .f filelist. The agent
+# VIP compiles on its own (xrun -uvm -f gen/io_pkg.f) and is reusable across projects.
+project:
+  name: vip
+  author: QuickUVM
+  year: 2026
+
+layout: packaged
+
+dut:
+  name: vip
+  clock: clk
+  reset: ''
+  combinational: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: io
+    interface: io_if
+    sequence_item: io_seq_item
+    seq_item_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: din,  width: 8}
+      outputs:
+        - {name: dout, width: 8}
+
+tests:
+  - {name: rand_test, num_items: 50}

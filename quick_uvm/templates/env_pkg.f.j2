@@ -1,0 +1,14 @@
+// Environment package filelist (F2): the agent VIPs + the env package.
+// Paths are relative to this gen/ directory.
++incdir+.
+{% for agent in agents %}
+-f {{ agent.name }}_pkg.f
+{% endfor %}
+{% if register_model %}
+// The env imports {{ register_model.package }} (external, e.g. reggen) — list its
+// source in the block below so it compiles before the env package.
+{% endif %}
+// Extra sources the env package needs, compiled before it (preserved on regen):
+// pragma quickuvm custom env_pkg_extra_files begin
+// pragma quickuvm custom env_pkg_extra_files end
+{{ dut.name }}_env_pkg.sv
