@@ -41,6 +41,15 @@ package {{ dut.name }}_tb_pkg;
   `include "{{ agent.name }}_agent.svh"
 {% endfor %}
 
+{% if has_instances %}
+  // Scoreboards (one typed set per instance)
+{% for inst in instances %}
+{% set p = dut.name ~ '_' ~ inst.name %}
+  `include "{{ p }}_predictor.svh"
+  `include "{{ p }}_comparator.svh"
+  `include "{{ p }}_scoreboard.svh"
+{% endfor %}
+{% else %}
   // Scoreboard{{ 's (one typed set per scoreboard)' if sb_multi else '' }}
 {% if sb_multi %}
 {% for sb in analysis.scoreboards %}
@@ -53,6 +62,7 @@ package {{ dut.name }}_tb_pkg;
   `include "{{ dut.name }}_predictor.svh"
   `include "{{ dut.name }}_comparator.svh"
   `include "{{ dut.name }}_scoreboard.svh"
+{% endif %}
 {% endif %}
 
   // Environment
@@ -97,7 +107,11 @@ package {{ dut.name }}_tb_pkg;
 {% endif %}
 
   // Scoreboard expected-value calculator (extern function body)
-{% if sb_multi %}
+{% if has_instances %}
+{% for inst in instances %}
+  `include "{{ dut.name }}_{{ inst.name }}_reference_model.svh"
+{% endfor %}
+{% elif sb_multi %}
 {% for sb in analysis.scoreboards %}
   `include "{{ dut.name }}_{{ sb.name }}_reference_model.svh"
 {% endfor %}

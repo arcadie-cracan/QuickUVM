@@ -37,11 +37,39 @@ module tb_top;
 {% endif %}
 
   // Instantiate interfaces
+{% if has_instances %}
+{% for inst in instances %}
+  {{ inst.agent.interface }}{{ inst.pav }} {{ inst.if_inst }} ({% if dut.external_reset %}.clk(clk), .{{ dut.reset }}({{ dut.reset }}){% else %}clk{% endif %});
+{% endfor %}
+{% else %}
 {% for agent in agents %}
   {{ agent.interface }}{{ agent.param_args_values }} {{ agent.interface }}_inst ({% if dut.external_reset %}.clk(clk), .{{ dut.reset }}({{ dut.reset }}){% else %}clk{% endif %});
 {% endfor %}
+{% endif %}
 
   // pragma quickuvm custom dut_connections begin
+{% if has_instances %}
+  // Instantiate one DUT per instance, each at its own width
+{% for inst in instances %}
+  {{ dut.name }}{{ inst.pav }} {{ inst.dut_inst }} (
+{% if dut.combinational %}
+{% for kind, port in inst.agent.all_ports %}
+    .{{ port.name }}({{ inst.if_inst }}.{{ port.name }}){{ "," if not loop.last else "" }}
+{% endfor %}
+{% else %}
+{% for port in inst.agent.output_ports %}
+    .{{ port.name }}({{ inst.if_inst }}.{{ port.name }}),
+{% endfor %}
+{% for port in inst.agent.input_ports %}
+    .{{ port.name }}({{ inst.if_inst }}.{{ port.name }}),
+{% endfor %}
+    .{{ dut.clock }}(clk){% if dut.reset %},
+    .{{ dut.reset }}({{ inst.if_inst }}.{{ dut.reset }}){% endif %}
+
+{% endif %}
+  );
+{% endfor %}
+{% else %}
   // Instantiate DUT — connect to interface signals hierarchically
   {{ dut.name }} dut_inst (
 {% if dut.combinational %}
@@ -69,12 +97,19 @@ module tb_top;
     .{{ dut.reset }}({{ agents[0].interface }}_inst.{{ dut.reset }}){% endif %}
 {% endif %}
   );
+{% endif %}
   // pragma quickuvm custom dut_connections end
 
   initial begin
+{% if has_instances %}
+{% for inst in instances %}
+    uvm_config_db#(virtual {{ inst.agent.interface }}{{ inst.pav }})::set(null, "*", "{{ inst.vif_key }}", {{ inst.if_inst }});
+{% endfor %}
+{% else %}
 {% for agent in agents %}
     uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::set(null, "*", "{{ agent.interface }}_vif", {{ agent.interface }}_inst);
 {% endfor %}
+{% endif %}
     run_test();
   end
 endmodule

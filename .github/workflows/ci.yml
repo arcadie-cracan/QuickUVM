@@ -181,3 +181,14 @@ jobs:
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_pwidth/*.sv gen_pwidth/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/pwidth/rtl/pwidth.sv
+
+      # Gate the C3 multi-instantiation path: the twowidth example instantiates ONE
+      # parameterized VIP twice (io8 at W=8, io16 at W=16) in a single bench — two
+      # interfaces, two DUTs, two agents and a concrete scoreboard set per instance.
+      - name: Generate the multi-instantiation example (C3)
+        run: quick-uvm generate -c examples/twowidth/twowidth.yaml -o gen_twowidth
+
+      - name: Verible lint (multi-instantiation generated SV/SVH + DUT)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_twowidth/*.sv gen_twowidth/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/twowidth/rtl/twowidth.sv

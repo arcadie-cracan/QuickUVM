@@ -141,7 +141,7 @@ class {{ agent.sequence_item }}{{ agent.param_decl }} extends uvm_sequence_item;
 
 {% if agent.seq_item_style == 'manual' %}
   function void do_copy(uvm_object rhs);
-    {{ agent.sequence_item }} tr;
+    {{ agent.sequence_item }}{{ agent.param_args }} tr;
     if(!$cast(tr, rhs)) `uvm_fatal("{{ agent.sequence_item }}", "ILLEGAL do_copy() cast")
     super.do_copy(rhs);
 {% for port in agent.output_ports %}
@@ -159,7 +159,7 @@ class {{ agent.sequence_item }}{{ agent.param_decl }} extends uvm_sequence_item;
   endfunction
 
   function bit do_compare(uvm_object rhs, uvm_comparer comparer);
-    {{ agent.sequence_item }} tr;
+    {{ agent.sequence_item }}{{ agent.param_args }} tr;
     bit eq;
     if(!$cast(tr, rhs)) `uvm_fatal("{{ agent.sequence_item }}", "ILLEGAL do_compare() cast")
     eq  = super.do_compare(rhs, comparer);
