@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-class {{ agent.name }}_seq extends uvm_sequence #({{ agent.sequence_item }});
-  `uvm_object_utils({{ agent.name }}_seq)
+class {{ agent.name }}_seq{{ agent.param_decl }} extends uvm_sequence #({{ agent.sequence_item }}{{ agent.param_args }});
+  `uvm_object_{{ 'param_' if agent.parameters else '' }}utils({{ agent.name }}_seq{{ agent.param_args }})
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -17,12 +17,12 @@ class {{ agent.name }}_seq extends uvm_sequence #({{ agent.sequence_item }});
   endfunction
 
   task body;
-    {{ agent.sequence_item }} tr = {{ agent.sequence_item }}::type_id::create("tr");
+    {{ agent.sequence_item }}{{ agent.param_args }} tr = {{ agent.sequence_item }}{{ agent.param_args }}::type_id::create("tr");
     `uvm_info("body", "{{ agent.name }}_seq: about to start do_item loop", UVM_FULL)
     repeat({{ test.num_items }}) do_item(tr);
   endtask
 
-  task do_item ({{ agent.sequence_item }} tr);
+  task do_item ({{ agent.sequence_item }}{{ agent.param_args }} tr);
     `uvm_info("do_item", "executing", UVM_FULL)
     start_item(tr);
     if (!(tr.randomize() with {

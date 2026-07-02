@@ -1,0 +1,36 @@
+# pwidth — QuickUVM C3: a width-parameterized agent VIP.
+#
+# `parameters:` on the agent makes its interface AND all UVM classes #(W)-
+# parameterized; the port widths reference W via `width_param`. The whole VIP is
+# reusable at any width. Opt-in: an agent with no `parameters` is byte-identical.
+project:
+  name: pwidth
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: pwidth
+  clock: clk
+  reset: ''
+  combinational: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: io
+    interface: io_if
+    sequence_item: io_seq_item
+    seq_item_style: manual
+    active: true
+    parameters:
+      - {name: W, default: 8}   # data width
+    ports:
+      inputs:
+        - {name: din,  width_param: W}
+      outputs:
+        - {name: dout, width_param: W}
+
+tests:
+  - {name: rand_test, num_items: 50}

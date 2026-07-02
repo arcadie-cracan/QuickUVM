@@ -6,12 +6,12 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-class {{ agent.name }}_monitor extends uvm_monitor;
-  `uvm_component_utils({{ agent.name }}_monitor)
+class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
+  `uvm_component_{{ 'param_' if agent.parameters else '' }}utils({{ agent.name }}_monitor{{ agent.param_args }})
 
-  virtual {{ agent.interface }} vif;
+  virtual {{ agent.interface }}{{ agent.param_args }} vif;
 
-  uvm_analysis_port #({{ agent.sequence_item }}) ap;
+  uvm_analysis_port #({{ agent.sequence_item }}{{ agent.param_args }}) ap;
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -26,7 +26,7 @@ class {{ agent.name }}_monitor extends uvm_monitor;
   endfunction
 
   task run_phase(uvm_phase phase);
-    {{ agent.sequence_item }} tr;
+    {{ agent.sequence_item }}{{ agent.param_args }} tr;
 {% if dut.external_reset %}
     // Reset is driven externally: do not emit transactions until it deasserts, then
     // resync to the clock grid (sample_dut() assumes it starts at a posedge clk).
@@ -44,9 +44,9 @@ class {{ agent.name }}_monitor extends uvm_monitor;
     end
   endtask
 
-  task sample_dut (output {{ agent.sequence_item }} tr);
-    {{ agent.sequence_item }} t;
-    t = {{ agent.sequence_item }}::type_id::create("t");
+  task sample_dut (output {{ agent.sequence_item }}{{ agent.param_args }} tr);
+    {{ agent.sequence_item }}{{ agent.param_args }} t;
+    t = {{ agent.sequence_item }}{{ agent.param_args }}::type_id::create("t");
 {% if dut.combinational %}
     //---------------------------------------------
     // Combinational DUT (0-cycle latency): one race-free snapshot of inputs AND

@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-class {{ agent.name }}_sequencer extends uvm_sequencer #({{ agent.sequence_item }});
-  `uvm_component_utils({{ agent.name }}_sequencer)
+class {{ agent.name }}_sequencer{{ agent.param_decl }} extends uvm_sequencer #({{ agent.sequence_item }}{{ agent.param_args }});
+  `uvm_component_{{ 'param_' if agent.parameters else '' }}utils({{ agent.name }}_sequencer{{ agent.param_args }})
 
   function new (string name, uvm_component parent);
     super.new(name, parent);

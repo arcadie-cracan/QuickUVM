@@ -9,15 +9,19 @@
 {% if test.vseq %}
 {% set seq_type = test.vseq %}
 {% set seq_start = 'e.vsqr' %}
+{% set seq_params = '' %}
 {% elif test.sequence %}
 {% set seq_type = test.sequence.name %}
 {% set seq_start = 'e.' ~ test.sequence.agent ~ '_agnt.sqr' %}
+{% set seq_params = (agents | selectattr('name', 'equalto', test.sequence.agent) | first).param_args_values %}
 {% elif auto_vseq %}
 {% set seq_type = auto_vseq %}
 {% set seq_start = 'e.vsqr' %}
+{% set seq_params = '' %}
 {% else %}
 {% set seq_type = pa.name ~ '_seq' %}
 {% set seq_start = 'e.' ~ pa.name ~ '_agnt.sqr' %}
+{% set seq_params = pa.param_args_values %}
 {% endif %}
 
 class {{ test.name }} extends {{ dut.name }}_base_test;
@@ -34,8 +38,8 @@ class {{ test.name }} extends {{ dut.name }}_base_test;
   endfunction
 
   task run_phase(uvm_phase phase);
-    {{ seq_type }} seq;
-    seq = {{ seq_type }}::type_id::create("seq");
+    {{ seq_type }}{{ seq_params }} seq;
+    seq = {{ seq_type }}{{ seq_params }}::type_id::create("seq");
 {% if test.sequence and test.sequence.count %}
     seq.count = {{ test.sequence.count }};   // per-test count override (S2)
 {% endif %}

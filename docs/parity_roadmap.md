@@ -382,6 +382,23 @@ per-package `.f`. Unlocks separate compilation, versioning, and cross-project re
 via Jinja macros.
 **Accept:** one agent reused at two widths.
 
+**Status — first slice landed (parameterized VIP machinery):**
+- `parameters:` on an agent (e.g. `{name: W, default: 8}`) make its interface AND all
+  its UVM classes `#(...)`-parameterized (transaction, driver, monitor, sequencer,
+  agent, cfg, cover, sequences — with `uvm_*_param_utils` and a parameterized
+  `virtual <if>#(W)` / `config_db`). Port widths reference a parameter via
+  `width_param: W` (`logic [W-1:0]`). The env/top instantiate the VIP at concrete
+  default values (`io_agent#(8)`, `virtual io_if#(8)`), and the scoreboard types on
+  the parameterized transaction (`io_seq_item#(8)`). **Opt-in: an agent with no
+  `parameters` is byte-identical** (verified zero diffs across all examples).
+- Fail-closed validation: `width_param` names a declared parameter and is scalar-only
+  (no enum/struct/packed); parameter names are unique/legal SV identifiers.
+- Validated on `examples/pwidth/`: the parameterized VIP compiles and runs on Xcelium
+  at **W=8 and W=16 (51/51 each)** — genuinely width-flexible, not fixed. verible-lint-
+  clean; CI gates it.
+- *Next slice:* two instances of the VIP at different widths in **one** bench (the
+  multi-instantiation config) — the literal Accept ("one agent reused at two widths").
+
 ### H1 — Sub-environments
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.
 **Accept:** a subsystem env composes ≥2 block envs.

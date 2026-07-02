@@ -7,8 +7,8 @@
 //----------------------------------------------------------------------
 // S2 library sequence — kind '{{ sequence.kind }}' for agent '{{ agent.name }}'.
 
-class {{ sequence.name }} extends uvm_sequence #({{ agent.sequence_item }});
-  `uvm_object_utils({{ sequence.name }})
+class {{ sequence.name }}{{ agent.param_decl }} extends uvm_sequence #({{ agent.sequence_item }}{{ agent.param_args }});
+  `uvm_object_{{ 'param_' if agent.parameters else '' }}utils({{ sequence.name }}{{ agent.param_args }})
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -28,12 +28,12 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.sequence_item }});
 {% endfor %}
 {% if sequence.kind == 'random' %}
   task body;
-    {{ agent.sequence_item }} tr = {{ agent.sequence_item }}::type_id::create("tr");
+    {{ agent.sequence_item }}{{ agent.param_args }} tr = {{ agent.sequence_item }}{{ agent.param_args }}::type_id::create("tr");
     `uvm_info("body", "{{ sequence.name }} (random): starting", UVM_FULL)
     repeat(count) do_item(tr);
   endtask
 
-  task do_item ({{ agent.sequence_item }} tr);
+  task do_item ({{ agent.sequence_item }}{{ agent.param_args }} tr);
     start_item(tr);
     if (!(tr.randomize() with {
 {% if ns.has_reset %}
@@ -49,15 +49,15 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.sequence_item }});
 {% elif sequence.kind == 'incrementing' %}
 {% set fld = agent.input_ports | selectattr('name', 'equalto', sequence.field) | first %}
   task body;
-    {{ agent.sequence_item }} tr = {{ agent.sequence_item }}::type_id::create("tr");
+    {{ agent.sequence_item }}{{ agent.param_args }} tr = {{ agent.sequence_item }}{{ agent.param_args }}::type_id::create("tr");
     `uvm_info("body", "{{ sequence.name }} (incrementing {{ sequence.field }}): starting", UVM_FULL)
     for (int unsigned i = 0; i < count; i++) do_item(tr, i);
   endtask
 
-  task do_item ({{ agent.sequence_item }} tr, int unsigned i);
+  task do_item ({{ agent.sequence_item }}{{ agent.param_args }} tr, int unsigned i);
     start_item(tr);
     if (!(tr.randomize() with {
-      tr.{{ sequence.field }} == {{ fld.width }}'(i);
+      tr.{{ sequence.field }} == {% if fld.width_param %}{{ fld.width_param }}{% else %}{{ fld.width }}{% endif %}'(i);
 {% if ns.has_reset %}
       tr.{{ dut.reset }}=='1;
 {% endif %}
@@ -73,11 +73,11 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.sequence_item }});
   // sequence's sequencer (S2).
   task body;
 {% for step in sequence.steps %}
-    {{ step }} step_{{ loop.index0 }};
+    {{ step }}{{ agent.param_args }} step_{{ loop.index0 }};
 {% endfor %}
     `uvm_info("body", "{{ sequence.name }} (nested): starting", UVM_FULL)
 {% for step in sequence.steps %}
-    step_{{ loop.index0 }} = {{ step }}::type_id::create("step_{{ loop.index0 }}");
+    step_{{ loop.index0 }} = {{ step }}{{ agent.param_args }}::type_id::create("step_{{ loop.index0 }}");
     step_{{ loop.index0 }}.start(m_sequencer);
 {% endfor %}
   endtask
@@ -86,7 +86,7 @@ class {{ sequence.name }} extends uvm_sequence #({{ agent.sequence_item }});
   // drives `count` randomized item(s); replace it with the
   // {{ sequence.kind }} stimulus.
   task body;
-    {{ agent.sequence_item }} tr = {{ agent.sequence_item }}::type_id::create("tr");
+    {{ agent.sequence_item }}{{ agent.param_args }} tr = {{ agent.sequence_item }}{{ agent.param_args }}::type_id::create("tr");
     `uvm_info("body", "{{ sequence.name }} ({{ sequence.kind }}): starting", UVM_FULL)
     // pragma quickuvm custom body begin
     repeat(count) begin

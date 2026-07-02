@@ -38,7 +38,7 @@ module tb_top;
 
   // Instantiate interfaces
 {% for agent in agents %}
-  {{ agent.interface }} {{ agent.interface }}_inst ({% if dut.external_reset %}.clk(clk), .{{ dut.reset }}({{ dut.reset }}){% else %}clk{% endif %});
+  {{ agent.interface }}{{ agent.param_args_values }} {{ agent.interface }}_inst ({% if dut.external_reset %}.clk(clk), .{{ dut.reset }}({{ dut.reset }}){% else %}clk{% endif %});
 {% endfor %}
 
   // pragma quickuvm custom dut_connections begin
@@ -73,7 +73,7 @@ module tb_top;
 
   initial begin
 {% for agent in agents %}
-    uvm_config_db#(virtual {{ agent.interface }})::set(null, "*", "{{ agent.interface }}_vif", {{ agent.interface }}_inst);
+    uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::set(null, "*", "{{ agent.interface }}_vif", {{ agent.interface }}_inst);
 {% endfor %}
     run_test();
   end
