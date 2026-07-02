@@ -377,10 +377,32 @@ per-package `.f`. Unlocks separate compilation, versioning, and cross-project re
   (`xrun -uvm -compile -f io_pkg.f` → 0 errors, the Accept criterion), and the full
   packaged bench runs **51/51 on Xcelium**. verible-lint-clean; CI gates it.
 
-### C3 — Parameterization
+### C3 — Parameterization — DONE
 `parameters:` at interface/agent/env/bench; param refs in field widths; `#(...)` threaded
 via Jinja macros.
-**Accept:** one agent reused at two widths.
+**Accept:** one agent reused at two widths. ✅
+
+**Status — multi-instantiation landed (Accept met):**
+- `instances:` on a parameterized agent instantiates the SAME VIP more than once at
+  different values in **one** bench (e.g. `{name: io8, values: {W: 8}}` +
+  `{name: io16, values: {W: 16}}`). The VIP class set is generated **once**
+  (parameterized); the env/top then wire, per instance, its own interface
+  (`io_if#(8)`/`io_if#(16)`), DUT (`twowidth#(8)`/`twowidth#(16)`), agent
+  (`io_agent#(8)`/`io_agent#(16)`, distinct `io8_vif`/`io16_vif` keys), and a concrete
+  scoreboard set (`<dut>_io8_*` on `io_seq_item#(8)`, `<dut>_io16_*` on `#(16)`); the
+  test forks one sequence per instance. **Opt-in: an agent with no `instances` is
+  byte-identical.**
+- The scoreboard trio is generated **concrete per instance** (not a parameterized
+  class): SystemVerilog forbids an out-of-block method definition using
+  class-specialization syntax (`function … io_predictor#(W)::predict`), so a
+  parameterized predictor can't keep its `predict()` in a separate reference model —
+  Xcelium rejects it. Concrete-per-instance preserves the "one file you edit" workflow.
+- Fail-closed validation: `instances` requires `parameters`; instance names are unique
+  legal SV identifiers; `values` reference declared parameters; a focused slice —
+  single-agent bench, no `analysis` (each instance already gets its scoreboard).
+- Validated on `examples/twowidth/`: one VIP → an 8-bit and a 16-bit datapath, each
+  checked by its own scoreboard, **51/51 each on Xcelium** (0 errors). verible-lint-
+  clean; CI gates it.
 
 **Status — first slice landed (parameterized VIP machinery):**
 - `parameters:` on an agent (e.g. `{name: W, default: 8}`) make its interface AND all
@@ -396,8 +418,8 @@ via Jinja macros.
 - Validated on `examples/pwidth/`: the parameterized VIP compiles and runs on Xcelium
   at **W=8 and W=16 (51/51 each)** — genuinely width-flexible, not fixed. verible-lint-
   clean; CI gates it.
-- *Next slice:* two instances of the VIP at different widths in **one** bench (the
-  multi-instantiation config) — the literal Accept ("one agent reused at two widths").
+- *Landed in the next slice:* `instances:` — two instances of the VIP at different
+  widths in **one** bench (see the multi-instantiation status block above).
 
 ### H1 — Sub-environments
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.

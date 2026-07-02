@@ -38,6 +38,24 @@ class {{ test.name }} extends {{ dut.name }}_base_test;
   endfunction
 
   task run_phase(uvm_phase phase);
+{% if has_instances %}
+    //----------------------------------------------------
+    // One sequence per instance, run concurrently on each instance's sequencer.
+    phase.raise_objection(this);
+    `uvm_info("{{ test.name }}", "about to start per-instance seqs", UVM_FULL)
+    fork
+{% for inst in instances %}
+      begin
+        {{ inst.agent.name }}_seq{{ inst.pav }} {{ inst.name }}_seq;
+        {{ inst.name }}_seq = {{ inst.agent.name }}_seq{{ inst.pav }}::type_id::create("{{ inst.name }}_seq");
+        {{ inst.name }}_seq.start(e.{{ inst.handle }}.sqr);
+      end
+{% endfor %}
+    join
+    // pragma quickuvm custom run_phase_additional begin
+    // pragma quickuvm custom run_phase_additional end
+    phase.drop_objection(this);
+{% else %}
     {{ seq_type }}{{ seq_params }} seq;
     seq = {{ seq_type }}{{ seq_params }}::type_id::create("seq");
 {% if test.sequence and test.sequence.count %}
@@ -50,6 +68,7 @@ class {{ test.name }} extends {{ dut.name }}_base_test;
     // pragma quickuvm custom run_phase_additional begin
     // pragma quickuvm custom run_phase_additional end
     phase.drop_objection(this);
+{% endif %}
   endtask
 
 endclass

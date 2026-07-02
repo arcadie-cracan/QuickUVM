@@ -611,6 +611,25 @@ class ParamConfig(BaseModel):
         return self
 
 
+class InstanceConfig(BaseModel):
+    """C3 — one concrete instantiation of a parameterized agent VIP.
+
+    Lets the SAME parameterized VIP be instantiated more than once in one bench
+    at different parameter values (e.g. an 8-bit and a 16-bit datapath), each
+    with its own interface, DUT, agent and scoreboard. `values` overrides the
+    agent's parameter defaults for this instance. Opt-in: an agent with no
+    `instances` keeps the legacy single-instantiation wiring (byte-identical).
+    """
+
+    name: str  # handle / scoreboard base for this instantiation (e.g. io8)
+    values: dict[str, int] = Field(default_factory=dict)  # parameter name -> value
+
+    @model_validator(mode="after")
+    def _check(self) -> InstanceConfig:
+        _check_sv_identifier(self.name, "instance name")
+        return self
+
+
 class AgentConfig(BaseModel):
     name: str
     interface: str
@@ -630,6 +649,9 @@ class AgentConfig(BaseModel):
     # C3 — SystemVerilog parameters (opt-in, byte-identical when empty). Make the
     # interface + all UVM classes of this agent `#(...)`-parameterized.
     parameters: list[ParamConfig] = Field(default_factory=list)
+    # C3 — instantiate this parameterized VIP more than once at different values
+    # (opt-in, byte-identical when empty). Requires `parameters`.
+    instances: list[InstanceConfig] = Field(default_factory=list)
 
     @property
     def param_decl(self) -> str:
@@ -657,6 +679,15 @@ class AgentConfig(BaseModel):
         if not self.parameters:
             return ""
         return "#(" + ", ".join(str(p.default) for p in self.parameters) + ")"
+
+    def instance_param_args_values(self, inst: InstanceConfig) -> str:
+        """The `#(16)` concrete reference for one instance, overriding the
+        parameter defaults with the instance's `values`; empty when the agent
+        has no parameters."""
+        if not self.parameters:
+            return ""
+        vals = [str(inst.values.get(p.name, p.default)) for p in self.parameters]
+        return "#(" + ", ".join(vals) + ")"
 
     @property
     def input_ports(self) -> list[PortConfig]:
@@ -844,7 +875,67 @@ class AgentConfig(BaseModel):
                     f"'{p.width_param}' is not a declared parameter of this agent "
                     f"(parameters: {pnames})."
                 )
+        # C3 — instances: each is a concrete instantiation of THIS parameterized VIP.
+        if self.instances:
+            if not self.parameters:
+                raise ValueError(
+                    f"agent '{self.name}': `instances` requires `parameters` — each "
+                    f"instance overrides the agent's parameter values."
+                )
+            iseen: set[str] = set()
+            for inst in self.instances:
+                if inst.name in iseen:
+                    raise ValueError(
+                        f"agent '{self.name}': duplicate instance name '{inst.name}'."
+                    )
+                iseen.add(inst.name)
+                for k in inst.values:
+                    if k not in pnames:
+                        raise ValueError(
+                            f"agent '{self.name}': instance '{inst.name}' sets unknown "
+                            f"parameter '{k}' (parameters: {pnames})."
+                        )
         return self
+
+
+class InstanceView:
+    """A computed per-instantiation view for the env/top/scoreboard templates.
+
+    There is one per `InstanceConfig` of a parameterized agent. It shares the
+    agent's VIP class names (interface, sequence_item, cfg, agent) but carries
+    instance-scoped handle/interface/DUT/vif/scoreboard names and this
+    instance's concrete `#(..)` args, so N instances coexist without collision.
+    Not user config — built by `ProjectConfig.instance_views`.
+    """
+
+    def __init__(self, agent: AgentConfig, name: str, pav: str):
+        self.agent = agent
+        self.name = name  # instance base name, e.g. io8
+        self.pav = pav  # concrete args for this instance, e.g. #(16)
+
+    @property
+    def handle(self) -> str:
+        return f"{self.name}_agnt"
+
+    @property
+    def cfg_field(self) -> str:
+        return f"{self.name}_cfg"
+
+    @property
+    def if_inst(self) -> str:
+        return f"{self.name}_if_inst"
+
+    @property
+    def dut_inst(self) -> str:
+        return f"{self.name}_dut"
+
+    @property
+    def vif_key(self) -> str:
+        return f"{self.name}_vif"
+
+    @property
+    def sb_handle(self) -> str:
+        return f"{self.name}_sb"
 
 
 class DutConfig(BaseModel):
@@ -1429,6 +1520,26 @@ class ProjectConfig(BaseModel):
                     f"register_model.bus_agent references unknown agent "
                     f"'{self.register_model.bus_agent}'."
                 )
+        # C3 — multi-instantiation (`instances`) is a focused slice: one parameterized
+        # agent, instantiated N times, each with its own interface/DUT/scoreboard.
+        # Checked before the parameterized-agent guards so its message wins.
+        if any(a.instances for a in self.agents):
+            if len(self.agents) != 1:
+                raise ValueError(
+                    "agent `instances` are supported only in a single-agent bench "
+                    "(this slice) — the sole agent's VIP is reused at each instance."
+                )
+            if self.analysis is not None:
+                raise ValueError(
+                    "agent `instances` + `analysis` is not supported yet (each "
+                    "instance already gets its own generated scoreboard)."
+                )
+            if self.layout != "flat":
+                raise ValueError(
+                    "agent `instances` currently require the default `layout: flat` "
+                    "(the packaged layout does not yet thread per-instance "
+                    "scoreboards)."
+                )
         # C3 — a parameterized agent is not yet wired through every path. Fail closed
         # on the combinations that would generate a concrete (non-parameterized) width.
         param_agents = {a.name for a in self.agents if a.parameters}
@@ -1712,6 +1823,19 @@ class ProjectConfig(BaseModel):
         if len(self.active_agents) < 2:
             return None
         return f"{self.dut.name}_vseq"
+
+    @property
+    def instance_views(self) -> list[InstanceView]:
+        """C3 — the per-instantiation views (env/top/scoreboard) for agents that
+        declare `instances`; empty when none do (the legacy per-agent wiring is
+        used, byte-identical)."""
+        views: list[InstanceView] = []
+        for a in self.agents:
+            for inst in a.instances:
+                views.append(
+                    InstanceView(a, inst.name, a.instance_param_args_values(inst))
+                )
+        return views
 
     @property
     def effective_virtual_sequences(self) -> list[VseqConfig]:

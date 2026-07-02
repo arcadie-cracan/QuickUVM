@@ -14,9 +14,15 @@ class {{ dut.name }}_env_cfg extends uvm_object;
   `uvm_object_utils({{ dut.name }}_env_cfg)
 
   // Per-agent configuration handles
+{% if has_instances %}
+{% for inst in instances %}
+  {{ inst.agent.name }}_cfg{{ inst.pav }} {{ inst.cfg_field }};
+{% endfor %}
+{% else %}
 {% for agent in agents %}
   {{ agent.name }}_cfg{{ agent.param_args_values }} {{ agent.name }}_cfg;
 {% endfor %}
+{% endif %}
 {% if register_model %}
 
   // Register model (built and locked by {{ dut.name }}_base_test)

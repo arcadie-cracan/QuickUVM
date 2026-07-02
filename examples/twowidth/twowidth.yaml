@@ -1,0 +1,42 @@
+# twowidth — QuickUVM C3: ONE parameterized agent VIP, instantiated twice.
+#
+# The `io` agent is #(W)-parameterized (see the pwidth example). Here it also
+# declares `instances:` — two concrete instantiations, io8 (W=8) and io16
+# (W=16). QuickUVM generates the VIP class set once and instantiates it per
+# instance: each gets its own interface, DUT, agent and scoreboard, all at its
+# own width, in a single bench. Opt-in: an agent with no `instances` keeps the
+# single-instantiation wiring (byte-identical).
+project:
+  name: twowidth
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: twowidth
+  clock: clk
+  reset: ''
+  combinational: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: io
+    interface: io_if
+    sequence_item: io_seq_item
+    seq_item_style: manual
+    active: true
+    parameters:
+      - {name: W, default: 8}   # data width
+    instances:
+      - {name: io8,  values: {W: 8}}
+      - {name: io16, values: {W: 16}}
+    ports:
+      inputs:
+        - {name: din,  width_param: W}
+      outputs:
+        - {name: dout, width_param: W}
+
+tests:
+  - {name: rand_test, num_items: 50}

@@ -11,7 +11,7 @@ from pathlib import Path
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from .merger import merge
-from .models import ProjectConfig, ScoreboardSpec, TestConfig
+from .models import InstanceView, ProjectConfig, ScoreboardSpec, TestConfig
 
 # ---------------------------------------------------------------------------
 # Jinja2 environment
@@ -91,6 +91,26 @@ class Generator:
             ),
         }
 
+    @staticmethod
+    def _inst_sb_ctx(base_ctx: dict, cfg: ProjectConfig, iv: InstanceView) -> dict:
+        """Per-instance scoreboard context (C3 multi-instantiation): a concrete,
+        single-stream scoreboard set typed on this instance's transaction
+        specialization (io_seq_item#(16)), prefixed <dut>_<instance>."""
+        item = iv.agent.sequence_item + iv.pav
+        return {
+            **base_ctx,
+            "sb_prefix": f"{cfg.dut.name}_{iv.name}",
+            "sb_in_item": item,
+            "sb_out_item": item,
+            "sb_in_agent": iv.agent,
+            "sb_out_agent": iv.agent,
+            "sb_two_stream": False,
+            "sb_match": "in_order",
+            "sb_match_key": None,
+            "sb_max_latency": None,
+            "sb_max_lat_time": None,
+        }
+
     def files_to_generate(self) -> list[FileSpec]:
         cfg = self.config
         base_ctx = {
@@ -106,6 +126,11 @@ class Generator:
             "auto_vseq": cfg.auto_vseq_name,
             "reference_model": cfg.reference_model,
             "layout": cfg.layout,
+            # C3 — multi-instantiation: per-instance views for the env/top/scoreboard.
+            # Empty for a bench without `instances` → the legacy per-agent wiring
+            # runs unchanged (byte-identical).
+            "instances": cfg.instance_views,
+            "has_instances": bool(cfg.instance_views),
         }
 
         # A2 — scoreboard stream types. Single-stream (default): predict(pa) -> pa
@@ -187,7 +212,13 @@ class Generator:
         # to one source→monitor pair. With <=1 effective scoreboard the set is named
         # <dut>_* (base_ctx, byte-identical). With >=2, one <dut>_<sbname>_* set per
         # scoreboard, each carrying its own types/match.
-        if sb_multi:
+        if cfg.instance_views:
+            # C3 multi-instantiation: one concrete scoreboard set per instance,
+            # <dut>_<instance>_*, typed on that instance's transaction width.
+            sb_sets = [
+                self._inst_sb_ctx(base_ctx, cfg, iv) for iv in cfg.instance_views
+            ]
+        elif sb_multi:
             assert cfg.analysis is not None  # sb_multi implies an analysis block
             sb_sets = [
                 self._sb_set_ctx(base_ctx, cfg, sb) for sb in cfg.analysis.scoreboards
@@ -271,8 +302,9 @@ class Generator:
                 )
 
         # ---- reference model(s): SV predict() body, or DPI-C bridge + C stub (K0).
-        # Multi-scoreboard is two-stream → SV only (one predict per pair).
-        if sb_multi:
+        # Multi-scoreboard is two-stream → SV only (one predict per pair). C3 multi-
+        # instantiation likewise emits one concrete SV predict per instance width.
+        if sb_multi or cfg.instance_views:
             for sbx in sb_sets:
                 specs.append(
                     FileSpec(
