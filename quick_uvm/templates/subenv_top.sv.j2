@@ -19,14 +19,14 @@ module tb_top;
   // Instantiate each block's interfaces
 {% for sv in subenvs %}
 {% for agent in sv.agents %}
-  {{ agent.interface }} {{ sv.name }}_{{ agent.interface }}_inst (clk);
+  {{ agent.interface }}{{ agent.param_args_values }} {{ sv.name }}_{{ agent.interface }}_inst (clk);
 {% endfor %}
 {% endfor %}
 
   // pragma quickuvm custom dut_connections begin
   // Instantiate each block's DUT — connect to that block's interface signals
 {% for sv in subenvs %}
-  {{ sv.block }} {{ sv.name }}_dut (
+  {{ sv.block }}{{ sv.dut_param_args }} {{ sv.name }}_dut (
 {% for inst, pname in sv.dut_conns %}
     .{{ pname }}({{ inst }}.{{ pname }}){% if not loop.last or not sv.cfg.dut.combinational %},{% endif %}
 
@@ -41,7 +41,7 @@ module tb_top;
   initial begin
 {% for sv in subenvs %}
 {% for agent in sv.agents %}
-    uvm_config_db#(virtual {{ agent.interface }})::set(null, "*", "{{ sv.name }}_{{ agent.interface }}_vif", {{ sv.name }}_{{ agent.interface }}_inst);
+    uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::set(null, "*", "{{ sv.name }}_{{ agent.interface }}_vif", {{ sv.name }}_{{ agent.interface }}_inst);
 {% endfor %}
 {% endfor %}
     run_test();

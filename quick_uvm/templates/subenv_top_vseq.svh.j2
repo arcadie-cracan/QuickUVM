@@ -20,13 +20,13 @@ class {{ dut.name }}_vseq extends {{ dut.name }}_base_vseq;
   task body;
 {% for sv in subenvs %}
 {% for agent in sv.agents if agent.active %}
-    {{ agent.name }}_seq {{ sv.name }}_{{ agent.name }}_seq;
+    {{ agent.name }}_seq{{ agent.param_args_values }} {{ sv.name }}_{{ agent.name }}_seq;
 {% endfor %}
 {% endfor %}
 
 {% for sv in subenvs %}
 {% for agent in sv.agents if agent.active %}
-    {{ sv.name }}_{{ agent.name }}_seq = {{ agent.name }}_seq::type_id::create("{{ sv.name }}_{{ agent.name }}_seq");
+    {{ sv.name }}_{{ agent.name }}_seq = {{ agent.name }}_seq{{ agent.param_args_values }}::type_id::create("{{ sv.name }}_{{ agent.name }}_seq");
 {% endfor %}
 {% endfor %}
     // pragma quickuvm custom vseq_body_pre begin

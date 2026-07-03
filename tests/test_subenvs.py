@@ -23,6 +23,7 @@ from quick_uvm.models import (
 )
 
 SOC = Path(__file__).resolve().parents[1] / "examples" / "soc" / "soc.yaml"
+PSOC = Path(__file__).resolve().parents[1] / "examples" / "psoc" / "psoc.yaml"
 
 
 def _block(name, agent, iface):
@@ -243,13 +244,39 @@ def test_clocked_child_block_rejected():
         top.validate_subenv_composition()
 
 
-def test_parameterized_child_agent_rejected():
+def test_single_agent_parameterized_child_allowed():
+    # H1 param propagation: a single-agent parameterized block is now OK.
     from quick_uvm.models import ParamConfig
 
     top = _top()
-    param_block = ProjectConfig(
+    top.subenv_configs = {
+        "adder": _block("adder", "a", "a_if"),
+        "inverter": ProjectConfig(
+            project=ProjectMeta(name="pblk"),
+            dut=DutConfig(name="pblk", combinational=True, reset=""),
+            agents=[
+                AgentConfig(
+                    name="p",
+                    interface="p_if",
+                    sequence_item="p_seq_item",
+                    parameters=[ParamConfig(name="W", default=8)],
+                    ports={"inputs": [PortConfig(name="din", width_param="W")]},
+                )
+            ],
+            tests=[TConf(name="p_test")],
+        ),
+    }
+    top.validate_subenv_composition()  # no raise
+
+
+def test_multi_agent_parameterized_child_rejected():
+    from quick_uvm.models import ParamConfig
+
+    top = _top()
+    multi = ProjectConfig(
         project=ProjectMeta(name="pblk"),
         dut=DutConfig(name="pblk", combinational=True, reset=""),
+        auto_virtual_sequences=False,
         agents=[
             AgentConfig(
                 name="p",
@@ -257,15 +284,18 @@ def test_parameterized_child_agent_rejected():
                 sequence_item="p_seq_item",
                 parameters=[ParamConfig(name="W", default=8)],
                 ports={"inputs": [PortConfig(name="din", width_param="W")]},
-            )
+            ),
+            AgentConfig(
+                name="q",
+                interface="q_if",
+                sequence_item="q_seq_item",
+                ports={"inputs": [PortConfig(name="qin", width=8)]},
+            ),
         ],
         tests=[TConf(name="p_test")],
     )
-    top.subenv_configs = {
-        "adder": _block("adder", "a", "a_if"),
-        "inverter": param_block,
-    }
-    with pytest.raises(Exception, match="parameterized agent is"):
+    top.subenv_configs = {"adder": _block("adder", "a", "a_if"), "inverter": multi}
+    with pytest.raises(Exception, match="must be single-agent"):
         top.validate_subenv_composition()
 
 
@@ -280,3 +310,61 @@ def test_generate_without_loaded_children_errors():
     # A top constructed in-memory (not via from_yaml) has no loaded children.
     with pytest.raises(Exception, match="child configs are not loaded"):
         Generator(_top()).files_to_generate()
+
+
+# ---- H1 parameter propagation ----------------------------------------------
+
+
+def test_param_override_baked_into_child_defaults():
+    top = ProjectConfig.from_yaml(PSOC)
+    dp = top.subenv_configs["dp"]
+    mac = top.subenv_configs["mac"]
+    assert dp.agents[0].parameters[0].default == 8
+    assert mac.agents[0].parameters[0].default == 16  # overridden from 8
+    assert dp.agents[0].param_args_values == "#(8)"
+    assert mac.agents[0].param_args_values == "#(16)"
+
+
+def test_param_propagation_threads_widths_into_top(tmp_path):
+    Generator(ProjectConfig.from_yaml(PSOC)).generate_all(tmp_path)
+    top = (tmp_path / "tb_top.sv").read_text()
+    assert "d_if#(8) dp_d_if_inst (clk);" in top
+    assert "m_if#(16) mac_m_if_inst (clk);" in top
+    assert "dp#(8) dp_dut (" in top
+    assert "mac#(16) mac_dut (" in top
+    assert "uvm_config_db#(virtual d_if#(8))::set" in top
+    assert "uvm_config_db#(virtual m_if#(16))::set" in top
+    vsqr = (tmp_path / "psoc_virtual_sequencer.svh").read_text()
+    assert "d_sequencer#(8) dp_d_sqr;" in vsqr
+    assert "m_sequencer#(16) mac_m_sqr;" in vsqr
+    vseq = (tmp_path / "psoc_vseq.svh").read_text()
+    assert "d_seq#(8) dp_d_seq;" in vseq
+    assert "m_seq#(16) mac_m_seq;" in vseq
+    bt = (tmp_path / "psoc_base_test.svh").read_text()
+    assert "d_cfg#(8)::type_id::create" in bt
+    assert "uvm_config_db#(virtual m_if#(16))::get(" in bt
+    # each block's scoreboard is typed at its propagated width
+    assert (
+        "uvm_subscriber #(d_seq_item#(8))"
+        in (tmp_path / "dp_predictor.svh").read_text()
+    )
+    assert (
+        "uvm_subscriber #(m_seq_item#(16))"
+        in (tmp_path / "mac_predictor.svh").read_text()
+    )
+
+
+def test_unknown_param_override_rejected(tmp_path):
+    # A subenv overriding a parameter the block does not declare must error.
+    top_yaml = tmp_path / "bad.yaml"
+    top_yaml.write_text(
+        "project: {name: bad}\n"
+        "layout: packaged\n"
+        "dut: {name: bad, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        f"  - {{name: dp, config: {PSOC.parent / 'dp' / 'dp.yaml'}, params: {{Z: 4}}}}\n"
+        f"  - {{name: mac, config: {PSOC.parent / 'mac' / 'mac.yaml'}, params: {{W: 16}}}}\n"
+        "tests: [{name: t}]\n"
+    )
+    with pytest.raises(Exception, match="is not a declared parameter of block"):
+        ProjectConfig.from_yaml(top_yaml)
