@@ -1,0 +1,31 @@
+# dp — a parameterized datapath block (dout = din + 1 at width W).
+# Standalone bench; reused as a subsystem block by ../psoc.yaml (at W=8).
+project:
+  name: dp
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: dp
+  clock: clk
+  reset: ''
+  combinational: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: d
+    interface: d_if
+    sequence_item: d_seq_item
+    parameters:
+      - {name: W, default: 8}
+    ports:
+      inputs:
+        - {name: din,  width_param: W}
+      outputs:
+        - {name: dout, width_param: W}
+
+tests:
+  - {name: dp_test, num_items: 30}

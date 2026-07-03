@@ -1,0 +1,31 @@
+# mac — a parameterized block (dout = din << 1 at width W).
+# Standalone bench; reused as a subsystem block by ../psoc.yaml (at W=16).
+project:
+  name: mac
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: mac
+  clock: clk
+  reset: ''
+  combinational: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: m
+    interface: m_if
+    sequence_item: m_seq_item
+    parameters:
+      - {name: W, default: 8}
+    ports:
+      inputs:
+        - {name: din,  width_param: W}
+      outputs:
+        - {name: dout, width_param: W}
+
+tests:
+  - {name: mac_test, num_items: 30}

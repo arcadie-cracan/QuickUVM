@@ -445,8 +445,23 @@ via Jinja macros.
 - Validated on `examples/soc/`: one subsystem composing an `adder` block (dout=din+1)
   and an `inverter` block (dout=~din), driven concurrently by the top vseq — **31/31 on
   each block's scoreboard on Xcelium** (0 errors). verible-lint-clean; CI gates it.
-- *Next slice:* parameter propagation (pass top params down to blocks) + nested subenvs
-  + cross-block scoreboards.
+
+**Status — parameter propagation landed:**
+- A subenv can override its (parameterized) block's agent parameters for that instance:
+  `{name: dp, config: dp/dp.yaml, params: {W: 8}}`. The override is baked into the child
+  agent's parameter default before generation, so the block's whole env — VIP classes,
+  scoreboard, interface and DUT — is generated/instantiated at that width (reusing the
+  C3 machinery). The top threads the concrete `#(W)` into the interface/DUT/config_db
+  (`d_if#(8)`, `dp#(8)`), the top virtual sequencer (`d_sequencer#(8)`), the top vseq
+  (`d_seq#(8)`), and the base test's cfg/vif. Byte-identical for non-parameterized blocks.
+- Fail-closed: an override must name a declared block parameter; a parameterized child
+  block must be single-agent (the DUT `#()` args come from the sole agent).
+- Validated on `examples/psoc/`: a subsystem composing two **parameterized** blocks
+  propagated to different widths — `dp` at W=8 (dout=din+1) and `mac` at W=16
+  (dout=din<<1) — **31/31 on each block's scoreboard on Xcelium** (0 errors), from the
+  same reusable width-parameterized block configs. verible-lint-clean; CI gates it.
+- *Next slice:* the same block reused at N widths (per-instance class namespacing) +
+  nested subenvs + cross-block scoreboards.
 
 ## Priority tier 3 — checking generality
 

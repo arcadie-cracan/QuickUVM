@@ -205,3 +205,16 @@ jobs:
           verible-verilog-lint --rules_config .verible-lint.rules gen_soc/*.sv gen_soc/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules \
             examples/soc/adder/rtl/adder.sv examples/soc/inverter/rtl/inverter.sv
+
+      # Gate the H1 parameter-propagation path: the psoc example composes two
+      # PARAMETERIZED blocks, each propagated to a different width via a per-subenv
+      # `params:` override (dp at W=8, mac at W=16) — the block's VIP, scoreboard,
+      # interface and DUT are all generated + instantiated at the propagated width.
+      - name: Generate the parameter-propagation example (H1)
+        run: quick-uvm generate -c examples/psoc/psoc.yaml -o gen_psoc
+
+      - name: Verible lint (parameter-propagation generated SV/SVH + block DUTs)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_psoc/*.sv gen_psoc/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules \
+            examples/psoc/dp/rtl/dp.sv examples/psoc/mac/rtl/mac.sv

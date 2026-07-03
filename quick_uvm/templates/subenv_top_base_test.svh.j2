@@ -34,9 +34,9 @@ class {{ dut.name }}_base_test extends uvm_test;
 {% for agent in sv.agents %}
 {% set acfg %}env_cfg.{{ sv.cfg_field }}.{{ agent.name }}_cfg{% endset %}
 {% set vkey %}{{ sv.name }}_{{ agent.interface }}_vif{% endset %}
-    {{ acfg }} = {{ agent.name }}_cfg::type_id::create("{{ agent.name }}_cfg");
+    {{ acfg }} = {{ agent.name }}_cfg{{ agent.param_args_values }}::type_id::create("{{ agent.name }}_cfg");
     {{ acfg }}.is_active = UVM_{{ "ACTIVE" if agent.active else "PASSIVE" }};
-    if (!uvm_config_db#(virtual {{ agent.interface }})::get(
+    if (!uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::get(
           this, "", "{{ vkey }}", {{ acfg }}.vif))
       `uvm_fatal("NOVIF",
                  "No virtual interface '{{ vkey }}' in config DB (see tb_top.sv)")

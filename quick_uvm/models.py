@@ -1427,6 +1427,13 @@ class SubenvConfig(BaseModel):
 
     name: str  # instance name of the block in the top env (e.g. adder)
     config: str  # path to the child block config, relative to the top config
+    # H1 param propagation — override the child block's agent parameter defaults
+    # for this instance (e.g. {W: 16}). The value is baked into the block's env
+    # (its VIP/scoreboard/DUT are generated at that width). Empty → block defaults.
+    # NB: the block DUT is instantiated with POSITIONAL args in the agent's
+    # parameter order (as in C3), so a multi-parameter block's agent `parameters:`
+    # order must match the DUT module's parameter order.
+    params: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _check(self) -> SubenvConfig:
@@ -1472,6 +1479,14 @@ class SubenvView:
     @property
     def agents(self) -> list[AgentConfig]:
         return self.cfg.agents
+
+    @property
+    def dut_param_args(self) -> str:
+        """The block DUT's concrete `#(W)` args (H1 param propagation). A
+        parameterized block is single-agent, so it is the (sole) agent's values,
+        emitted POSITIONALLY in the agent's parameter order — the DUT module's
+        parameter order must match (as in C3). Empty for a non-parameterized block."""
+        return self.cfg.agents[0].param_args_values if self.cfg.agents else ""
 
     @property
     def dut_conns(self) -> list[tuple[str, str]]:
@@ -1555,11 +1570,11 @@ class ProjectConfig(BaseModel):
                     f"in a subsystem yet (clock/reset plumbing for composed clocked "
                     f"blocks is a later slice)."
                 )
-            if any(a.parameters for a in child.agents):
+            if any(a.parameters for a in child.agents) and len(child.agents) > 1:
                 raise ValueError(
-                    f"subenv '{s.name}': a child block with a parameterized agent is "
-                    f"not supported in a subsystem yet (parameter propagation is a "
-                    f"later slice)."
+                    f"subenv '{s.name}': a parameterized child block must be "
+                    f"single-agent (the block DUT's #() args are taken from the sole "
+                    f"agent's parameters)."
                 )
             if child.dut.name in duts:
                 raise ValueError(
@@ -1981,7 +1996,23 @@ class ProjectConfig(BaseModel):
         if cfg.subenvs:
             base = path.parent
             for s in cfg.subenvs:
-                cfg.subenv_configs[s.name] = cls.from_yaml(base / s.config)
+                child = cls.from_yaml(base / s.config)
+                # H1 param propagation — bake this instance's overrides into the
+                # child block's agent parameter defaults before it is generated.
+                if s.params:
+                    declared = {p.name for a in child.agents for p in a.parameters}
+                    for k, v in s.params.items():
+                        if k not in declared:
+                            raise ValueError(
+                                f"subenv '{s.name}': params override '{k}' is not a "
+                                f"declared parameter of block '{child.dut.name}' "
+                                f"(declared: {sorted(declared)})."
+                            )
+                        for a in child.agents:
+                            for p in a.parameters:
+                                if p.name == k:
+                                    p.default = v
+                cfg.subenv_configs[s.name] = child
             cfg.validate_subenv_composition()
         return cfg
 

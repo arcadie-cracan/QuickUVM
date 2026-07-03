@@ -1,0 +1,30 @@
+# psoc — QuickUVM H1 parameter propagation: a subsystem that composes two
+# PARAMETERIZED blocks, each propagated to a different width.
+#
+# `params:` on a subenv overrides that block's agent parameter(s) for this
+# instance. The value is baked into the block's whole env (VIP, scoreboard and
+# DUT are generated at that width): dp runs at W=8, mac at W=16, from the same
+# reusable, width-parameterized block configs.
+project:
+  name: psoc
+  author: QuickUVM
+  year: 2026
+
+layout: packaged
+
+dut:
+  name: psoc
+  clock: clk
+  reset: ''
+  combinational: true
+
+clock:
+  period: 10
+  unit: ns
+
+subenvs:
+  - {name: dp,  config: dp/dp.yaml,   params: {W: 8}}
+  - {name: mac, config: mac/mac.yaml, params: {W: 16}}
+
+tests:
+  - {name: psoc_test}
