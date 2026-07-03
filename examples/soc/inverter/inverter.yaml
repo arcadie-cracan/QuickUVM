@@ -1,0 +1,28 @@
+# inverter — a standalone block bench, reused as a subsystem block by ../soc.yaml.
+project:
+  name: inverter
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: inverter
+  clock: clk
+  reset: ''
+  combinational: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: b
+    interface: b_if
+    sequence_item: b_seq_item
+    ports:
+      inputs:
+        - {name: din,  width: 8}
+      outputs:
+        - {name: dout, width: 8}
+
+tests:
+  - {name: inverter_test, num_items: 30}

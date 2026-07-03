@@ -111,8 +111,12 @@ class Generator:
             "sb_max_lat_time": None,
         }
 
-    def files_to_generate(self) -> list[FileSpec]:
+    def files_to_generate(self, subenv: bool = False) -> list[FileSpec]:
         cfg = self.config
+        # H1 — a subsystem (top) bench composes child block envs; it has no agents
+        # of its own, so it takes a dedicated composition path.
+        if cfg.subenvs:
+            return self._subenv_composition_files()
         base_ctx = {
             "project": cfg.project,
             "dut": cfg.dut,
@@ -179,8 +183,11 @@ class Generator:
         specs: list[FileSpec] = []
 
         # ---- global files ------------------------------------------------
-        specs.append(FileSpec("clkgen.sv.j2", "clkgen.sv", base_ctx))
-        specs.append(FileSpec("dut.sv.j2", f"{cfg.dut.name}.sv", base_ctx))
+        # In subenv (composed-child) mode the top provides the clock + real DUTs,
+        # so a child emits only its reusable env layer (no clkgen / DUT stub).
+        if not subenv:
+            specs.append(FileSpec("clkgen.sv.j2", "clkgen.sv", base_ctx))
+            specs.append(FileSpec("dut.sv.j2", f"{cfg.dut.name}.sv", base_ctx))
 
         # ---- per-agent files (interface + TB components) -----------------
         for agent in cfg.agents:
@@ -267,10 +274,12 @@ class Generator:
                 specs.append(FileSpec("env_vseq.svh.j2", f"{vseq.name}.svh", vctx))
 
         # ---- tests -------------------------------------------------------
-        specs.append(FileSpec("test_base.svh.j2", f"{dut}_base_test.svh", base_ctx))
-        for test in cfg.tests:
-            ctx = {**base_ctx, "test": test}
-            specs.append(FileSpec("test.svh.j2", f"{test.name}.svh", ctx))
+        # A composed child has no test/top of its own — the top bench drives it.
+        if not subenv:
+            specs.append(FileSpec("test_base.svh.j2", f"{dut}_base_test.svh", base_ctx))
+            for test in cfg.tests:
+                ctx = {**base_ctx, "test": test}
+                specs.append(FileSpec("test.svh.j2", f"{test.name}.svh", ctx))
 
         # ---- register model (optional, front-door) -----------------------
         if cfg.register_model is not None:
@@ -334,6 +343,17 @@ class Generator:
             )
 
         # ---- top + package(s) + filelists --------------------------------
+        if subenv:
+            # Composed child: emit only the reusable env layer — the agent VIP
+            # package(s) + the env package. No top/test package, no tb_top, no
+            # run.f (the top bench supplies those and composes this env_pkg).
+            for agent in cfg.agents:
+                actx = {**base_ctx, "agent": agent}
+                specs.append(FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx))
+                specs.append(FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx))
+            specs.append(FileSpec("env_pkg.sv.j2", f"{dut}_env_pkg.sv", base_ctx))
+            specs.append(FileSpec("env_pkg.f.j2", f"{dut}_env_pkg.f", base_ctx))
+            return specs
         specs.append(FileSpec("top.sv.j2", "tb_top.sv", base_ctx))
         if cfg.layout == "packaged":
             # F2: a standalone <agent>_pkg per agent + a <dut>_env_pkg + a
@@ -351,6 +371,61 @@ class Generator:
             specs.append(FileSpec("pkg.f.j2", "pkg.f", base_ctx))
         specs.append(FileSpec("run.f.j2", "run.f", base_ctx))
 
+        return specs
+
+    def _subenv_composition_files(self) -> list[FileSpec]:
+        """H1 — a subsystem (top) bench: each child block's reusable env layer
+        plus the top layer (env/env_cfg/vsqr/vseq/test/tb_top/test_pkg) that
+        composes them. All files land in one output dir + package namespace."""
+        cfg = self.config
+        if not cfg.subenv_views:
+            raise ValueError(
+                "subenv child configs are not loaded — build the top via "
+                "ProjectConfig.from_yaml() so `subenvs` are resolved before "
+                "generation."
+            )
+        specs: list[FileSpec] = []
+        # 1. Each child block's reusable env layer (packaged, no top/test/clkgen).
+        for sv in cfg.subenv_views:
+            specs.extend(Generator(sv.cfg).files_to_generate(subenv=True))
+        # 2. The top composition layer.
+        top = cfg.dut.name
+        top_ctx = {
+            "project": cfg.project,
+            "dut": cfg.dut,
+            "clock": cfg.clock,
+            "tests": cfg.tests,
+            "subenvs": cfg.subenv_views,
+            "layout": cfg.layout,
+            # env_vseq_base.svh.j2 (reused) reads these; a top vseq is virtual-only.
+            "virtual_sequences": [],
+            "auto_vseq": f"{top}_vseq",
+        }
+        specs.append(FileSpec("clkgen.sv.j2", "clkgen.sv", top_ctx))
+        specs.append(
+            FileSpec("subenv_top_env_cfg.svh.j2", f"{top}_env_cfg.svh", top_ctx)
+        )
+        specs.append(FileSpec("subenv_top_env.svh.j2", f"{top}_env.svh", top_ctx))
+        specs.append(
+            FileSpec("subenv_top_vsqr.svh.j2", f"{top}_virtual_sequencer.svh", top_ctx)
+        )
+        specs.append(FileSpec("env_vseq_base.svh.j2", f"{top}_base_vseq.svh", top_ctx))
+        specs.append(FileSpec("subenv_top_vseq.svh.j2", f"{top}_vseq.svh", top_ctx))
+        specs.append(
+            FileSpec("subenv_top_base_test.svh.j2", f"{top}_base_test.svh", top_ctx)
+        )
+        for test in cfg.tests:
+            specs.append(
+                FileSpec(
+                    "subenv_top_test.svh.j2",
+                    f"{test.name}.svh",
+                    {**top_ctx, "test": test},
+                )
+            )
+        specs.append(FileSpec("subenv_top.sv.j2", "tb_top.sv", top_ctx))
+        specs.append(FileSpec("subenv_test_pkg.sv.j2", f"{top}_test_pkg.sv", top_ctx))
+        specs.append(FileSpec("subenv_test_pkg.f.j2", f"{top}_test_pkg.f", top_ctx))
+        specs.append(FileSpec("subenv_run.f.j2", "run.f", top_ctx))
         return specs
 
     # ------------------------------------------------------------------
