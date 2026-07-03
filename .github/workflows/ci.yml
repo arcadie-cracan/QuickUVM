@@ -192,3 +192,16 @@ jobs:
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_twowidth/*.sv gen_twowidth/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/twowidth/rtl/twowidth.sv
+
+      # Gate the H1 sub-environments path: the soc example composes two child block
+      # envs (adder + inverter, each an external config) into one subsystem bench —
+      # a top env instantiating both block envs, a top virtual sequencer collecting
+      # their agent sequencers, and a top vseq driving both blocks.
+      - name: Generate the sub-environments example (H1)
+        run: quick-uvm generate -c examples/soc/soc.yaml -o gen_soc
+
+      - name: Verible lint (sub-environments generated SV/SVH + block DUTs)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_soc/*.sv gen_soc/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules \
+            examples/soc/adder/rtl/adder.sv examples/soc/inverter/rtl/inverter.sv

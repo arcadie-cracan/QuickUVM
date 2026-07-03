@@ -1,0 +1,10 @@
+// Top (subsystem) test package filelist (H1): every composed block's env
+// package, then the top test package. Paths are relative to this gen/ dir.
++incdir+.
+{% for sv in subenvs %}
+-f {{ sv.env_pkg }}.f
+{% endfor %}
+// Extra top test sources (preserved on regen):
+// pragma quickuvm custom test_pkg_extra_files begin
+// pragma quickuvm custom test_pkg_extra_files end
+{{ dut.name }}_test_pkg.sv

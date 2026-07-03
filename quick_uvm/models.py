@@ -1416,6 +1416,75 @@ class ProjectMeta(BaseModel):
     imports: list[str] = Field(default_factory=list)
 
 
+class SubenvConfig(BaseModel):
+    """H1 — one child block environment composed into a subsystem (top) bench.
+
+    `config` is the path to the child block's own QuickUVM config (resolved
+    relative to the top config file). The child's reusable env layer (its
+    packaged `<block>_env_pkg` + agent VIPs) is generated alongside the top, and
+    the top env instantiates it. Opt-in: a bench with no `subenvs` is unchanged.
+    """
+
+    name: str  # instance name of the block in the top env (e.g. adder)
+    config: str  # path to the child block config, relative to the top config
+
+    @model_validator(mode="after")
+    def _check(self) -> SubenvConfig:
+        _check_sv_identifier(self.name, "subenv name")
+        return self
+
+
+class SubenvView:
+    """A composed child block env, for the top composition templates. Not user
+    config — built by `ProjectConfig.subenv_views` from the loaded child config."""
+
+    def __init__(self, name: str, cfg: ProjectConfig):
+        self.name = name  # block instance name in the top (e.g. adder)
+        self.cfg = cfg  # the child's ProjectConfig
+
+    @property
+    def block(self) -> str:
+        return self.cfg.dut.name  # child class prefix (e.g. adder)
+
+    @property
+    def env_class(self) -> str:
+        return f"{self.cfg.dut.name}_env"
+
+    @property
+    def env_cfg_class(self) -> str:
+        return f"{self.cfg.dut.name}_env_cfg"
+
+    @property
+    def env_pkg(self) -> str:
+        return f"{self.cfg.dut.name}_env_pkg"
+
+    @property
+    def inst(self) -> str:
+        # The child env handle / component name in the top env. Kept as the plain
+        # subenv name so it never collides with the child env CLASS (<block>_env)
+        # when the subenv is named after its block (the natural choice).
+        return self.name
+
+    @property
+    def cfg_field(self) -> str:
+        return f"{self.name}_cfg"  # child env_cfg handle in the top env_cfg
+
+    @property
+    def agents(self) -> list[AgentConfig]:
+        return self.cfg.agents
+
+    @property
+    def dut_conns(self) -> list[tuple[str, str]]:
+        """(interface-instance, port) pairs for wiring this block's DUT in the
+        top tb_top — flattened across the block's agents."""
+        out: list[tuple[str, str]] = []
+        for a in self.cfg.agents:
+            inst = f"{self.name}_{a.interface}_inst"
+            for _, p in a.all_ports:
+                out.append((inst, p.name))
+        return out
+
+
 class ProjectConfig(BaseModel):
     project: ProjectMeta
     dut: DutConfig
@@ -1437,13 +1506,115 @@ class ProjectConfig(BaseModel):
     # <dut>_env_pkg, and a <dut>_test_pkg, with per-package .f filelists — for
     # separate compilation and cross-project reuse of the agent VIP.
     layout: Literal["flat", "packaged"] = "flat"
+    # H1 — sub-environments. When set, this is a subsystem (top) bench that
+    # composes >=2 child block envs (each referenced by config path) instead of
+    # defining its own agents. Opt-in: empty → an ordinary bench (byte-identical).
+    subenvs: list[SubenvConfig] = Field(default_factory=list)
+    # Runtime: the loaded child ProjectConfigs, keyed by subenv name. Populated by
+    # the loader (which resolves `subenv.config` relative to the top file); not
+    # part of the serialized config.
+    subenv_configs: dict[str, ProjectConfig] = Field(
+        default_factory=dict, exclude=True, repr=False
+    )
+
+    @property
+    def subenv_views(self) -> list[SubenvView]:
+        """H1 — the composed child block envs (in `subenvs` order), once their
+        configs are loaded; empty for an ordinary bench."""
+        return [
+            SubenvView(s.name, self.subenv_configs[s.name])
+            for s in self.subenvs
+            if s.name in self.subenv_configs
+        ]
+
+    def validate_subenv_composition(self) -> None:
+        """Cross-child checks run by the loader once child configs are loaded.
+        The composed blocks share one output directory + package namespace, so
+        their class/file names must not collide, and each must be a composable
+        block (no nested subenvs / register model in this slice)."""
+        duts: set[str] = {self.dut.name}
+        ifaces: set[str] = set()
+        items: set[str] = set()
+        anames: set[str] = set()
+        for s in self.subenvs:
+            child = self.subenv_configs.get(s.name)
+            if child is None:
+                raise ValueError(f"subenv '{s.name}': child config not loaded.")
+            if child.subenvs:
+                raise ValueError(
+                    f"subenv '{s.name}': nested subenvs are not supported yet."
+                )
+            if child.register_model is not None:
+                raise ValueError(
+                    f"subenv '{s.name}': a child block with a register_model is not "
+                    f"supported in a subsystem yet."
+                )
+            if not child.dut.combinational:
+                raise ValueError(
+                    f"subenv '{s.name}': only combinational child blocks are supported "
+                    f"in a subsystem yet (clock/reset plumbing for composed clocked "
+                    f"blocks is a later slice)."
+                )
+            if any(a.parameters for a in child.agents):
+                raise ValueError(
+                    f"subenv '{s.name}': a child block with a parameterized agent is "
+                    f"not supported in a subsystem yet (parameter propagation is a "
+                    f"later slice)."
+                )
+            if child.dut.name in duts:
+                raise ValueError(
+                    f"subenv '{s.name}': block name '{child.dut.name}' (dut.name) "
+                    f"collides with another block or the top — each must be unique."
+                )
+            duts.add(child.dut.name)
+            for a in child.agents:
+                for coll, val, what in (
+                    (anames, a.name, "agent name"),
+                    (ifaces, a.interface, "interface"),
+                    (items, a.sequence_item, "sequence_item"),
+                ):
+                    if val in coll:
+                        raise ValueError(
+                            f"subenv '{s.name}': {what} '{val}' collides with another "
+                            f"block — composed blocks share a namespace, so agent "
+                            f"names/interfaces/transactions must be unique across them."
+                        )
+                    coll.add(val)
 
     @model_validator(mode="after")
     def validate_agents(self) -> ProjectConfig:
         names = [a.name for a in self.agents]
         if len(names) != len(set(names)):
             raise ValueError("Agent names must be unique.")
-        if not self.agents:
+        if self.subenvs:
+            if self.agents:
+                raise ValueError(
+                    "a bench with `subenvs` composes child block envs and must not "
+                    "define its own `agents` (this slice)."
+                )
+            if self.layout != "packaged":
+                raise ValueError(
+                    "`subenvs` require `layout: packaged` (each child block is a "
+                    "reusable env package that the top composes)."
+                )
+            snames = [s.name for s in self.subenvs]
+            if len(snames) != len(set(snames)):
+                raise ValueError("subenv names must be unique.")
+            if len(self.subenvs) < 2:
+                raise ValueError(
+                    "a subsystem bench composes >=2 child block envs "
+                    "(declare at least two `subenvs`)."
+                )
+            if (
+                self.analysis is not None
+                or self.register_model is not None
+                or self.coverage_models
+            ):
+                raise ValueError(
+                    "a `subenvs` top must not set analysis/register_model/"
+                    "coverage_models (this slice) — those belong on the child blocks."
+                )
+        elif not self.agents:
             raise ValueError("At least one agent must be defined.")
         agent_name_set = set(names)
         if self.analysis is not None:
@@ -1603,7 +1774,9 @@ class ProjectConfig(BaseModel):
         # listed agents when an analysis block is present, else just the primary.
         # A coverage model on any other agent would compile but never be sampled.
         covered_agents = (
-            set(self.analysis.coverage) if self.analysis else {self.agents[0].name}
+            set(self.analysis.coverage)
+            if self.analysis
+            else ({self.agents[0].name} if self.agents else set())
         )
         seen_cov: set[str] = set()
         for cm in self.coverage_models:
@@ -1799,9 +1972,18 @@ class ProjectConfig(BaseModel):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> ProjectConfig:
+        path = Path(path)
         with open(path) as fh:
             raw = yaml.safe_load(fh)
-        return cls.model_validate(raw)
+        cfg = cls.model_validate(raw)
+        # H1 — resolve each child block config relative to this (top) file, then
+        # cross-check the composition once all children are loaded.
+        if cfg.subenvs:
+            base = path.parent
+            for s in cfg.subenvs:
+                cfg.subenv_configs[s.name] = cls.from_yaml(base / s.config)
+            cfg.validate_subenv_composition()
+        return cfg
 
     @property
     def primary_agent(self) -> AgentConfig:

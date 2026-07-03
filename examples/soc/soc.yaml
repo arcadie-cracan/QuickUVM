@@ -1,0 +1,32 @@
+# soc — QuickUVM H1: a subsystem bench that COMPOSES two block envs.
+#
+# `subenvs:` references each child block's own QuickUVM config (resolved
+# relative to this file). QuickUVM generates each child's reusable env package
+# (its agent VIP + <block>_env_pkg) and a top layer: a soc_env that instantiates
+# both block envs, a soc_virtual_sequencer that collects each block's agent
+# sequencer, and a soc_vseq that drives both blocks concurrently.
+#
+# Opt-in: a bench with no `subenvs` is an ordinary bench (byte-identical).
+project:
+  name: soc
+  author: QuickUVM
+  year: 2026
+
+layout: packaged
+
+dut:
+  name: soc
+  clock: clk
+  reset: ''
+  combinational: true
+
+clock:
+  period: 10
+  unit: ns
+
+subenvs:
+  - {name: adder,    config: adder/adder.yaml}
+  - {name: inverter, config: inverter/inverter.yaml}
+
+tests:
+  - {name: soc_test}

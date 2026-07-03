@@ -421,9 +421,32 @@ via Jinja macros.
 - *Landed in the next slice:* `instances:` — two instances of the VIP at different
   widths in **one** bench (see the multi-instantiation status block above).
 
-### H1 — Sub-environments
+### H1 — Sub-environments — DONE (first slice)
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.
-**Accept:** a subsystem env composes ≥2 block envs.
+**Accept:** a subsystem env composes ≥2 block envs. ✅
+
+**Status — subsystem composition landed:**
+- `subenvs:` makes a bench a subsystem (top) that composes ≥2 child block envs. Each
+  child is referenced by config path (`{name: adder, config: adder/adder.yaml}`),
+  resolved relative to the top file; the loader reads each child bench config and
+  cross-checks the composition (unique block/agent/interface/transaction names — the
+  blocks share one output dir + package namespace).
+- Each child's **reusable env layer** is generated (its agent VIP `<agent>_pkg` +
+  `<block>_env_pkg`) with no test/top/clkgen/DUT-stub, and the **top layer** composes
+  them: a `<top>_env` instantiating each `<block>_env`, a `<top>_virtual_sequencer`
+  collecting each block's agent sequencer, a `<top>_vseq` firing every block's default
+  sequence concurrently, a `<top>_base_test` that populates each child env config (agent
+  cfgs + vifs) and hands it down, and a `tb_top` instantiating each block's interfaces +
+  real DUT. Each block keeps its own scoreboard checking its own DUT.
+- **Opt-in: a bench with no `subenvs` is byte-identical** (a dedicated composition path;
+  the ordinary-bench flow is untouched). Fail-closed guards: `subenvs` require
+  `layout: packaged`, no own `agents`, ≥2 blocks, unique subenv names, and (this slice)
+  no nested subenvs / register-model child.
+- Validated on `examples/soc/`: one subsystem composing an `adder` block (dout=din+1)
+  and an `inverter` block (dout=~din), driven concurrently by the top vseq — **31/31 on
+  each block's scoreboard on Xcelium** (0 errors). verible-lint-clean; CI gates it.
+- *Next slice:* parameter propagation (pass top params down to blocks) + nested subenvs
+  + cross-block scoreboards.
 
 ## Priority tier 3 — checking generality
 
