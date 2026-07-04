@@ -460,8 +460,25 @@ via Jinja macros.
   propagated to different widths — `dp` at W=8 (dout=din+1) and `mac` at W=16
   (dout=din<<1) — **31/31 on each block's scoreboard on Xcelium** (0 errors), from the
   same reusable width-parameterized block configs. verible-lint-clean; CI gates it.
+**Status — cross-block scoreboards landed:**
+- A subsystem can wire composed blocks into a pipeline and check them across the
+  boundary. `connections: [{from: add.dout, to: inv.din}]` emits the top-level wire
+  (a source block's output drives a destination block's input); the destination
+  block's agent is passive on that port (its input is a monitored, externally-driven
+  signal — QuickUVM emits it as a sampled clockvar and the passive driver drives
+  nothing, byte-identical for existing benches). `subenv_scoreboards: [{name: chk,
+  source: add.a, monitor: inv.b}]` generates a cross-block scoreboard reusing the A2
+  two-stream in-order predictor/comparator, sourced from two different blocks: it
+  predicts the monitor block's output from the source block's stream and compares.
+- Fail-closed: `connections`/`subenv_scoreboards` are subsystem-only; endpoints must
+  resolve (`block.port` / `block.agent`); a connection's destination-block agent must
+  be passive; a scoreboard's source and monitor must differ; scoreboard names unique.
+- Validated on `examples/pipe/`: a two-stage pipeline — add (dout=din+1) feeds inv
+  (dout=~din) through an auto-generated connection — with the cross-block scoreboard
+  checking `inv.dout == ~(add.dout)` **plus** each block's own scoreboard: all three
+  pass **31/31 on Xcelium** (0 errors). verible-lint-clean; CI gates it.
 - *Next slice:* the same block reused at N widths (per-instance class namespacing) +
-  nested subenvs + cross-block scoreboards.
+  nested subenvs.
 
 ## Priority tier 3 — checking generality
 

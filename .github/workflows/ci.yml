@@ -218,3 +218,17 @@ jobs:
           verible-verilog-lint --rules_config .verible-lint.rules gen_psoc/*.sv gen_psoc/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules \
             examples/psoc/dp/rtl/dp.sv examples/psoc/mac/rtl/mac.sv
+
+      # Gate the H1 cross-block-scoreboard path: the pipe example composes a two-stage
+      # pipeline (add -> inv) with an auto-generated `connections:` wire and a
+      # cross-block scoreboard (A2 two-stream, in-order) that predicts stage 2's
+      # output from stage 1's stream. Stage 2's agent is passive (its input is
+      # driven by the connection).
+      - name: Generate the cross-block-scoreboard example (H1)
+        run: quick-uvm generate -c examples/pipe/pipe.yaml -o gen_pipe
+
+      - name: Verible lint (cross-block-scoreboard generated SV/SVH + block DUTs)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_pipe/*.sv gen_pipe/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules \
+            examples/pipe/add/rtl/add.sv examples/pipe/inv/rtl/inv.sv

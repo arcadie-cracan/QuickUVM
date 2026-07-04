@@ -1,0 +1,27 @@
+# pipe — QuickUVM H1 cross-block scoreboards: a subsystem PIPELINE.
+#
+# Stage 1 (add: dout=din+1) feeds stage 2 (inv: dout=~din) through a top-level
+# `connections:` wire (add.dout -> inv.din). A cross-block scoreboard `chk`
+# predicts stage 2's output from stage 1's stream and compares (A2 two-stream,
+# in-order): expected inv.dout = ~(add.dout). Each block also keeps its own
+# scoreboard checking its own DUT.
+project: {name: pipe, author: QuickUVM, year: 2026}
+
+layout: packaged
+
+dut: {name: pipe, clock: clk, reset: '', combinational: true}
+
+clock: {period: 10, unit: ns}
+
+subenvs:
+  - {name: add, config: add/add.yaml}
+  - {name: inv, config: inv/inv.yaml}
+
+connections:
+  - {from: add.dout, to: inv.din}
+
+subenv_scoreboards:
+  - {name: chk, source: add.a, monitor: inv.b}
+
+tests:
+  - {name: pipe_test}

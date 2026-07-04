@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import ClassVar, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # A pragmatic subset of SystemVerilog reserved words a user might accidentally use
 # as a coverage bin name. Not exhaustive (IEEE 1800 has ~250); the identifier-format
@@ -1441,6 +1441,37 @@ class SubenvConfig(BaseModel):
         return self
 
 
+class SubenvConnection(BaseModel):
+    """H1 — a top-level wire between two composed blocks: the source block's
+    output port drives the destination block's input port (a pipeline). Both
+    endpoints are `block.port` (subenv name + interface signal). The destination
+    block's agent must be passive (the connection, not the agent, drives it)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    src: str = Field(alias="from")  # <block>.<port> producing the signal
+    dst: str = Field(alias="to")  # <block>.<port> consuming it
+
+
+class SubenvScoreboard(BaseModel):
+    """H1 — a cross-block scoreboard: predict the monitor block's output from the
+    source block's transaction and compare (reusing the A2 two-stream, in-order
+    comparator). `source`/`monitor` are `block.agent` (subenv name + agent)."""
+
+    name: str
+    source: str  # <block>.<agent> — the stimulus/source stream
+    monitor: str  # <block>.<agent> — the response/actual stream
+
+    @model_validator(mode="after")
+    def _check(self) -> SubenvScoreboard:
+        _check_sv_identifier(self.name, "cross-block scoreboard name")
+        if self.source == self.monitor:
+            raise ValueError(
+                f"cross-block scoreboard '{self.name}': source and monitor must "
+                f"differ (a cross-block scoreboard spans two blocks)."
+            )
+        return self
+
+
 class SubenvView:
     """A composed child block env, for the top composition templates. Not user
     config — built by `ProjectConfig.subenv_views` from the loaded child config."""
@@ -1525,6 +1556,11 @@ class ProjectConfig(BaseModel):
     # composes >=2 child block envs (each referenced by config path) instead of
     # defining its own agents. Opt-in: empty → an ordinary bench (byte-identical).
     subenvs: list[SubenvConfig] = Field(default_factory=list)
+    # H1 cross-block — top-level wires between composed blocks (source block output
+    # -> destination block input) and cross-block scoreboards (predict the monitor
+    # block's output from the source block's stream). Only valid with `subenvs`.
+    connections: list[SubenvConnection] = Field(default_factory=list)
+    subenv_scoreboards: list[SubenvScoreboard] = Field(default_factory=list)
     # Runtime: the loaded child ProjectConfigs, keyed by subenv name. Populated by
     # the loader (which resolves `subenv.config` relative to the top file); not
     # part of the serialized config.
@@ -1541,6 +1577,35 @@ class ProjectConfig(BaseModel):
             for s in self.subenvs
             if s.name in self.subenv_configs
         ]
+
+    def _iface_signal(self, ref: str) -> str:
+        """Resolve a `<block>.<port>` reference to the top-level interface signal
+        `<block>_<iface>_inst.<port>` (H1 cross-block connections)."""
+        blk, port = ref.split(".")
+        child = self.subenv_configs[blk]
+        for a in child.agents:
+            if any(p.name == port for _, p in a.all_ports):
+                return f"{blk}_{a.interface}_inst.{port}"
+        return ref  # unreachable — validated in validate_subenv_composition
+
+    @property
+    def resolved_connections(self) -> list[dict[str, str]]:
+        """H1 — each cross-block wire as top interface signals: dst driven by src."""
+        return [
+            {"dst": self._iface_signal(c.dst), "src": self._iface_signal(c.src)}
+            for c in self.connections
+        ]
+
+    def cross_block_sb_endpoints(
+        self, sb: SubenvScoreboard
+    ) -> tuple[str, AgentConfig, str, AgentConfig]:
+        """(source-block-handle, source-agent, monitor-block-handle, monitor-agent)
+        for a cross-block scoreboard. The block handle is the subenv name."""
+        sblk, sag = sb.source.split(".")
+        mblk, mag = sb.monitor.split(".")
+        sagent = next(a for a in self.subenv_configs[sblk].agents if a.name == sag)
+        magent = next(a for a in self.subenv_configs[mblk].agents if a.name == mag)
+        return sblk, sagent, mblk, magent
 
     def validate_subenv_composition(self) -> None:
         """Cross-child checks run by the loader once child configs are loaded.
@@ -1596,11 +1661,88 @@ class ProjectConfig(BaseModel):
                         )
                     coll.add(val)
 
+        # H1 cross-block — validate connection + scoreboard endpoints.
+        by_name = {
+            s.name: self.subenv_configs[s.name]
+            for s in self.subenvs
+            if s.name in self.subenv_configs
+        }
+
+        def _split(ref: str, what: str) -> tuple[str, str, ProjectConfig]:
+            if ref.count(".") != 1:
+                raise ValueError(f"{what} '{ref}' must be '<block>.<name>'.")
+            blk, item = ref.split(".")
+            if blk not in by_name:
+                raise ValueError(f"{what} '{ref}' references unknown block '{blk}'.")
+            return blk, item, by_name[blk]
+
+        seen_dst: set[str] = set()
+        for c in self.connections:
+            sblk, sport, scfg = _split(c.src, "connection 'from'")
+            dblk, dport, dcfg = _split(c.dst, "connection 'to'")
+            sportc = next(
+                (p for a in scfg.agents for p in a.output_ports if p.name == sport),
+                None,
+            )
+            if sportc is None:
+                raise ValueError(
+                    f"connection 'from' '{c.src}': '{sport}' is not an output port "
+                    f"of block '{sblk}'."
+                )
+            dagent = next(
+                (a for a in dcfg.agents for p in a.input_ports if p.name == dport),
+                None,
+            )
+            if dagent is None:
+                raise ValueError(
+                    f"connection 'to' '{c.dst}': '{dport}' is not an input port of "
+                    f"block '{dblk}'."
+                )
+            if dagent.active:
+                raise ValueError(
+                    f"connection 'to' '{c.dst}': block '{dblk}' agent "
+                    f"'{dagent.name}' is active and would drive '{dport}', "
+                    f"conflicting with the connection — make it passive "
+                    f"(active: false)."
+                )
+            dportc = next(p for p in dagent.input_ports if p.name == dport)
+            if sportc.bit_width != dportc.bit_width:
+                raise ValueError(
+                    f"connection '{c.src}' -> '{c.dst}': width mismatch "
+                    f"({sportc.bit_width}-bit output driving a {dportc.bit_width}-bit "
+                    f"input) — would silently truncate/pad."
+                )
+            if c.dst in seen_dst:
+                raise ValueError(
+                    f"connection: multiple connections drive '{c.dst}' (a port can "
+                    f"have only one driver)."
+                )
+            seen_dst.add(c.dst)
+
+        sbnames = [sb.name for sb in self.subenv_scoreboards]
+        if len(sbnames) != len(set(sbnames)):
+            raise ValueError("cross-block scoreboard names must be unique.")
+        for sb in self.subenv_scoreboards:
+            for role, ref in (("source", sb.source), ("monitor", sb.monitor)):
+                blk, agent, cfg = _split(
+                    ref, f"cross-block scoreboard '{sb.name}' {role}"
+                )
+                if not any(a.name == agent for a in cfg.agents):
+                    raise ValueError(
+                        f"cross-block scoreboard '{sb.name}' {role} '{ref}': block "
+                        f"'{blk}' has no agent '{agent}'."
+                    )
+
     @model_validator(mode="after")
     def validate_agents(self) -> ProjectConfig:
         names = [a.name for a in self.agents]
         if len(names) != len(set(names)):
             raise ValueError("Agent names must be unique.")
+        if not self.subenvs and (self.connections or self.subenv_scoreboards):
+            raise ValueError(
+                "`connections` / `subenv_scoreboards` are only valid on a subsystem "
+                "bench (they wire/scoreboard composed `subenvs`)."
+            )
         if self.subenvs:
             if self.agents:
                 raise ValueError(

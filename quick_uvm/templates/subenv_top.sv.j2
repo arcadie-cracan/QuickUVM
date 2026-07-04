@@ -37,6 +37,14 @@ module tb_top;
   );
 {% endfor %}
   // pragma quickuvm custom dut_connections end
+{% if connections %}
+
+  // Cross-block wires (H1): a source block's output drives a destination block's
+  // input port (the destination block's agent is passive on that port).
+{% for c in connections %}
+  assign {{ c.dst }} = {{ c.src }};
+{% endfor %}
+{% endif %}
 
   initial begin
 {% for sv in subenvs %}
