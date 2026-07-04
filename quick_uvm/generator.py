@@ -390,6 +390,21 @@ class Generator:
             specs.extend(Generator(sv.cfg).files_to_generate(subenv=True))
         # 2. The top composition layer.
         top = cfg.dut.name
+        # H1 cross-block — resolved wires + cross-block scoreboards (reusing the A2
+        # two-stream predictor/comparator, sourced from two different blocks).
+        xsbs = []
+        for sb in cfg.subenv_scoreboards:
+            sblk, sagent, mblk, magent = cfg.cross_block_sb_endpoints(sb)
+            xsbs.append(
+                {
+                    "name": sb.name,
+                    "cls": f"{top}_{sb.name}_scoreboard",
+                    "src_handle": sblk,
+                    "src_agent": sagent.name,
+                    "mon_handle": mblk,
+                    "mon_agent": magent.name,
+                }
+            )
         top_ctx = {
             "project": cfg.project,
             "dut": cfg.dut,
@@ -397,10 +412,35 @@ class Generator:
             "tests": cfg.tests,
             "subenvs": cfg.subenv_views,
             "layout": cfg.layout,
+            "connections": cfg.resolved_connections,
+            "subenv_scoreboards": xsbs,
             # env_vseq_base.svh.j2 (reused) reads these; a top vseq is virtual-only.
             "virtual_sequences": [],
             "auto_vseq": f"{top}_vseq",
         }
+        # Cross-block scoreboard sets (A2 two-stream, in-order), prefixed <top>_<name>.
+        for sb in cfg.subenv_scoreboards:
+            sblk, sagent, mblk, magent = cfg.cross_block_sb_endpoints(sb)
+            p = f"{top}_{sb.name}"
+            sbx = {
+                **top_ctx,
+                "sb_prefix": p,
+                "sb_in_item": sagent.sequence_item + sagent.param_args_values,
+                "sb_out_item": magent.sequence_item + magent.param_args_values,
+                "sb_in_agent": sagent,
+                "sb_out_agent": magent,
+                "sb_two_stream": True,
+                "sb_match": "in_order",
+                "sb_match_key": None,
+                "sb_max_latency": None,
+                "sb_max_lat_time": None,
+            }
+            specs.append(FileSpec("sb_predictor.svh.j2", f"{p}_predictor.svh", sbx))
+            specs.append(FileSpec("sb_comparator.svh.j2", f"{p}_comparator.svh", sbx))
+            specs.append(FileSpec("tb_scoreboard.svh.j2", f"{p}_scoreboard.svh", sbx))
+            specs.append(
+                FileSpec("sb_reference_model.svh.j2", f"{p}_reference_model.svh", sbx)
+            )
         specs.append(FileSpec("clkgen.sv.j2", "clkgen.sv", top_ctx))
         specs.append(
             FileSpec("subenv_top_env_cfg.svh.j2", f"{top}_env_cfg.svh", top_ctx)

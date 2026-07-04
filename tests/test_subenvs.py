@@ -24,6 +24,7 @@ from quick_uvm.models import (
 
 SOC = Path(__file__).resolve().parents[1] / "examples" / "soc" / "soc.yaml"
 PSOC = Path(__file__).resolve().parents[1] / "examples" / "psoc" / "psoc.yaml"
+PIPE = Path(__file__).resolve().parents[1] / "examples" / "pipe" / "pipe.yaml"
 
 
 def _block(name, agent, iface):
@@ -352,6 +353,159 @@ def test_param_propagation_threads_widths_into_top(tmp_path):
         "uvm_subscriber #(m_seq_item#(16))"
         in (tmp_path / "mac_predictor.svh").read_text()
     )
+
+
+# ---- H1 cross-block connections + scoreboards ------------------------------
+
+
+def test_from_yaml_loads_connections_and_scoreboards():
+    top = ProjectConfig.from_yaml(PIPE)
+    assert [(c.src, c.dst) for c in top.connections] == [("add.dout", "inv.din")]
+    assert [(s.source, s.monitor) for s in top.subenv_scoreboards] == [
+        ("add.a", "inv.b")
+    ]
+    # resolution to top-level interface signals
+    assert top.resolved_connections == [
+        {"dst": "inv_b_if_inst.din", "src": "add_a_if_inst.dout"}
+    ]
+
+
+def _pgen(tmp_path):
+    Generator(ProjectConfig.from_yaml(PIPE)).generate_all(tmp_path)
+    return tmp_path
+
+
+def test_tb_top_emits_cross_block_connection(tmp_path):
+    _pgen(tmp_path)
+    top = (tmp_path / "tb_top.sv").read_text()
+    assert "assign inv_b_if_inst.din = add_a_if_inst.dout;" in top
+
+
+def test_cross_block_scoreboard_wired_in_top_env(tmp_path):
+    _pgen(tmp_path)
+    e = (tmp_path / "pipe_env.svh").read_text()
+    assert "pipe_chk_scoreboard chk;" in e
+    assert 'chk = pipe_chk_scoreboard::type_id::create("chk", this);' in e
+    assert "add.a_agnt.ap.connect(chk.src_axp);" in e
+    assert "inv.b_agnt.ap.connect(chk.mon_axp);" in e
+
+
+def test_cross_block_predictor_typed_source_to_monitor(tmp_path):
+    _pgen(tmp_path)
+    p = (tmp_path / "pipe_chk_predictor.svh").read_text()
+    assert "uvm_subscriber #(a_seq_item)" in p  # source stream
+    assert "uvm_analysis_port #(b_seq_item)" in p  # monitor/expected stream
+    assert "predict(a_seq_item t)" in p
+    pkg = (tmp_path / "pipe_test_pkg.sv").read_text()
+    assert '`include "pipe_chk_predictor.svh"' in pkg
+    assert '`include "pipe_chk_reference_model.svh"' in pkg
+
+
+def test_passive_agent_input_is_monitored_not_driven(tmp_path):
+    # The passive inv block: its input port is a sampled clockvar (input), and its
+    # driver drives nothing — so the top connection can drive it without conflict.
+    _pgen(tmp_path)
+    bif = (tmp_path / "b_if.sv").read_text()
+    assert "input  din;" in bif  # driver cb1 samples, not `output din`
+    drv = (tmp_path / "b_driver.svh").read_text()
+    assert "vif.cb1.din <=" not in drv  # passive driver drives nothing
+
+
+def test_connection_to_active_agent_rejected():
+    # A connection cannot drive an ACTIVE agent's input (the agent already drives it).
+    from quick_uvm.models import SubenvConnection
+
+    top = _top()
+    src = _block("adder", "a", "a_if")
+    src.agents[0].ports["outputs"] = [PortConfig(name="dout", width=8)]
+    top.subenv_configs = {"adder": src, "inverter": _block("inverter", "b", "b_if")}
+    top.connections = [SubenvConnection(**{"from": "adder.dout", "to": "inverter.din"})]
+    with pytest.raises(Exception, match="is active and would drive"):
+        top.validate_subenv_composition()
+
+
+def _blk_io(name, agent, iface, dwidth):
+    # a block with an output `dout` (8-bit) and an input `din` of `dwidth` bits
+    return ProjectConfig(
+        project=ProjectMeta(name=name),
+        dut=DutConfig(name=name, combinational=True, reset=""),
+        agents=[
+            AgentConfig(
+                name=agent,
+                interface=iface,
+                sequence_item=f"{agent}_seq_item",
+                active=False,
+                ports={
+                    "inputs": [PortConfig(name="din", width=dwidth)],
+                    "outputs": [PortConfig(name="dout", width=8)],
+                },
+            )
+        ],
+        tests=[TConf(name=f"{name}_test")],
+    )
+
+
+def test_connection_width_mismatch_rejected():
+    from quick_uvm.models import SubenvConnection
+
+    top = _top()
+    top.subenv_configs = {
+        "adder": _blk_io("adder", "a", "a_if", 8),
+        "inverter": _blk_io("inverter", "b", "b_if", 4),  # 4-bit din
+    }
+    top.connections = [SubenvConnection(**{"from": "adder.dout", "to": "inverter.din"})]
+    with pytest.raises(Exception, match="width mismatch"):
+        top.validate_subenv_composition()
+
+
+def test_duplicate_connection_target_rejected():
+    from quick_uvm.models import SubenvConnection
+
+    top = _top()
+    top.subenv_configs = {
+        "adder": _blk_io("adder", "a", "a_if", 8),
+        "inverter": _blk_io("inverter", "b", "b_if", 8),
+    }
+    top.connections = [
+        SubenvConnection(**{"from": "adder.dout", "to": "inverter.din"}),
+        SubenvConnection(**{"from": "inverter.dout", "to": "inverter.din"}),
+    ]
+    with pytest.raises(Exception, match="multiple connections drive"):
+        top.validate_subenv_composition()
+
+
+def test_cross_block_scoreboard_unknown_agent_rejected():
+    from quick_uvm.models import SubenvScoreboard
+
+    top = _top()
+    top.subenv_configs = {
+        "adder": _block("adder", "a", "a_if"),
+        "inverter": _block("inverter", "b", "b_if"),
+    }
+    top.subenv_scoreboards = [
+        SubenvScoreboard(name="chk", source="adder.a", monitor="inverter.zzz")
+    ]
+    with pytest.raises(Exception, match="has no agent 'zzz'"):
+        top.validate_subenv_composition()
+
+
+def test_connections_without_subenvs_rejected():
+    from quick_uvm.models import SubenvConnection
+
+    with pytest.raises(Exception, match="only valid on a subsystem"):
+        ProjectConfig(
+            project=ProjectMeta(name="b"),
+            dut=DutConfig(name="b", combinational=True, reset=""),
+            agents=[
+                AgentConfig(
+                    name="x",
+                    interface="xi",
+                    sequence_item="xt",
+                    ports={"inputs": [PortConfig(name="din", width=8)]},
+                )
+            ],
+            connections=[SubenvConnection(**{"from": "a.b", "to": "c.d"})],
+        )
 
 
 def test_unknown_param_override_rejected(tmp_path):

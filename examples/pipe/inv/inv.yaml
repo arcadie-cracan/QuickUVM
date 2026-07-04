@@ -1,0 +1,15 @@
+# inv — pipeline stage 2 (dout = ~din). PASSIVE agent: its din is driven by
+# stage 1's dout via a top-level cross-block connection, so it only monitors.
+project: {name: inv, author: QuickUVM, year: 2026}
+dut: {name: inv, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: b
+    interface: b_if
+    sequence_item: b_seq_item
+    active: false
+    ports:
+      inputs:  [{name: din,  width: 8}]
+      outputs: [{name: dout, width: 8}]
+tests:
+  - {name: inv_test, num_items: 30}

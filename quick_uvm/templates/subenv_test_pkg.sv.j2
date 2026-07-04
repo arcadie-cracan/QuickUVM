@@ -20,6 +20,15 @@ package {{ dut.name }}_test_pkg;
   import {{ agent.name }}_pkg::*;
 {% endfor %}
 {% endfor %}
+{% if subenv_scoreboards %}
+
+  // Cross-block scoreboards (typed on the source/monitor blocks' transactions)
+{% for xsb in subenv_scoreboards %}
+  `include "{{ dut.name }}_{{ xsb.name }}_predictor.svh"
+  `include "{{ dut.name }}_{{ xsb.name }}_comparator.svh"
+  `include "{{ dut.name }}_{{ xsb.name }}_scoreboard.svh"
+{% endfor %}
+{% endif %}
 
   // Top environment + coordination
   `include "{{ dut.name }}_env_cfg.svh"
@@ -32,6 +41,9 @@ package {{ dut.name }}_test_pkg;
   `include "{{ dut.name }}_base_test.svh"
 {% for test in tests %}
   `include "{{ test.name }}.svh"
+{% endfor %}
+{% for xsb in subenv_scoreboards %}
+  `include "{{ dut.name }}_{{ xsb.name }}_reference_model.svh"
 {% endfor %}
 
 endpackage

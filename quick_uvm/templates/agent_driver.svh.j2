@@ -32,6 +32,7 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
 
   virtual task initialize (); // @0 - Does not use clocking block
     `uvm_info("INIT", "{{ agent.name }}_driver: Initialize (time @0)", UVM_HIGH)
+{% if agent.active %}
 {% for port in agent.input_ports %}
 {% if port.name == dut.reset %}
     vif.{{ port.name }} <= '0;
@@ -41,6 +42,7 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
     vif.{{ port.name }} <= '0;
 {% endif %}
 {% endfor %}
+{% endif %}
 {% if dut.external_reset %}
     // Reset is driven externally: hold off BEFORE advancing a clock so the parked
     // idle values are all the DUT sees during reset; wait for deassertion, then let
@@ -57,9 +59,11 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
 
   virtual task drive_item ({{ agent.sequence_item }}{{ agent.param_args }} tr);
     `uvm_info("drive_item", tr.input2string(), UVM_FULL)
+{% if agent.active %}
 {% for port in agent.input_ports %}
     vif.cb1.{{ port.name }} <= tr.{{ port.name }};
 {% endfor %}
+{% endif %}
     @vif.cb1;
     // pragma quickuvm custom drive_item_additional begin
     // pragma quickuvm custom drive_item_additional end
