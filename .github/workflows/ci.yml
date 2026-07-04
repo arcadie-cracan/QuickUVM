@@ -232,3 +232,15 @@ jobs:
           verible-verilog-lint --rules_config .verible-lint.rules gen_pipe/*.sv gen_pipe/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules \
             examples/pipe/add/rtl/add.sv examples/pipe/inv/rtl/inv.sv
+
+      # Gate the H1 same-block-reused-at-N-widths path: the channels example composes
+      # the SAME parameterized `chan` block config twice (lo at W=8, hi at W=16).
+      # QuickUVM auto-namespaces the two copies (lo_*/hi_*) so their classes don't
+      # collide, while both reuse the one unprefixed `chan` RTL module at #(8)/#(16).
+      - name: Generate the same-block-reused example (H1)
+        run: quick-uvm generate -c examples/channels/channels.yaml -o gen_channels
+
+      - name: Verible lint (same-block-reused generated SV/SVH + reused DUT)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_channels/*.sv gen_channels/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/channels/chan/rtl/chan.sv

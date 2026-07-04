@@ -1,0 +1,16 @@
+# chan — a parameterized channel block (dout = din + 1 at width W).
+# Reused twice (at W=8 and W=16) by ../channels.yaml.
+project: {name: chan, author: QuickUVM, year: 2026}
+dut: {name: chan, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: c
+    interface: c_if
+    sequence_item: c_seq_item
+    parameters:
+      - {name: W, default: 8}
+    ports:
+      inputs:  [{name: din,  width_param: W}]
+      outputs: [{name: dout, width_param: W}]
+tests:
+  - {name: chan_test, num_items: 30}

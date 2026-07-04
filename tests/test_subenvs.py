@@ -25,6 +25,9 @@ from quick_uvm.models import (
 SOC = Path(__file__).resolve().parents[1] / "examples" / "soc" / "soc.yaml"
 PSOC = Path(__file__).resolve().parents[1] / "examples" / "psoc" / "psoc.yaml"
 PIPE = Path(__file__).resolve().parents[1] / "examples" / "pipe" / "pipe.yaml"
+CHANNELS = (
+    Path(__file__).resolve().parents[1] / "examples" / "channels" / "channels.yaml"
+)
 
 
 def _block(name, agent, iface):
@@ -311,6 +314,165 @@ def test_generate_without_loaded_children_errors():
     # A top constructed in-memory (not via from_yaml) has no loaded children.
     with pytest.raises(Exception, match="child configs are not loaded"):
         Generator(_top()).files_to_generate()
+
+
+# ---- H1 same-block-reused-at-N-widths (namespacing) ------------------------
+
+
+def _mkblock(tmp_path, name="chan"):
+    """Write a minimal parameterized block config + return the dir for a top."""
+    d = tmp_path / name
+    d.mkdir()
+    (d / f"{name}.yaml").write_text(
+        f"project: {{name: {name}}}\n"
+        f"dut: {{name: {name}, combinational: true, reset: ''}}\n"
+        "agents:\n"
+        "  - name: c\n"
+        "    interface: c_if\n"
+        "    sequence_item: c_seq_item\n"
+        "    parameters: [{name: W, default: 8}]\n"
+        "    ports:\n"
+        "      inputs:  [{name: din,  width_param: W}]\n"
+        "      outputs: [{name: dout, width_param: W}]\n"
+        "tests: [{name: t}]\n"
+    )
+    return f"{name}/{name}.yaml"
+
+
+def _write_top(tmp_path, subenvs_yaml):
+    top = tmp_path / "top.yaml"
+    top.write_text(
+        "project: {name: top}\n"
+        "layout: packaged\n"
+        "dut: {name: top, combinational: true, reset: ''}\n"
+        f"subenvs:\n{subenvs_yaml}\n"
+        "tests: [{name: top_test}]\n"
+    )
+    return top
+
+
+def test_shared_config_auto_namespaced():
+    top = ProjectConfig.from_yaml(CHANNELS)
+    assert top.subenv_namespaces == {"lo": "lo", "hi": "hi"}
+    lo, hi = top.subenv_views
+    assert lo.block == "lo_chan" and hi.block == "hi_chan"
+    assert lo.cfg.agents[0].interface == "lo_c_if"
+    assert hi.cfg.agents[0].sequence_item == "hi_c_seq_item"
+    assert lo.cfg.agents[0].param_args_values == "#(8)"
+    assert hi.cfg.agents[0].param_args_values == "#(16)"
+    # the reused RTL DUT module name is UNprefixed
+    assert lo.dut_module == "chan" and hi.dut_module == "chan"
+
+
+def test_distinct_configs_not_namespaced():
+    top = ProjectConfig.from_yaml(SOC)
+    assert top.subenv_namespaces == {"adder": "", "inverter": ""}
+    assert all(not v.namespaced for v in top.subenv_views)
+    assert top.subenv_views[0].dut_module == "adder"  # == block when not namespaced
+
+
+def test_namespaced_classes_generated(tmp_path):
+    Generator(ProjectConfig.from_yaml(CHANNELS)).generate_all(tmp_path)
+    # one config, two fully-namespaced class sets — no collision
+    for f in (
+        "lo_chan_env.svh",
+        "lo_c_seq_item.svh",
+        "lo_chan_env_pkg.sv",
+        "hi_chan_env.svh",
+        "hi_c_seq_item.svh",
+        "hi_chan_env_pkg.sv",
+    ):
+        assert (tmp_path / f).exists(), f
+    txn = (tmp_path / "hi_c_seq_item.svh").read_text()
+    assert "class hi_c_seq_item #(parameter int W = 16)" in txn  # propagated width
+    top = (tmp_path / "tb_top.sv").read_text()
+    # reused unprefixed DUT module, instantiated at each width
+    assert "chan#(8) lo_dut (" in top
+    assert "chan#(16) hi_dut (" in top
+    assert "lo_c_if#(8) lo_lo_c_if_inst (clk);" in top
+
+
+def test_explicit_namespace_overrides(tmp_path):
+    from quick_uvm.models import ProjectConfig as PC
+
+    cfg = _mkblock(tmp_path)
+    # namespace: true forces prefixing even for a single (non-shared) use
+    top = _write_top(
+        tmp_path,
+        f"  - {{name: only, config: {cfg}, namespace: true}}\n"
+        f"  - {{name: two, config: {_mkblock(tmp_path, 'blk2')}}}",
+    )
+    c = PC.from_yaml(top)
+    assert c.subenv_namespaces["only"] == "only"  # forced
+    assert c.subenv_namespaces["two"] == ""  # single-use, not forced
+
+
+def test_explicit_namespace_custom_prefix(tmp_path):
+    from quick_uvm.models import ProjectConfig as PC
+
+    cfg = _mkblock(tmp_path)
+    top = _write_top(
+        tmp_path,
+        f"  - {{name: a, config: {cfg}, namespace: chX}}\n"
+        f"  - {{name: b, config: {_mkblock(tmp_path, 'blk2')}}}",
+    )
+    c = PC.from_yaml(top)
+    assert c.subenv_namespaces["a"] == "chX"
+    assert c.subenv_configs["a"].dut.name == "chX_chan"
+
+
+def test_cross_block_sequence_name_collision_rejected():
+    # Two DISTINCT blocks that each declare a sequence named "burst" would both
+    # emit burst.svh — the composition guard must reject it (fail-closed).
+    from quick_uvm.models import SequenceConfig
+
+    top = _top()
+    a = _block("adder", "a", "a_if")
+    a.agents[0].sequences = [SequenceConfig(name="burst")]
+    b = _block("inverter", "b", "b_if")
+    b.agents[0].sequences = [SequenceConfig(name="burst")]
+    top.subenv_configs = {"adder": a, "inverter": b}
+    with pytest.raises(Exception, match="sequence 'burst' collides"):
+        top.validate_subenv_composition()
+
+
+def test_namespace_false_collision_hint(tmp_path):
+    # Disabling namespacing on a REUSED config surfaces a guided error.
+    from quick_uvm.models import ProjectConfig as PC
+
+    cfg = _mkblock(tmp_path)
+    top = tmp_path / "top.yaml"
+    top.write_text(
+        "project: {name: top}\n"
+        "layout: packaged\n"
+        "dut: {name: top, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        f"  - {{name: lo, config: {cfg}, namespace: false, params: {{W: 8}}}}\n"
+        f"  - {{name: hi, config: {cfg}, namespace: false, params: {{W: 16}}}}\n"
+        "tests: [{name: t}]\n"
+    )
+    with pytest.raises(Exception, match="namespacing is disabled"):
+        PC.from_yaml(top)
+
+
+def test_namespaced_block_rejects_connection(tmp_path):
+    # A namespaced (reused) block may not be referenced by a cross-block wire yet.
+    from quick_uvm.models import ProjectConfig as PC
+
+    cfg = _mkblock(tmp_path)
+    top = tmp_path / "top.yaml"
+    top.write_text(
+        "project: {name: top}\n"
+        "layout: packaged\n"
+        "dut: {name: top, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        f"  - {{name: lo, config: {cfg}, params: {{W: 8}}}}\n"
+        f"  - {{name: hi, config: {cfg}, params: {{W: 16}}}}\n"
+        "connections: [{from: lo.dout, to: hi.din}]\n"
+        "tests: [{name: t}]\n"
+    )
+    with pytest.raises(Exception, match="is namespaced"):
+        PC.from_yaml(top)
 
 
 # ---- H1 parameter propagation ----------------------------------------------

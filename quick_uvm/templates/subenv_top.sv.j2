@@ -26,7 +26,7 @@ module tb_top;
   // pragma quickuvm custom dut_connections begin
   // Instantiate each block's DUT — connect to that block's interface signals
 {% for sv in subenvs %}
-  {{ sv.block }}{{ sv.dut_param_args }} {{ sv.name }}_dut (
+  {{ sv.dut_module }}{{ sv.dut_param_args }} {{ sv.name }}_dut (
 {% for inst, pname in sv.dut_conns %}
     .{{ pname }}({{ inst }}.{{ pname }}){% if not loop.last or not sv.cfg.dut.combinational %},{% endif %}
 

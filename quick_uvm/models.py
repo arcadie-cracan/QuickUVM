@@ -1434,10 +1434,30 @@ class SubenvConfig(BaseModel):
     # parameter order (as in C3), so a multi-parameter block's agent `parameters:`
     # order must match the DUT module's parameter order.
     params: dict[str, int] = Field(default_factory=dict)
+    # H1 reuse — per-instance class namespacing. Simple by default, powerful when
+    # needed: None (default) auto-namespaces this instance (prefix = subenv name)
+    # ONLY when the same `config` path is composed >=2 times (so the reused block's
+    # classes don't collide); a config used once stays unprefixed (byte-identical).
+    # `true` forces namespacing by the subenv name; a string forces a custom prefix;
+    # `false` disables it (a genuine collision then fails closed).
+    namespace: bool | str | None = None
+
+    def resolve_prefix(self, is_shared: bool) -> str:
+        """The class-name prefix for this instance ("" = no namespacing)."""
+        ns = self.namespace
+        if ns is False:
+            return ""
+        if ns is True:
+            return self.name
+        if isinstance(ns, str):
+            return ns
+        return self.name if is_shared else ""  # None → auto
 
     @model_validator(mode="after")
     def _check(self) -> SubenvConfig:
         _check_sv_identifier(self.name, "subenv name")
+        if isinstance(self.namespace, str):
+            _check_sv_identifier(self.namespace, "subenv namespace prefix")
         return self
 
 
@@ -1476,13 +1496,29 @@ class SubenvView:
     """A composed child block env, for the top composition templates. Not user
     config — built by `ProjectConfig.subenv_views` from the loaded child config."""
 
-    def __init__(self, name: str, cfg: ProjectConfig):
+    def __init__(self, name: str, cfg: ProjectConfig, prefix: str = ""):
         self.name = name  # block instance name in the top (e.g. adder)
-        self.cfg = cfg  # the child's ProjectConfig
+        self.cfg = (
+            cfg  # the child's ProjectConfig (names already prefixed if namespaced)
+        )
+        self.prefix = prefix  # applied namespace prefix ("" = not namespaced)
+
+    @property
+    def namespaced(self) -> bool:
+        return bool(self.prefix)
 
     @property
     def block(self) -> str:
-        return self.cfg.dut.name  # child class prefix (e.g. adder)
+        return self.cfg.dut.name  # child class prefix (e.g. adder / lo_chan)
+
+    @property
+    def dut_module(self) -> str:
+        """The DUT module name to instantiate (real RTL). For a namespaced block
+        this is the ORIGINAL block name (the reused RTL module is unprefixed),
+        recovered by stripping the class prefix; otherwise the block name."""
+        if self.namespaced:
+            return self.cfg.dut.name.removeprefix(f"{self.prefix}_")
+        return self.cfg.dut.name
 
     @property
     def env_class(self) -> str:
@@ -1567,13 +1603,22 @@ class ProjectConfig(BaseModel):
     subenv_configs: dict[str, ProjectConfig] = Field(
         default_factory=dict, exclude=True, repr=False
     )
+    # Runtime: the applied class-name prefix per subenv ("" = not namespaced),
+    # populated by the loader. Read by SubenvView (namespaced / dut_module).
+    subenv_namespaces: dict[str, str] = Field(
+        default_factory=dict, exclude=True, repr=False
+    )
 
     @property
     def subenv_views(self) -> list[SubenvView]:
         """H1 — the composed child block envs (in `subenvs` order), once their
         configs are loaded; empty for an ordinary bench."""
         return [
-            SubenvView(s.name, self.subenv_configs[s.name])
+            SubenvView(
+                s.name,
+                self.subenv_configs[s.name],
+                self.subenv_namespaces.get(s.name, ""),
+            )
             for s in self.subenvs
             if s.name in self.subenv_configs
         ]
@@ -1616,6 +1661,7 @@ class ProjectConfig(BaseModel):
         ifaces: set[str] = set()
         items: set[str] = set()
         anames: set[str] = set()
+        seqs: set[str] = set()
         for s in self.subenvs:
             child = self.subenv_configs.get(s.name)
             if child is None:
@@ -1642,22 +1688,32 @@ class ProjectConfig(BaseModel):
                     f"agent's parameters)."
                 )
             if child.dut.name in duts:
+                hint = ""
+                if s.namespace is False:
+                    hint = (
+                        " (namespacing is disabled on this reused block — remove "
+                        "`namespace: false` or give it a distinct prefix)"
+                    )
                 raise ValueError(
                     f"subenv '{s.name}': block name '{child.dut.name}' (dut.name) "
-                    f"collides with another block or the top — each must be unique."
+                    f"collides with another block or the top — each must be "
+                    f"unique{hint}."
                 )
             duts.add(child.dut.name)
             for a in child.agents:
-                for coll, val, what in (
+                axes = [
                     (anames, a.name, "agent name"),
                     (ifaces, a.interface, "interface"),
                     (items, a.sequence_item, "sequence_item"),
-                ):
+                ]
+                axes += [(seqs, sq.name, "sequence") for sq in a.sequences]
+                for coll, val, what in axes:
                     if val in coll:
                         raise ValueError(
                             f"subenv '{s.name}': {what} '{val}' collides with another "
                             f"block — composed blocks share a namespace, so agent "
-                            f"names/interfaces/transactions must be unique across them."
+                            f"names/interfaces/transactions/sequences must be unique "
+                            f"across them."
                         )
                     coll.add(val)
 
@@ -1674,6 +1730,12 @@ class ProjectConfig(BaseModel):
             blk, item = ref.split(".")
             if blk not in by_name:
                 raise ValueError(f"{what} '{ref}' references unknown block '{blk}'.")
+            if self.subenv_namespaces.get(blk):
+                raise ValueError(
+                    f"{what} '{ref}' references block '{blk}', which is namespaced "
+                    f"(its config is reused) — cross-block connections/scoreboards to "
+                    f"a reused block are not supported yet."
+                )
             return blk, item, by_name[blk]
 
         seen_dst: set[str] = set()
@@ -2137,8 +2199,25 @@ class ProjectConfig(BaseModel):
         # cross-check the composition once all children are loaded.
         if cfg.subenvs:
             base = path.parent
-            for s in cfg.subenvs:
+            # A config path composed >=2 times is "shared" → its instances are
+            # auto-namespaced (their classes would otherwise collide).
+            paths = [(base / s.config).resolve() for s in cfg.subenvs]
+            shared = {p for p in paths if paths.count(p) > 1}
+            for s, spath in zip(cfg.subenvs, paths):
                 child = cls.from_yaml(base / s.config)
+                # H1 reuse — namespace this instance's classes (prefix the child's
+                # dut/agent/interface/transaction/sequence names) so a config reused
+                # more than once does not produce colliding class/file names.
+                prefix = s.resolve_prefix(spath in shared)
+                cfg.subenv_namespaces[s.name] = prefix
+                if prefix:
+                    child.dut.name = f"{prefix}_{child.dut.name}"
+                    for a in child.agents:
+                        a.name = f"{prefix}_{a.name}"
+                        a.interface = f"{prefix}_{a.interface}"
+                        a.sequence_item = f"{prefix}_{a.sequence_item}"
+                        for seq in a.sequences:
+                            seq.name = f"{prefix}_{seq.name}"
                 # H1 param propagation — bake this instance's overrides into the
                 # child block's agent parameter defaults before it is generated.
                 if s.params:
