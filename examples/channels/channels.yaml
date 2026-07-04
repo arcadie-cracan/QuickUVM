@@ -1,0 +1,15 @@
+# channels — QuickUVM H1: the SAME parameterized block reused at N widths.
+#
+# Both subenvs reference the same chan/chan.yaml. QuickUVM detects the shared
+# config and auto-namespaces each instance's classes by its subenv name
+# (lo_* / hi_*), so the two copies never collide. Each is propagated to its own
+# width (lo at W=8, hi at W=16) and keeps its own scoreboard.
+project: {name: channels, author: QuickUVM, year: 2026}
+layout: packaged
+dut: {name: channels, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+subenvs:
+  - {name: lo, config: chan/chan.yaml, params: {W: 8}}
+  - {name: hi, config: chan/chan.yaml, params: {W: 16}}
+tests:
+  - {name: channels_test}

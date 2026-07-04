@@ -477,8 +477,26 @@ via Jinja macros.
   (dout=~din) through an auto-generated connection — with the cross-block scoreboard
   checking `inv.dout == ~(add.dout)` **plus** each block's own scoreboard: all three
   pass **31/31 on Xcelium** (0 errors). verible-lint-clean; CI gates it.
-- *Next slice:* the same block reused at N widths (per-instance class namespacing) +
-  nested subenvs.
+**Status — same block reused at N widths landed:**
+- The SAME parameterized block config can be composed more than once in one subsystem
+  at different values. QuickUVM detects a shared `config` path (referenced by >=2
+  subenvs) and auto-namespaces each instance's classes by its subenv name — it prefixes
+  the loaded child's `dut.name` + each agent's `name`/`interface`/`sequence_item`/
+  sequence names, which cascades through existing generation to give fully distinct
+  class/file/package sets (`lo_chan_env`, `lo_c_seq_item#(8)` vs `hi_chan_env`,
+  `hi_c_seq_item#(16)`). The reused RTL DUT module stays UNprefixed (both instances
+  reuse one `chan` module, instantiated `chan#(8)` / `chan#(16)`).
+- Simple by default, powerful when needed: `namespace` on a subenv overrides the
+  auto behavior — `true` forces prefixing by the subenv name, a string forces a custom
+  prefix, `false` disables it (a genuine collision then fails closed). A config used
+  once is never namespaced (soc/psoc/pipe byte-identical).
+- Fail-closed (this slice): a namespaced (reused) block may not be referenced by a
+  cross-block `connection`/`subenv_scoreboard` (the endpoint agent names are prefixed).
+- Validated on `examples/channels/`: one `chan` block config composed at W=8 and W=16,
+  each auto-namespaced and self-scoreboarded — both pass **31/31 on Xcelium** (0 errors)
+  from one config + one RTL module. verible-lint-clean; CI gates it.
+- *Next slice:* nested subenvs (a subsystem of sub-subsystems) + cross-block scoreboards
+  spanning namespaced instances.
 
 ## Priority tier 3 — checking generality
 
