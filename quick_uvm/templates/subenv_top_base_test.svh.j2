@@ -27,13 +27,12 @@ class {{ dut.name }}_base_test extends uvm_test;
     super.build_phase(phase);
 
     env_cfg = {{ dut.name }}_env_cfg::type_id::create("env_cfg");
-{% for sv in subenvs %}
+{% for op in config_ops %}
 
-    // Block: {{ sv.name }} ({{ sv.block }})
-    env_cfg.{{ sv.cfg_field }} = {{ sv.env_cfg_class }}::type_id::create("{{ sv.cfg_field }}");
-{% for agent in sv.agents %}
-{% set acfg %}env_cfg.{{ sv.cfg_field }}.{{ agent.name }}_cfg{% endset %}
-{% set vkey %}{{ sv.name }}_{{ agent.interface }}_vif{% endset %}
+    // Block: {{ op.name }} ({{ op.block }})
+    {{ op.field }} = {{ op.cfg_class }}::type_id::create("{{ op.create_name }}");
+{% for agent, vkey in op.agents %}
+{% set acfg %}{{ op.field }}.{{ agent.name }}_cfg{% endset %}
     {{ acfg }} = {{ agent.name }}_cfg{{ agent.param_args_values }}::type_id::create("{{ agent.name }}_cfg");
     {{ acfg }}.is_active = UVM_{{ "ACTIVE" if agent.active else "PASSIVE" }};
     if (!uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::get(
@@ -41,7 +40,7 @@ class {{ dut.name }}_base_test extends uvm_test;
       `uvm_fatal("NOVIF",
                  "No virtual interface '{{ vkey }}' in config DB (see tb_top.sv)")
 {% endfor %}
-    uvm_config_db#({{ sv.env_cfg_class }})::set(this, "e.{{ sv.inst }}", "env_cfg", env_cfg.{{ sv.cfg_field }});
+    uvm_config_db#({{ op.cfg_class }})::set(this, "{{ op.db_path }}", "env_cfg", {{ op.field }});
 {% endfor %}
 
     uvm_config_db#({{ dut.name }}_env_cfg)::set(this, "e", "env_cfg", env_cfg);

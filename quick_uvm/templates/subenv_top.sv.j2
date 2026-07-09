@@ -17,22 +17,22 @@ module tb_top;
   clkgen ck (clk);
 
   // Instantiate each block's interfaces
-{% for sv in subenvs %}
-{% for agent in sv.agents %}
-  {{ agent.interface }}{{ agent.param_args_values }} {{ sv.name }}_{{ agent.interface }}_inst (clk);
+{% for lv in leaf_views %}
+{% for agent in lv.agents %}
+  {{ agent.interface }}{{ agent.param_args_values }} {{ lv.pathname }}_{{ agent.interface }}_inst (clk);
 {% endfor %}
 {% endfor %}
 
   // pragma quickuvm custom dut_connections begin
   // Instantiate each block's DUT — connect to that block's interface signals
-{% for sv in subenvs %}
-  {{ sv.dut_module }}{{ sv.dut_param_args }} {{ sv.name }}_dut (
-{% for inst, pname in sv.dut_conns %}
-    .{{ pname }}({{ inst }}.{{ pname }}){% if not loop.last or not sv.cfg.dut.combinational %},{% endif %}
+{% for lv in leaf_views %}
+  {{ lv.dut_module }}{{ lv.dut_param_args }} {{ lv.pathname }}_dut (
+{% for inst, pname in lv.dut_conns %}
+    .{{ pname }}({{ inst }}.{{ pname }}){% if not loop.last or not lv.sv.cfg.dut.combinational %},{% endif %}
 
 {% endfor %}
-{% if not sv.cfg.dut.combinational %}
-    .{{ sv.cfg.dut.clock }}(clk)
+{% if not lv.sv.cfg.dut.combinational %}
+    .{{ lv.sv.cfg.dut.clock }}(clk)
 {% endif %}
   );
 {% endfor %}
@@ -47,9 +47,9 @@ module tb_top;
 {% endif %}
 
   initial begin
-{% for sv in subenvs %}
-{% for agent in sv.agents %}
-    uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::set(null, "*", "{{ sv.name }}_{{ agent.interface }}_vif", {{ sv.name }}_{{ agent.interface }}_inst);
+{% for lv in leaf_views %}
+{% for agent in lv.agents %}
+    uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::set(null, "*", "{{ lv.pathname }}_{{ agent.interface }}_vif", {{ lv.pathname }}_{{ agent.interface }}_inst);
 {% endfor %}
 {% endfor %}
     run_test();

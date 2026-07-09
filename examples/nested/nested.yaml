@@ -1,0 +1,10 @@
+# nested — QuickUVM H1: a subsystem of sub-subsystems (3 levels).
+# top 'nested' composes clusterA + clusterB, each itself composing two leaf blocks.
+project: {name: nested, author: QuickUVM, year: 2026}
+layout: packaged
+dut: {name: nested, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+subenvs:
+  - {name: cA, config: clusterA.yaml}
+  - {name: cB, config: clusterB.yaml}
+tests: [{name: nested_test}]

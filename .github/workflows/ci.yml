@@ -244,3 +244,15 @@ jobs:
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_channels/*.sv gen_channels/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/channels/chan/rtl/chan.sv
+
+      # Gate the H1 nested-subenvs path: the nested example is a 3-level hierarchy —
+      # top 'nested' composes clusterA + clusterB, each itself composing two leaf
+      # blocks. Exercises the recursive generation, hierarchical vsqr/vseq (top runs
+      # cluster vseqs), the nested config-db tree, and the flattened tb_top.
+      - name: Generate the nested-subenvs example (H1)
+        run: quick-uvm generate -c examples/nested/nested.yaml -o gen_nested
+
+      - name: Verible lint (nested-subenvs generated SV/SVH + leaf DUTs)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_nested/*.sv gen_nested/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/nested/rtl/*.sv

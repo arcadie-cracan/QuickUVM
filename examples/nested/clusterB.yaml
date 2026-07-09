@@ -1,0 +1,9 @@
+# clusterB — a sub-subsystem composing two leaf blocks (b0 + b1).
+project: {name: clusterB, author: QuickUVM, year: 2026}
+layout: packaged
+dut: {name: clusterB, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+subenvs:
+  - {name: pb, config: b0.yaml}
+  - {name: qb, config: b1.yaml}
+tests: [{name: clusterB_test}]

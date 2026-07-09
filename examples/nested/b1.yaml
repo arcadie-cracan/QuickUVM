@@ -1,0 +1,11 @@
+project: {name: b1, author: QuickUVM, year: 2026}
+dut: {name: b1, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: gb1
+    interface: gb1_if
+    sequence_item: gb1_item
+    ports:
+      inputs:  [{name: din,  width: 8}]
+      outputs: [{name: dout, width: 8}]
+tests: [{name: b1_test, num_items: 20}]

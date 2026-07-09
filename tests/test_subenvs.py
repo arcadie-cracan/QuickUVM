@@ -28,6 +28,7 @@ PIPE = Path(__file__).resolve().parents[1] / "examples" / "pipe" / "pipe.yaml"
 CHANNELS = (
     Path(__file__).resolve().parents[1] / "examples" / "channels" / "channels.yaml"
 )
+NESTED = Path(__file__).resolve().parents[1] / "examples" / "nested" / "nested.yaml"
 
 
 def _block(name, agent, iface):
@@ -314,6 +315,112 @@ def test_generate_without_loaded_children_errors():
     # A top constructed in-memory (not via from_yaml) has no loaded children.
     with pytest.raises(Exception, match="child configs are not loaded"):
         Generator(_top()).files_to_generate()
+
+
+# ---- H1 nested subenvs (a subsystem of sub-subsystems) ----------------------
+
+
+def test_nested_loads_and_flattens_the_tree():
+    top = ProjectConfig.from_yaml(NESTED)
+    # direct children are subsystems (clusters), not leaf blocks
+    assert [sv.name for sv in top.subenv_views] == ["cA", "cB"]
+    assert all(sv.is_subsystem for sv in top.subenv_views)
+    # leaf_views flatten the whole tree (path from top to leaf)
+    assert [lv.path for lv in top.leaf_views] == [
+        ["cA", "pa"],
+        ["cA", "qa"],
+        ["cB", "pb"],
+        ["cB", "qb"],
+    ]
+    assert [lv.dut_module for lv in top.leaf_views] == ["a0", "a1", "b0", "b1"]
+    # composition levels: clusters then the top (deepest-first)
+    assert [c.dut.name for c in top.composition_levels] == [
+        "clusterA",
+        "clusterB",
+        "nested",
+    ]
+
+
+def _ngen(tmp_path):
+    Generator(ProjectConfig.from_yaml(NESTED)).generate_all(tmp_path)
+    return tmp_path
+
+
+def test_nested_top_composes_clusters_hierarchically(tmp_path):
+    _ngen(tmp_path)
+    e = (tmp_path / "nested_env.svh").read_text()
+    assert "clusterA_env cA;" in e
+    assert "clusterB_env cB;" in e
+    assert 'cA = clusterA_env::type_id::create("cA", this);' in e
+    assert "vsqr.cA_vsqr = cA.vsqr;" in e  # top holds cluster vsqrs (hierarchical)
+    v = (tmp_path / "nested_virtual_sequencer.svh").read_text()
+    assert "clusterA_virtual_sequencer cA_vsqr;" in v
+    vs = (tmp_path / "nested_vseq.svh").read_text()
+    assert "cA_seq.start(p_sequencer.cA_vsqr);" in vs  # top runs cluster vseqs
+
+
+def test_nested_cluster_composes_leaf_blocks(tmp_path):
+    _ngen(tmp_path)
+    e = (tmp_path / "clusterA_env.svh").read_text()
+    assert "a0_env pa;" in e
+    assert "a1_env qa;" in e
+    assert "vsqr.pa_ga0_sqr = pa.ga0_agnt.sqr;" in e  # cluster collects leaf agents
+
+
+def test_nested_base_test_builds_config_tree(tmp_path):
+    _ngen(tmp_path)
+    bt = (tmp_path / "nested_base_test.svh").read_text()
+    # cluster cfg set at its path; leaf cfg nested under it, at its deeper path
+    assert 'uvm_config_db#(clusterA_env_cfg)::set(this, "e.cA", "env_cfg"' in bt
+    assert "env_cfg.cA_cfg.pa_cfg = a0_env_cfg::type_id::create" in bt
+    assert 'uvm_config_db#(a0_env_cfg)::set(this, "e.cA.pa", "env_cfg"' in bt
+    assert '"cA_pa_ga0_if_vif"' in bt  # full-path vif key
+
+
+def test_nested_tb_top_instantiates_all_leaf_duts(tmp_path):
+    _ngen(tmp_path)
+    top = (tmp_path / "tb_top.sv").read_text()
+    assert "ga0_if cA_pa_ga0_if_inst (clk);" in top
+    assert "a0 cA_pa_dut (" in top  # unprefixed leaf RTL module, path-named inst
+    assert "b1 cB_qb_dut (" in top
+    pkg = (tmp_path / "nested_test_pkg.sv").read_text()
+    assert "import a0_env_pkg::*;" in pkg  # flattened leaf pkg imports
+    assert '`include "clusterA_env.svh"' in pkg  # cluster composition class included
+
+
+def test_nested_cross_level_connection_rejected(tmp_path):
+    from quick_uvm.models import ProjectConfig as PC
+
+    top = tmp_path / "top.yaml"
+    top.write_text(
+        "project: {name: t}\n"
+        "layout: packaged\n"
+        "dut: {name: t, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        f"  - {{name: cA, config: {NESTED.parent / 'clusterA.yaml'}}}\n"
+        f"  - {{name: cB, config: {NESTED.parent / 'clusterB.yaml'}}}\n"
+        "connections: [{from: cA.dout, to: cB.din}]\n"  # cA is a subsystem
+        "tests: [{name: t}]\n"
+    )
+    with pytest.raises(Exception, match="is a nested subsystem"):
+        PC.from_yaml(top)
+
+
+def test_params_on_nested_subsystem_rejected(tmp_path):
+    from quick_uvm.models import ProjectConfig as PC
+
+    top = tmp_path / "top.yaml"
+    top.write_text(
+        "project: {name: t}\n"
+        "layout: packaged\n"
+        "dut: {name: t, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        f"  - {{name: cA, config: {NESTED.parent / 'clusterA.yaml'}, params: {{W: 8}}}}\n"
+        f"  - {{name: cB, config: {NESTED.parent / 'clusterB.yaml'}}}\n"
+        "tests: [{name: t}]\n"
+    )
+    with pytest.raises(Exception, match="on a nested subsystem is not supported"):
+        PC.from_yaml(top)
 
 
 # ---- H1 same-block-reused-at-N-widths (namespacing) ------------------------

@@ -1,0 +1,9 @@
+# clusterA — a sub-subsystem composing two leaf blocks (a0 + a1).
+project: {name: clusterA, author: QuickUVM, year: 2026}
+layout: packaged
+dut: {name: clusterA, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+subenvs:
+  - {name: pa, config: a0.yaml}
+  - {name: qa, config: a1.yaml}
+tests: [{name: clusterA_test}]

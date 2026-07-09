@@ -19,24 +19,36 @@ class {{ dut.name }}_vseq extends {{ dut.name }}_base_vseq;
 
   task body;
 {% for sv in subenvs %}
+{% if sv.is_subsystem %}
+    {{ sv.vseq_type }} {{ sv.name }}_seq;
+{% else %}
 {% for agent in sv.agents if agent.active %}
     {{ agent.name }}_seq{{ agent.param_args_values }} {{ sv.name }}_{{ agent.name }}_seq;
 {% endfor %}
+{% endif %}
 {% endfor %}
 
 {% for sv in subenvs %}
+{% if sv.is_subsystem %}
+    {{ sv.name }}_seq = {{ sv.vseq_type }}::type_id::create("{{ sv.name }}_seq");
+{% else %}
 {% for agent in sv.agents if agent.active %}
     {{ sv.name }}_{{ agent.name }}_seq = {{ agent.name }}_seq{{ agent.param_args_values }}::type_id::create("{{ sv.name }}_{{ agent.name }}_seq");
 {% endfor %}
+{% endif %}
 {% endfor %}
     // pragma quickuvm custom vseq_body_pre begin
     // pragma quickuvm custom vseq_body_pre end
     // Run every block's stimulus concurrently
     fork
 {% for sv in subenvs %}
+{% if sv.is_subsystem %}
+      {{ sv.name }}_seq.start(p_sequencer.{{ sv.name }}_vsqr);
+{% else %}
 {% for agent in sv.agents if agent.active %}
       {{ sv.name }}_{{ agent.name }}_seq.start(p_sequencer.{{ sv.name }}_{{ agent.name }}_sqr);
 {% endfor %}
+{% endif %}
 {% endfor %}
     join
     // pragma quickuvm custom vseq_body_post begin
