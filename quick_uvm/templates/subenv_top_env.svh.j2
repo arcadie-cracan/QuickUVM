@@ -56,9 +56,13 @@ class {{ dut.name }}_env extends uvm_env;
     super.connect_phase(phase);
     // Collect each block's active agent sequencers into the top vsqr
 {% for sv in subenvs %}
+{% if sv.is_subsystem %}
+    vsqr.{{ sv.name }}_vsqr = {{ sv.inst }}.vsqr;
+{% else %}
 {% for agent in sv.agents if agent.active %}
     vsqr.{{ sv.name }}_{{ agent.name }}_sqr = {{ sv.inst }}.{{ agent.name }}_agnt.sqr;
 {% endfor %}
+{% endif %}
 {% endfor %}
 {% if subenv_scoreboards %}
     // Cross-block scoreboards: source block stream -> predictor, monitor -> comparator

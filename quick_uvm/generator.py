@@ -373,39 +373,25 @@ class Generator:
 
         return specs
 
-    def _subenv_composition_files(self) -> list[FileSpec]:
-        """H1 — a subsystem (top) bench: each child block's reusable env layer
-        plus the top layer (env/env_cfg/vsqr/vseq/test/tb_top/test_pkg) that
-        composes them. All files land in one output dir + package namespace."""
-        cfg = self.config
-        if not cfg.subenv_views:
-            raise ValueError(
-                "subenv child configs are not loaded — build the top via "
-                "ProjectConfig.from_yaml() so `subenvs` are resolved before "
-                "generation."
-            )
-        specs: list[FileSpec] = []
-        # 1. Each child block's reusable env layer (packaged, no top/test/clkgen).
-        for sv in cfg.subenv_views:
-            specs.extend(Generator(sv.cfg).files_to_generate(subenv=True))
-        # 2. The top composition layer.
-        top = cfg.dut.name
-        # H1 cross-block — resolved wires + cross-block scoreboards (reusing the A2
-        # two-stream predictor/comparator, sourced from two different blocks).
+    @staticmethod
+    def _subenv_level_ctx(cfg: ProjectConfig) -> tuple[dict, list[dict]]:
+        """Render context for ONE composition level (top or a nested cluster): its
+        own subenv views + cross-block scoreboards (resolved to src/monitor)."""
+        name = cfg.dut.name
         xsbs = []
         for sb in cfg.subenv_scoreboards:
             sblk, sagent, mblk, magent = cfg.cross_block_sb_endpoints(sb)
             xsbs.append(
                 {
                     "name": sb.name,
-                    "cls": f"{top}_{sb.name}_scoreboard",
+                    "cls": f"{name}_{sb.name}_scoreboard",
                     "src_handle": sblk,
                     "src_agent": sagent.name,
                     "mon_handle": mblk,
                     "mon_agent": magent.name,
                 }
             )
-        top_ctx = {
+        ctx = {
             "project": cfg.project,
             "dut": cfg.dut,
             "clock": cfg.clock,
@@ -416,14 +402,22 @@ class Generator:
             "subenv_scoreboards": xsbs,
             # env_vseq_base.svh.j2 (reused) reads these; a top vseq is virtual-only.
             "virtual_sequences": [],
-            "auto_vseq": f"{top}_vseq",
+            "auto_vseq": f"{name}_vseq",
         }
-        # Cross-block scoreboard sets (A2 two-stream, in-order), prefixed <top>_<name>.
+        return ctx, xsbs
+
+    def _subenv_env_classes(self, cfg: ProjectConfig) -> list[FileSpec]:
+        """The composition CLASSES for one level: its cross-block scoreboard set +
+        env_cfg / env / virtual_sequencer / base_vseq / vseq. Emitted for the top
+        AND every nested cluster (a cluster's are included by the top test_pkg)."""
+        ctx, _ = self._subenv_level_ctx(cfg)
+        name = cfg.dut.name
+        specs: list[FileSpec] = []
         for sb in cfg.subenv_scoreboards:
             sblk, sagent, mblk, magent = cfg.cross_block_sb_endpoints(sb)
-            p = f"{top}_{sb.name}"
+            p = f"{name}_{sb.name}"
             sbx = {
-                **top_ctx,
+                **ctx,
                 "sb_prefix": p,
                 "sb_in_item": sagent.sequence_item + sagent.param_args_values,
                 "sb_out_item": magent.sequence_item + magent.param_args_values,
@@ -441,31 +435,65 @@ class Generator:
             specs.append(
                 FileSpec("sb_reference_model.svh.j2", f"{p}_reference_model.svh", sbx)
             )
-        specs.append(FileSpec("clkgen.sv.j2", "clkgen.sv", top_ctx))
+        specs.append(FileSpec("subenv_top_env_cfg.svh.j2", f"{name}_env_cfg.svh", ctx))
+        specs.append(FileSpec("subenv_top_env.svh.j2", f"{name}_env.svh", ctx))
         specs.append(
-            FileSpec("subenv_top_env_cfg.svh.j2", f"{top}_env_cfg.svh", top_ctx)
+            FileSpec("subenv_top_vsqr.svh.j2", f"{name}_virtual_sequencer.svh", ctx)
         )
-        specs.append(FileSpec("subenv_top_env.svh.j2", f"{top}_env.svh", top_ctx))
+        specs.append(FileSpec("env_vseq_base.svh.j2", f"{name}_base_vseq.svh", ctx))
+        specs.append(FileSpec("subenv_top_vseq.svh.j2", f"{name}_vseq.svh", ctx))
+        return specs
+
+    def _subenv_composition_files(self) -> list[FileSpec]:
+        """H1 — a subsystem (top) bench: every LEAF block's reusable env layer, the
+        composition classes for the top AND every nested cluster, plus the top-only
+        bench layer (base_test / tests / tb_top / test_pkg / clkgen / run.f). Nested
+        subsystems compose recursively; a flat single-level top is byte-identical."""
+        cfg = self.config
+        if not cfg.subenv_views:
+            raise ValueError(
+                "subenv child configs are not loaded — build the top via "
+                "ProjectConfig.from_yaml() so `subenvs` are resolved before "
+                "generation."
+            )
+        specs: list[FileSpec] = []
+
+        # 1. Recursive walk: leaf env-layers + composition classes for every level.
+        def walk(c: ProjectConfig) -> None:
+            for sv in c.subenv_views:
+                if sv.is_subsystem:
+                    walk(sv.cfg)  # nested cluster
+                else:
+                    specs.extend(Generator(sv.cfg).files_to_generate(subenv=True))
+            specs.extend(self._subenv_env_classes(c))
+
+        walk(cfg)
+
+        # 2. The top-only bench layer (walks the whole tree via the model helpers).
+        top = cfg.dut.name
+        ctx, _ = self._subenv_level_ctx(cfg)
+        ctx = {
+            **ctx,
+            "leaf_views": cfg.leaf_views,
+            "config_ops": cfg.config_build_ops,
+            "composition_levels": cfg.composition_levels,
+            "leaf_env_pkgs": cfg.leaf_env_pkgs,
+            "leaf_agent_pkgs": cfg.leaf_agent_pkgs,
+        }
+        specs.append(FileSpec("clkgen.sv.j2", "clkgen.sv", ctx))
         specs.append(
-            FileSpec("subenv_top_vsqr.svh.j2", f"{top}_virtual_sequencer.svh", top_ctx)
-        )
-        specs.append(FileSpec("env_vseq_base.svh.j2", f"{top}_base_vseq.svh", top_ctx))
-        specs.append(FileSpec("subenv_top_vseq.svh.j2", f"{top}_vseq.svh", top_ctx))
-        specs.append(
-            FileSpec("subenv_top_base_test.svh.j2", f"{top}_base_test.svh", top_ctx)
+            FileSpec("subenv_top_base_test.svh.j2", f"{top}_base_test.svh", ctx)
         )
         for test in cfg.tests:
             specs.append(
                 FileSpec(
-                    "subenv_top_test.svh.j2",
-                    f"{test.name}.svh",
-                    {**top_ctx, "test": test},
+                    "subenv_top_test.svh.j2", f"{test.name}.svh", {**ctx, "test": test}
                 )
             )
-        specs.append(FileSpec("subenv_top.sv.j2", "tb_top.sv", top_ctx))
-        specs.append(FileSpec("subenv_test_pkg.sv.j2", f"{top}_test_pkg.sv", top_ctx))
-        specs.append(FileSpec("subenv_test_pkg.f.j2", f"{top}_test_pkg.f", top_ctx))
-        specs.append(FileSpec("subenv_run.f.j2", "run.f", top_ctx))
+        specs.append(FileSpec("subenv_top.sv.j2", "tb_top.sv", ctx))
+        specs.append(FileSpec("subenv_test_pkg.sv.j2", f"{top}_test_pkg.sv", ctx))
+        specs.append(FileSpec("subenv_test_pkg.f.j2", f"{top}_test_pkg.f", ctx))
+        specs.append(FileSpec("subenv_run.f.j2", "run.f", ctx))
         return specs
 
     # ------------------------------------------------------------------

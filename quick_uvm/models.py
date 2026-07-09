@@ -1533,6 +1533,19 @@ class SubenvView:
         return f"{self.cfg.dut.name}_env_pkg"
 
     @property
+    def is_subsystem(self) -> bool:
+        """H1 nested — this child is itself a subsystem (composes its own blocks)."""
+        return bool(self.cfg.subenvs)
+
+    @property
+    def vsqr_type(self) -> str:
+        return f"{self.cfg.dut.name}_virtual_sequencer"
+
+    @property
+    def vseq_type(self) -> str:
+        return f"{self.cfg.dut.name}_vseq"
+
+    @property
     def inst(self) -> str:
         # The child env handle / component name in the top env. Kept as the plain
         # subenv name so it never collides with the child env CLASS (<block>_env)
@@ -1562,6 +1575,42 @@ class SubenvView:
         out: list[tuple[str, str]] = []
         for a in self.cfg.agents:
             inst = f"{self.name}_{a.interface}_inst"
+            for _, p in a.all_ports:
+                out.append((inst, p.name))
+        return out
+
+
+class LeafView:
+    """H1 nested — a flattened leaf block (a subenv with no subenvs of its own),
+    carrying the path of subenv names from the top. Used by tb_top to instantiate
+    every leaf's interfaces + DUT with tree-unique, path-prefixed names. At depth 1
+    (a flat subsystem) `pathname == subenv name`, so names are byte-identical."""
+
+    def __init__(self, sv: SubenvView, path: list[str]):
+        self.sv = sv
+        self.path = path
+
+    @property
+    def pathname(self) -> str:
+        return "_".join(self.path)
+
+    @property
+    def agents(self) -> list[AgentConfig]:
+        return self.sv.agents
+
+    @property
+    def dut_module(self) -> str:
+        return self.sv.dut_module
+
+    @property
+    def dut_param_args(self) -> str:
+        return self.sv.dut_param_args
+
+    @property
+    def dut_conns(self) -> list[tuple[str, str]]:
+        out: list[tuple[str, str]] = []
+        for a in self.sv.cfg.agents:
+            inst = f"{self.pathname}_{a.interface}_inst"
             for _, p in a.all_ports:
                 out.append((inst, p.name))
         return out
@@ -1623,6 +1672,85 @@ class ProjectConfig(BaseModel):
             if s.name in self.subenv_configs
         ]
 
+    # ---- H1 nested — recursive tree walks (flat single-level → byte-identical) --
+
+    @property
+    def leaf_views(self) -> list[LeafView]:
+        """Every LEAF block (subenv with no subenvs), depth-first, each carrying its
+        path of subenv names. For tb_top. At depth 1 the path is (name,), so
+        pathname == subenv name (byte-identical to the flat wiring)."""
+        out: list[LeafView] = []
+
+        def walk(cfg: ProjectConfig, path: list[str]) -> None:
+            for sv in cfg.subenv_views:
+                if sv.is_subsystem:
+                    walk(sv.cfg, path + [sv.name])
+                else:
+                    out.append(LeafView(sv, path + [sv.name]))
+
+        walk(self, [])
+        return out
+
+    @property
+    def config_build_ops(self) -> list[dict]:
+        """Pre-order config-tree build ops for the top base_test: create each level's
+        env_cfg into its parent field, populate leaf agent cfgs (+ vif by full-path
+        key), and set each level's cfg into the config DB at its absolute path. At
+        depth 1 this degenerates to the flat per-child loop (byte-identical)."""
+        ops: list[dict] = []
+
+        def walk(cfg: ProjectConfig, field: str, dbpath: str, path: list[str]) -> None:
+            for sv in cfg.subenv_views:
+                f = f"{field}.{sv.cfg_field}"
+                p = f"{dbpath}.{sv.name}"
+                npath = path + [sv.name]
+                agents: list[tuple[AgentConfig, str]] = []
+                if not sv.is_subsystem:
+                    for a in sv.agents:
+                        vkey = "_".join(npath) + f"_{a.interface}_vif"
+                        agents.append((a, vkey))
+                ops.append(
+                    {
+                        "name": sv.name,
+                        "block": sv.block,
+                        "field": f,
+                        "create_name": sv.cfg_field,
+                        "cfg_class": sv.env_cfg_class,
+                        "agents": agents,
+                        "db_path": p,
+                    }
+                )
+                if sv.is_subsystem:
+                    walk(sv.cfg, f, p, npath)
+
+        walk(self, "env_cfg", "e", [])
+        return ops
+
+    @property
+    def composition_levels(self) -> list[ProjectConfig]:
+        """Every subsystem config (nested clusters + this top), DEEPEST-FIRST — the
+        order the top test_pkg must include the composition classes. Flat → [self]."""
+        out: list[ProjectConfig] = []
+
+        def walk(cfg: ProjectConfig) -> None:
+            for sv in cfg.subenv_views:
+                if sv.is_subsystem:
+                    walk(sv.cfg)
+            out.append(cfg)  # post-order: deeper levels before this one
+
+        walk(self)
+        return out
+
+    @property
+    def leaf_env_pkgs(self) -> list[str]:
+        """All leaf blocks' env packages (flattened). Flat → direct children."""
+        return [lv.sv.env_pkg for lv in self.leaf_views]
+
+    @property
+    def leaf_agent_pkgs(self) -> list[str]:
+        """All leaf blocks' agent VIP packages (flattened)."""
+        return [f"{a.name}_pkg" for lv in self.leaf_views for a in lv.agents]
+
     def _iface_signal(self, ref: str) -> str:
         """Resolve a `<block>.<port>` reference to the top-level interface signal
         `<block>_<iface>_inst.<port>` (H1 cross-block connections)."""
@@ -1666,10 +1794,22 @@ class ProjectConfig(BaseModel):
             child = self.subenv_configs.get(s.name)
             if child is None:
                 raise ValueError(f"subenv '{s.name}': child config not loaded.")
+            # H1 nested — a child that is itself a subsystem is composed recursively
+            # (its own validate_subenv_composition already ran via from_yaml). This
+            # slice scopes OUT a few cross-level combinations (fail closed):
             if child.subenvs:
-                raise ValueError(
-                    f"subenv '{s.name}': nested subenvs are not supported yet."
-                )
+                if s.params:
+                    raise ValueError(
+                        f"subenv '{s.name}': `params` on a nested subsystem is not "
+                        f"supported yet (param propagation reaches direct-child agents "
+                        f"only, not grandchildren)."
+                    )
+                if self.subenv_namespaces.get(s.name):
+                    raise ValueError(
+                        f"subenv '{s.name}': namespacing (reusing) a nested subsystem "
+                        f"is not supported yet (the grandchild classes are not "
+                        f"prefixed)."
+                    )
             if child.register_model is not None:
                 raise ValueError(
                     f"subenv '{s.name}': a child block with a register_model is not "
@@ -1717,6 +1857,34 @@ class ProjectConfig(BaseModel):
                         )
                     coll.add(val)
 
+        # H1 nested — the WHOLE flattened tree shares the top package namespace, so
+        # every subsystem prefix + every leaf's block/agent/interface/transaction name
+        # must be unique across the tree (the per-level loop only sees direct
+        # children). Runs only when there is nesting; flat → no-op.
+        if any(sv.is_subsystem for sv in self.subenv_views):
+            tree: dict[str, str] = {}
+
+            def _claim(name: str, what: str) -> None:
+                if name in tree:
+                    raise ValueError(
+                        f"nested: {what} '{name}' collides with another name "
+                        f"({tree[name]}) elsewhere in the tree — every subsystem/"
+                        f"block/agent/interface/transaction name must be unique "
+                        f"across the composed hierarchy."
+                    )
+                tree[name] = what
+
+            _claim(self.dut.name, "top name")
+            for level in self.composition_levels:
+                if level is not self:
+                    _claim(level.dut.name, "subsystem name")
+            for lv in self.leaf_views:
+                _claim(lv.sv.block, "block name")
+                for a in lv.agents:
+                    _claim(a.name, "agent name")
+                    _claim(a.interface, "interface")
+                    _claim(a.sequence_item, "transaction")
+
         # H1 cross-block — validate connection + scoreboard endpoints.
         by_name = {
             s.name: self.subenv_configs[s.name]
@@ -1735,6 +1903,13 @@ class ProjectConfig(BaseModel):
                     f"{what} '{ref}' references block '{blk}', which is namespaced "
                     f"(its config is reused) — cross-block connections/scoreboards to "
                     f"a reused block are not supported yet."
+                )
+            if by_name[blk].subenvs:
+                raise ValueError(
+                    f"{what} '{ref}' references block '{blk}', which is a nested "
+                    f"subsystem — cross-level connections/scoreboards (into a "
+                    f"subsystem's inner blocks) are not supported yet; reference a "
+                    f"leaf block's agent/port."
                 )
             return blk, item, by_name[blk]
 
@@ -2220,6 +2395,12 @@ class ProjectConfig(BaseModel):
                             seq.name = f"{prefix}_{seq.name}"
                 # H1 param propagation — bake this instance's overrides into the
                 # child block's agent parameter defaults before it is generated.
+                if s.params and child.subenvs:
+                    raise ValueError(
+                        f"subenv '{s.name}': `params` on a nested subsystem is not "
+                        f"supported yet (param propagation reaches direct-child agents "
+                        f"only, not grandchildren)."
+                    )
                 if s.params:
                     declared = {p.name for a in child.agents for p in a.parameters}
                     for k, v in s.params.items():

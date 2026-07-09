@@ -12,38 +12,40 @@
 `include "uvm_macros.svh"
 package {{ dut.name }}_test_pkg;
   import uvm_pkg::*;
-{% for sv in subenvs %}
-  import {{ sv.env_pkg }}::*;
+{% for pkg in leaf_env_pkgs %}
+  import {{ pkg }}::*;
 {% endfor %}
-{% for sv in subenvs %}
-{% for agent in sv.agents %}
-  import {{ agent.name }}_pkg::*;
+{% for pkg in leaf_agent_pkgs %}
+  import {{ pkg }}::*;
 {% endfor %}
-{% endfor %}
-{% if subenv_scoreboards %}
+{% for level in composition_levels %}
+{% if level.subenv_scoreboards %}
 
   // Cross-block scoreboards (typed on the source/monitor blocks' transactions)
-{% for xsb in subenv_scoreboards %}
-  `include "{{ dut.name }}_{{ xsb.name }}_predictor.svh"
-  `include "{{ dut.name }}_{{ xsb.name }}_comparator.svh"
-  `include "{{ dut.name }}_{{ xsb.name }}_scoreboard.svh"
+{% for sb in level.subenv_scoreboards %}
+  `include "{{ level.dut.name }}_{{ sb.name }}_predictor.svh"
+  `include "{{ level.dut.name }}_{{ sb.name }}_comparator.svh"
+  `include "{{ level.dut.name }}_{{ sb.name }}_scoreboard.svh"
 {% endfor %}
 {% endif %}
 
-  // Top environment + coordination
-  `include "{{ dut.name }}_env_cfg.svh"
-  `include "{{ dut.name }}_virtual_sequencer.svh"
-  `include "{{ dut.name }}_env.svh"
-  `include "{{ dut.name }}_base_vseq.svh"
-  `include "{{ dut.name }}_vseq.svh"
+  // {% if loop.last %}Top{% else %}{{ level.dut.name }}{% endif %} environment + coordination
+  `include "{{ level.dut.name }}_env_cfg.svh"
+  `include "{{ level.dut.name }}_virtual_sequencer.svh"
+  `include "{{ level.dut.name }}_env.svh"
+  `include "{{ level.dut.name }}_base_vseq.svh"
+  `include "{{ level.dut.name }}_vseq.svh"
+{% endfor %}
 
   // Tests
   `include "{{ dut.name }}_base_test.svh"
 {% for test in tests %}
   `include "{{ test.name }}.svh"
 {% endfor %}
-{% for xsb in subenv_scoreboards %}
-  `include "{{ dut.name }}_{{ xsb.name }}_reference_model.svh"
+{% for level in composition_levels %}
+{% for sb in level.subenv_scoreboards %}
+  `include "{{ level.dut.name }}_{{ sb.name }}_reference_model.svh"
+{% endfor %}
 {% endfor %}
 
 endpackage

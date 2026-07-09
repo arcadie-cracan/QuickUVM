@@ -495,8 +495,31 @@ via Jinja macros.
 - Validated on `examples/channels/`: one `chan` block config composed at W=8 and W=16,
   each auto-namespaced and self-scoreboarded — both pass **31/31 on Xcelium** (0 errors)
   from one config + one RTL module. verible-lint-clean; CI gates it.
-- *Next slice:* nested subenvs (a subsystem of sub-subsystems) + cross-block scoreboards
-  spanning namespaced instances.
+**Status — nested subenvs landed (H1 feature complete):**
+- A subenv may itself be a subsystem — a top composes clusters, each cluster composes
+  leaf blocks (arbitrary depth; the loader + generation + config-db walks are all
+  recursive). Composition is HIERARCHICAL: the top's virtual sequencer holds each
+  cluster's vsqr and the top vseq forks each cluster's vseq; a cluster's vsqr holds its
+  leaf agents' sequencers and its vseq forks their sequences. The base test builds the
+  full env-config TREE (each level's cfg set into the config DB at its absolute path
+  `e.<cluster>.<leaf>`, leaf agent cfgs + vifs by full-path key), and each env
+  self-configures its direct children. tb_top instantiates every LEAF block's interface
+  + real DUT (flattened, path-prefixed names); the reused leaf RTL module stays
+  unprefixed. The top test package imports every leaf package and includes each level's
+  composition classes (deepest-first).
+- Fail-closed (this slice): cross-LEVEL connections/scoreboards (into a subsystem's
+  inner blocks), `params` on a nested subsystem, and namespacing (reusing) a nested
+  subsystem are rejected; every subsystem/block/agent/interface/transaction name must be
+  unique across the flattened tree. Byte-identical for flat single-level subsystems.
+- Validated on `examples/nested/`: a 3-level hierarchy — top `nested` composes
+  `clusterA` + `clusterB`, each composing two leaf blocks — driven top→cluster→leaf,
+  each leaf self-scoreboarded: all four leaves pass **21/21 on Xcelium** (0 errors).
+  verible-lint-clean; CI gates it.
+
+**H1 is feature-complete**: composition, parameter propagation, cross-block scoreboards,
+same-block reuse (namespacing), and nested subsystems. Deferred cross-cutting extras
+(cross-level wiring, reused/parameterized nested subsystems) are noted above as future
+slices.
 
 ## Priority tier 3 — checking generality
 

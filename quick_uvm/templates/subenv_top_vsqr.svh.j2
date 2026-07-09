@@ -14,9 +14,13 @@ class {{ dut.name }}_virtual_sequencer extends uvm_sequencer;
 
   // Handles to each composed block's active agent sequencers
 {% for sv in subenvs %}
+{% if sv.is_subsystem %}
+  {{ sv.vsqr_type }} {{ sv.name }}_vsqr;
+{% else %}
 {% for agent in sv.agents if agent.active %}
   {{ agent.name }}_sequencer{{ agent.param_args_values }} {{ sv.name }}_{{ agent.name }}_sqr;
 {% endfor %}
+{% endif %}
 {% endfor %}
 
   function new (string name, uvm_component parent);
