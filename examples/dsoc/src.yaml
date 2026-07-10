@@ -1,0 +1,14 @@
+# src — lane's active source leaf (dout = din + 1). Its dout feeds the OTHER
+# lane instance's sink via a cross-instance, cross-level connection at the top.
+project: {name: src, author: QuickUVM, year: 2026}
+dut: {name: src, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: sa
+    interface: src_if
+    sequence_item: src_item
+    ports:
+      inputs:  [{name: din,  width: 8}]
+      outputs: [{name: dout, width: 8}]
+tests:
+  - {name: src_test, num_items: 30}

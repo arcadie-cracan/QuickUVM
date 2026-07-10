@@ -282,3 +282,16 @@ jobs:
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_xpipe/*.sv gen_xpipe/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/xpipe/rtl/*.sv
+
+      # Gate the H1 cross-level-into-REUSED-subtree path: the dsoc example reuses the
+      # SAME `lane` cluster (src + snk) twice (left/right, auto-namespaced) and rings the
+      # instances across the hierarchy — each lane's src drives the OTHER lane's snk.
+      # Endpoints descend into the namespaced subtrees by subenv path and name the leaf
+      # agent by its ORIGINAL name (sa/ka), which resolves to the prefixed handle.
+      - name: Generate the cross-level-into-reused example (H1)
+        run: quick-uvm generate -c examples/dsoc/dsoc.yaml -o gen_dsoc
+
+      - name: Verible lint (cross-level-into-reused generated SV/SVH + reused DUTs)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_dsoc/*.sv gen_dsoc/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/dsoc/rtl/*.sv
