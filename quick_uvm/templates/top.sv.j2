@@ -26,7 +26,7 @@ module tb_top;
 
   // One clock generator per domain (clkgen is parameterized by PERIOD)
 {% for c in clocks %}
-  clkgen #({{ c.period }}) ck_{{ c.name }} ({{ c.name }});
+  clkgen #({{ clock_periods_ts[c.name] }}) ck_{{ c.name }} ({{ c.name }});
 {% endfor %}
 {% for r in resets %}
 

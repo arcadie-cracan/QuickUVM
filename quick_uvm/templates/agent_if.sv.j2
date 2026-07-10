@@ -24,7 +24,7 @@ interface {{ agent.interface }}{{ agent.param_decl }} (input clk{% if agent_rese
   // pragma quickuvm custom signals_additional end
 
   clocking cb1 @(posedge clk);
-    default input #1step output #{{ "%g" | format(agent_clock.drive_offset_pct * agent_clock.period / 100) }};
+    default input #1step output #{{ agent_clock_skew }};
 {% for port in agent.output_ports %}
     input  {{ port.name }};
 {% endfor %}

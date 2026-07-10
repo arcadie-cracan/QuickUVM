@@ -99,7 +99,7 @@ def test_agent_clock_and_reset_resolution():
 def test_parameterized_clkgen_and_per_domain_tb_top(tmp_path):
     Generator(ProjectConfig.from_yaml(MCLK)).generate_all(tmp_path)
     ck = (tmp_path / "clkgen.sv").read_text()
-    assert "module clkgen #(int PERIOD" in ck
+    assert "module clkgen #(longint PERIOD" in ck
     assert "forever #(PERIOD / 2) clk = ~clk;" in ck
     top = (tmp_path / "tb_top.sv").read_text()
     assert "clkgen #(10) ck_clk_sys (clk_sys);" in top
@@ -206,7 +206,7 @@ def test_single_clock_explicit_resets_uses_parameterized_multi_path(tmp_path):
     Generator(ProjectConfig.from_yaml(p)).generate_all(tmp_path / "g")
     ck = (tmp_path / "g" / "clkgen.sv").read_text()
     top = (tmp_path / "g" / "tb_top.sv").read_text()
-    assert "module clkgen #(int PERIOD" in ck  # parameterized
+    assert "module clkgen #(longint PERIOD" in ck  # parameterized
     assert "clkgen #(10) ck_clk (clk);" in top
     assert "// pragma quickuvm custom reset_generator_rst_n begin" in top
 
@@ -228,12 +228,94 @@ def test_agent_reset_naming_synthesized_reset_accepted(tmp_path):
     assert cfg.agent_reset(cfg.agents[0]).name == "rst_n"
 
 
-def test_mixed_clock_time_units_rejected(tmp_path):
+def test_mixed_clock_units_scale_to_finest_timescale(tmp_path):
+    # M1 mixed-unit: clocks in different units emit ONE -timescale at the finest unit,
+    # with each clock's period + drive skew scaled into it.
     p = _two_clock_yaml(
         tmp_path,
         clocks="clock:\n  - {name: clk_sys, period: 10, unit: ns}\n  - {name: clk_io, period: 6, unit: ps}\n",
     )
-    with pytest.raises(Exception, match="multiple time units"):
+    cfg = ProjectConfig.from_yaml(p)
+    assert cfg.timescale_unit == "ps"
+    scaled = {c.name: cfg.clock_period_ts(c) for c in cfg.effective_clocks}
+    assert scaled == {"clk_sys": 10_000, "clk_io": 6}  # 10ns -> 10000ps
+    Generator(cfg).generate_all(tmp_path / "g")
+    assert "-timescale 1ps/1ps" in (tmp_path / "g" / "run.f").read_text()
+    top = (tmp_path / "g" / "tb_top.sv").read_text()
+    assert "clkgen #(10000) ck_clk_sys (clk_sys);" in top
+    assert "clkgen #(6) ck_clk_io (clk_io);" in top
+
+
+def test_mixed_unit_drive_skew_scaled_into_timescale(tmp_path):
+    # the clocking-block output skew is scaled into the -timescale unit too: the slow
+    # (10 ns) lane's 20% skew is 2000 ps, the fast (500 ps) lane's is 100 ps.
+    p = _two_clock_yaml(
+        tmp_path,
+        clocks="clock:\n  - {name: clk_sys, period: 10, unit: ns}\n  - {name: clk_io, period: 6, unit: ps}\n",
+    )
+    Generator(ProjectConfig.from_yaml(p)).generate_all(tmp_path / "g")
+    # sys lane 10 ns = 10000 ps, 20% -> 2000
+    assert "output #2000;" in (tmp_path / "g" / "sys_if.sv").read_text()
+    # io lane 6 ps, 20% -> 1.2
+    assert "output #1.2;" in (tmp_path / "g" / "io_if.sv").read_text()
+
+
+def test_single_unit_multiclock_timescale_unchanged():
+    # mclk is 2 clocks but both ns → the timescale unit stays ns, periods unscaled.
+    cfg = ProjectConfig.from_yaml(MCLK)
+    assert cfg.timescale_unit == "ns"
+    assert {c.name: cfg.clock_period_ts(c) for c in cfg.effective_clocks} == {
+        "clk_sys": 10,
+        "clk_io": 6,
+    }
+
+
+def test_large_scaled_period_and_skew_exact_no_overflow(tmp_path):
+    # review regression: a coarse lane (3 ms) scaled to ps overflows int32 (3e9) and
+    # its 20% skew (6e8) exceeds %g's 6 sig figs. The clkgen param must be `longint`
+    # and both the PERIOD and the drive skew must be EXACT integers (no scientific
+    # notation, no rounding).
+    p = _two_clock_yaml(
+        tmp_path,
+        clocks="clock:\n  - {name: clk_a, period: 3, unit: ms}\n  - {name: clk_b, period: 500, unit: ps}\n",
+        resets="resets:\n  - {name: rst_sys_n, clock: clk_a}\n  - {name: rst_io_n, clock: clk_b}\n",
+        agents=(
+            "agents:\n"
+            "  - {name: sys, interface: sys_if, sequence_item: sys_item,"
+            " clock: clk_a, reset: rst_sys_n,\n"
+            "     ports: {inputs: [{name: sd, width: 8}], outputs: [{name: sq, width: 8}]}}\n"
+            "  - {name: io, interface: io_if, sequence_item: io_item,"
+            " clock: clk_b, reset: rst_io_n,\n"
+            "     ports: {inputs: [{name: id, width: 8}], outputs: [{name: iq, width: 8}]}}\n"
+        ),
+    )
+    Generator(ProjectConfig.from_yaml(p)).generate_all(tmp_path / "g")
+    ck = (tmp_path / "g" / "clkgen.sv").read_text()
+    top = (tmp_path / "g" / "tb_top.sv").read_text()
+    sys_if = (tmp_path / "g" / "sys_if.sv").read_text()
+    assert "module clkgen #(longint PERIOD" in ck  # 64-bit, no int32 overflow
+    assert "clkgen #(3000000000) ck_clk_a (clk_a);" in top  # 3 ms = 3e9 ps, exact
+    assert "output #600000000;" in sys_if  # 20% of 3e9, exact integer
+    assert "e+" not in sys_if  # never scientific notation
+
+
+def test_fractional_skew_still_exact(tmp_path):
+    # a genuinely sub-unit skew (6 ps @ 20% = 1.2) stays an exact 2-decimal literal.
+    p = _two_clock_yaml(
+        tmp_path,
+        clocks="clock:\n  - {name: clk_sys, period: 10, unit: ns}\n  - {name: clk_io, period: 6, unit: ps}\n",
+    )
+    Generator(ProjectConfig.from_yaml(p)).generate_all(tmp_path / "g")
+    assert "output #1.2;" in (tmp_path / "g" / "io_if.sv").read_text()
+
+
+def test_unknown_mixed_clock_unit_rejected(tmp_path):
+    # mixing units requires known SI units (so the scaling is defined).
+    p = _two_clock_yaml(
+        tmp_path,
+        clocks="clock:\n  - {name: clk_sys, period: 10, unit: ns}\n  - {name: clk_io, period: 6, unit: bogus}\n",
+    )
+    with pytest.raises(Exception, match="unknown clock time unit"):
         ProjectConfig.from_yaml(p)
 
 

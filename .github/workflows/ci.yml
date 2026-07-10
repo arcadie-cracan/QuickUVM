@@ -162,6 +162,18 @@ jobs:
           verible-verilog-lint --rules_config .verible-lint.rules gen_mclk/*.sv gen_mclk/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/mclk/rtl/mclk.sv
 
+      # Gate the M1 mixed-unit path: the mxclk example has two clock domains in DIFFERENT
+      # time units (clk_fast @500ps, clk_slow @10ns). QuickUVM resolves one -timescale at
+      # the finest unit (ps) and scales each clock's period + drive skew into it
+      # (clkgen #(500) and #(10000)).
+      - name: Generate the mixed-unit-clock example (M1)
+        run: quick-uvm generate -c examples/mxclk/mxclk.yaml -o gen_mxclk
+
+      - name: Verible lint (mixed-unit generated SV/SVH + DUT)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_mxclk/*.sv gen_mxclk/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/mxclk/rtl/mxclk.sv
+
       # Gate the A2 multi-transaction-type path: the splitter example has >=2
       # scoreboards, so each gets its own typed predictor/comparator/scoreboard set
       # (<dut>_<sbname>_*) for a DUT with two different-typed output channels.
