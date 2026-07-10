@@ -27,10 +27,10 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
 
   task run_phase(uvm_phase phase);
     {{ agent.sequence_item }}{{ agent.param_args }} tr;
-{% if dut.external_reset %}
+{% if agent_reset %}
     // Reset is driven externally: do not emit transactions until it deasserts, then
     // resync to the clock grid (sample_dut() assumes it starts at a posedge clk).
-    wait (vif.{{ dut.reset }} === 1'b{% if dut.reset_active_low %}1{% else %}0{% endif %});
+    wait (vif.{{ agent_reset.name }} === 1'b{% if agent_reset.active_low %}1{% else %}0{% endif %});
     @vif.cb1;
 {% endif %}
     forever begin

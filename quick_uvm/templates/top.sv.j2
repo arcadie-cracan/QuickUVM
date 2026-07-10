@@ -14,6 +14,63 @@ module tb_top;
 {% else %}
   import {{ dut.name }}_tb_pkg::*;
 {% endif %}
+{% if multi_domain %}
+
+  // M1 — multiple clock/reset domains.
+{% for c in clocks %}
+  logic {{ c.name }};
+{% endfor %}
+{% for r in resets %}
+  logic {{ r.name }};
+{% endfor %}
+
+  // One clock generator per domain (clkgen is parameterized by PERIOD)
+{% for c in clocks %}
+  clkgen #({{ c.period }}) ck_{{ c.name }} ({{ c.name }});
+{% endfor %}
+{% for r in resets %}
+
+  // Reset generator for {{ r.name }} ({% if r.clock %}deassert synced to {{ r.clock }}{% else %}async{% endif %}).
+  // pragma quickuvm custom reset_generator_{{ r.name }} begin
+  initial begin
+    {{ r.name }} = 1'b{% if r.active_low %}0{% else %}1{% endif %};   // assert
+{% if r.clock %}
+    repeat (5) @(posedge {{ r.clock }});
+{% else %}
+    #{{ 5 * clocks[0].period }};
+{% endif %}
+    // NOTE: the driver and monitor block until this deasserts — if you edit this
+    // block you MUST drive {{ r.name }} to its inactive level or the TB will hang.
+    {{ r.name }} = 1'b{% if r.active_low %}1{% else %}0{% endif %};   // deassert
+  end
+  // pragma quickuvm custom reset_generator_{{ r.name }} end
+{% endfor %}
+
+  // Instantiate each interface on its agent's clock (and reset) domain
+{% for agent in agents %}
+  {{ agent.interface }}{{ agent.param_args_values }} {{ agent.interface }}_inst (.clk({{ agent_clocks[agent.name] }}){% if agent_resets[agent.name] %}, .{{ agent_resets[agent.name].name }}({{ agent_resets[agent.name].name }}){% endif %});
+{% endfor %}
+
+  // pragma quickuvm custom dut_connections begin
+  // Instantiate DUT — per-domain clocks/resets + interface signals. Edit for real RTL
+  // (the DUT's clock/reset port names are assumed to match the domain names).
+  {{ dut.name }} dut_inst (
+{% for agent in agents %}
+{% for kind, port in agent.all_ports %}
+    .{{ port.name }}({{ agent.interface }}_inst.{{ port.name }}),
+{% endfor %}
+{% endfor %}
+{% for c in clocks %}
+    .{{ c.name }}({{ c.name }}){% if not loop.last or resets %},{% endif %}
+
+{% endfor %}
+{% for r in resets %}
+    .{{ r.name }}({{ r.name }}){% if not loop.last %},{% endif %}
+
+{% endfor %}
+  );
+  // pragma quickuvm custom dut_connections end
+{% else %}
 
   logic clk;
 {% if dut.external_reset %}
@@ -99,6 +156,7 @@ module tb_top;
   );
 {% endif %}
   // pragma quickuvm custom dut_connections end
+{% endif %}
 
   initial begin
 {% if has_instances %}

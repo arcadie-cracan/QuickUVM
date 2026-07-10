@@ -43,14 +43,14 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if dut.external_reset %}
+{% if agent_reset %}
     // Reset is driven externally: hold off BEFORE advancing a clock so the parked
     // idle values are all the DUT sees during reset; wait for deassertion, then let
     // the input synchronizers settle (2 = a typical 2-stage sync; raise for deeper).
-    wait (vif.{{ dut.reset }} === 1'b{% if dut.reset_active_low %}1{% else %}0{% endif %});
+    wait (vif.{{ agent_reset.name }} === 1'b{% if agent_reset.active_low %}1{% else %}0{% endif %});
 {% endif %}
     @vif.cb1;
-{% if dut.external_reset %}
+{% if agent_reset %}
     repeat (2) @vif.cb1;
 {% endif %}
     // pragma quickuvm custom initialize_additional begin

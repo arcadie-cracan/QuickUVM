@@ -690,10 +690,36 @@ against the RAL and passes.
 
 ## Priority tier 4 — clocking & infrastructure
 
-### M1 — Multi-clock / multi-reset
+### M1 — Multi-clock / multi-reset — DONE (first slice)
 Promote `clock`/`reset` to lists; per-agent clock association; multiple clock-gens + reset
 generators. Needed for CDC and most real SoC blocks.
-**Accept:** a 2-clock-domain bench generates and runs.
+**Accept:** a 2-clock-domain bench generates and runs. ✅
+
+**Status — flat multi-clock / multi-reset landed:**
+- `clock:` accepts a single mapping (today, byte-identical) OR a **list** of named
+  domains — a before-validator splits a list into `clock` (the primary, for every legacy
+  single-clock read + the `-timescale`/scoreboard unit) and `clocks` (the full list);
+  `effective_clocks` returns `[self.clock]` for a single-clock bench, so it stays
+  byte-identical. A new `resets:` list (each `ResetConfig` = name + polarity + a `clock:`
+  it deasserts synchronously to; no clock ⇒ async) generalizes the single external reset,
+  which `effective_resets` synthesizes from `dut` when the list is empty.
+- Each agent names its domain via `clock:`/`reset:` (None ⇒ the sole/first clock + its
+  reset). The generator resolves a per-agent clock/reset **view** that equals the global
+  clock / `dut.reset` for a single-domain bench, so the agent templates (interface skew,
+  driver/monitor reset-gate) render byte-identical. `clkgen` is parameterized
+  `#(int PERIOD)` (single-clock branch kept textually identical) and instantiated once per
+  domain; `tb_top` branches to a multi-domain body (N clock nets + clkgens, N reset
+  generators each synced to its clock with its own pragma region, per-agent interface
+  binding) while the single-domain body is the verbatim legacy path.
+- Fail-closed: an agent/reset naming an undeclared clock or reset; a reset name colliding
+  with a clock net; multi-domain combined with a multi-instantiated agent (`instances`) or
+  with `subenvs` (clocked-subenv composition is the deferred H1 lift).
+- Validated on `examples/mclk/`: a two-clock-domain DUT (clk_sys @10, clk_io @6) with one
+  external reset per domain and a self-checking scoreboard per lane — both lanes pass
+  **on Xcelium** (0 errors). verible-lint-clean; CI gates it.
+- *Deferred:* multi-time-unit `-timescale` resolution (the first example keeps one unit);
+  per-domain scoreboard latency windows; multi-domain with `instances`/`subenvs`;
+  multi-agent-driven (non-external) resets.
 
 ### R1 — Regression & coverage infrastructure
 Per-simulator makefiles, a testlist/regression runner, seed management, and a

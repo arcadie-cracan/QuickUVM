@@ -7,11 +7,11 @@
 //----------------------------------------------------------------------
 
 //----------------------------------------------------------------------
-// Drive stimulus {{ clock.drive_offset_pct }}% of the clock period after posedge clk
+// Drive stimulus {{ agent_clock.drive_offset_pct }}% of the clock period after posedge clk
 // (time units are set by the sim filelist's -timescale).
 //----------------------------------------------------------------------
 
-interface {{ agent.interface }}{{ agent.param_decl }} (input clk{% if dut.external_reset %}, input {{ dut.reset }}{% endif %});
+interface {{ agent.interface }}{{ agent.param_decl }} (input clk{% if agent_reset %}, input {{ agent_reset.name }}{% endif %});
   // Generated signals from config
 {% for port in agent.output_ports %}
   logic {{ port.sv_span }}{{ port.name }};
@@ -24,7 +24,7 @@ interface {{ agent.interface }}{{ agent.param_decl }} (input clk{% if dut.extern
   // pragma quickuvm custom signals_additional end
 
   clocking cb1 @(posedge clk);
-    default input #1step output #{{ "%g" | format(clock.drive_offset_pct * clock.period / 100) }};
+    default input #1step output #{{ "%g" | format(agent_clock.drive_offset_pct * agent_clock.period / 100) }};
 {% for port in agent.output_ports %}
     input  {{ port.name }};
 {% endfor %}
