@@ -13,6 +13,7 @@ import pytest
 from quick_uvm.generator import Generator
 from quick_uvm.models import (
     AgentConfig,
+    ClockConfig,
     DutConfig,
     PortConfig,
     ProjectConfig,
@@ -32,6 +33,7 @@ NESTED = Path(__file__).resolve().parents[1] / "examples" / "nested" / "nested.y
 NSOC = Path(__file__).resolve().parents[1] / "examples" / "nsoc" / "nsoc.yaml"
 XPIPE = Path(__file__).resolve().parents[1] / "examples" / "xpipe" / "xpipe.yaml"
 DSOC = Path(__file__).resolve().parents[1] / "examples" / "dsoc" / "dsoc.yaml"
+CSOC = Path(__file__).resolve().parents[1] / "examples" / "csoc" / "csoc.yaml"
 
 
 def _block(name, agent, iface):
@@ -232,24 +234,185 @@ def test_child_dut_name_collision_rejected():
         top.validate_subenv_composition()
 
 
-def test_clocked_child_block_rejected():
-    top = _top()
-    clocked = ProjectConfig(
-        project=ProjectMeta(name="clkblk"),
-        dut=DutConfig(name="clkblk", combinational=False, reset="rst_n"),
+def _clocked_block(name, agent, iface, period=10, unit="ns"):
+    return ProjectConfig(
+        project=ProjectMeta(name=name),
+        dut=DutConfig(
+            name=name, combinational=False, reset="rst_n", external_reset=True
+        ),
+        clock=ClockConfig(period=period, unit=unit),
         agents=[
             AgentConfig(
-                name="c",
-                interface="c_if",
-                sequence_item="c_seq_item",
-                ports={"inputs": [PortConfig(name="din", width=8)]},
+                name=agent,
+                interface=iface,
+                sequence_item=f"{agent}_seq_item",
+                ports={
+                    "inputs": [PortConfig(name="din", width=8)],
+                    "outputs": [PortConfig(name="dout", width=8)],
+                },
             )
         ],
-        tests=[TConf(name="c_test")],
+        tests=[TConf(name=f"{name}_test")],
     )
-    top.subenv_configs = {"adder": _block("adder", "a", "a_if"), "inverter": clocked}
-    with pytest.raises(Exception, match="only combinational child blocks"):
+
+
+def test_clocked_child_block_accepted():
+    # H1 x M1: a clocked (registered, external-reset) child now composes fine.
+    top = _top()
+    top.subenv_configs = {
+        "adder": _clocked_block("adder", "a", "a_if"),
+        "inverter": _clocked_block("inverter", "b", "b_if", period=8),
+    }
+    top.validate_subenv_composition()  # must not raise
+
+
+def test_clocked_leaf_mixed_unit_rejected():
+    # a composed clocked leaf must share the subsystem's time unit (ns) in this slice.
+    top = _top()
+    top.subenv_configs = {
+        "adder": _clocked_block("adder", "a", "a_if"),
+        "inverter": _clocked_block("inverter", "b", "b_if", period=500, unit="ps"),
+    }
+    with pytest.raises(Exception, match="must share one time unit"):
         top.validate_subenv_composition()
+
+
+def test_clocked_subsystem_tb_top_per_leaf_domains(tmp_path):
+    # csoc composes two clocked leaves at DIFFERENT periods (acc @10ns, mul @8ns).
+    # tb_top gets a pathname-prefixed clock + reset + clkgen + reset generator per leaf.
+    Generator(ProjectConfig.from_yaml(CSOC)).generate_all(tmp_path)
+    top = (tmp_path / "tb_top.sv").read_text()
+    assert "logic acc_clk;" in top and "logic acc_rst_n;" in top
+    assert "logic mul_clk;" in top and "logic mul_rst_n;" in top
+    # one parameterized clkgen per leaf, at its own period
+    assert "clkgen #(10) ck_acc_clk (acc_clk);" in top
+    assert "clkgen #(8) ck_mul_clk (mul_clk);" in top
+    # a reset generator per leaf, each synced to its own clock, own pragma region
+    assert "// pragma quickuvm custom reset_generator_acc_rst_n begin" in top
+    assert "repeat (5) @(posedge acc_clk);" in top
+    assert "repeat (5) @(posedge mul_clk);" in top
+    # each interface + DUT bound to its leaf's domain
+    assert "a_if acc_a_if_inst (.clk(acc_clk), .rst_n(acc_rst_n));" in top
+    assert ".clk(mul_clk)," in top and ".rst_n(mul_rst_n)" in top
+    # a fully-combinational subsystem keeps the shared clkgen (no multi-domain block)
+    assert "clkgen ck (clk);" not in top  # this subsystem is fully clocked
+
+
+def test_clocked_subsystem_leaf_env_is_reset_gated(tmp_path):
+    # the composed clocked leaf's own env layer is already clocked-ready: its interface
+    # carries the reset port and its driver/monitor reset-gate.
+    Generator(ProjectConfig.from_yaml(CSOC)).generate_all(tmp_path)
+    assert (
+        "interface a_if (input clk, input rst_n);" in (tmp_path / "a_if.sv").read_text()
+    )
+    assert "wait (vif.rst_n === 1'b1);" in (tmp_path / "a_driver.svh").read_text()
+    assert "wait (vif.rst_n === 1'b1);" in (tmp_path / "a_monitor.svh").read_text()
+
+
+_PORTS = "ports: {inputs: [{name: din, width: 8}], outputs: [{name: dout, width: 8}]}"
+
+
+def _clk_leaf(name, ag, reset=True, clock_block="clock: {period: 10, unit: ns}"):
+    r = ", reset: rst_n, external_reset: true" if reset else ", reset: ''"
+    return (
+        f"project: {{name: {name}}}\n"
+        f"dut: {{name: {name}, clock: clk{r}}}\n"
+        f"{clock_block}\n"
+        "agents:\n"
+        f"  - {{name: {ag}, interface: {ag}_if, sequence_item: {ag}_it, {_PORTS}}}\n"
+        f"tests: [{{name: {name}_t}}]\n"
+    )
+
+
+def _comb_leaf(name, ag):
+    return (
+        f"project: {{name: {name}}}\n"
+        f"dut: {{name: {name}, combinational: true, reset: ''}}\n"
+        "agents:\n"
+        f"  - {{name: {ag}, interface: {ag}_if, sequence_item: {ag}_it, {_PORTS}}}\n"
+        f"tests: [{{name: {name}_t}}]\n"
+    )
+
+
+def _write_clocked_top(tmp_path, leaves):
+    # leaves: list of (subenv_name, leaf_yaml_text)
+    for name, text in leaves:
+        (tmp_path / f"{name}.yaml").write_text(text)
+    subs = "\n".join(f"  - {{name: {n}, config: {n}.yaml}}" for n, _ in leaves)
+    top = tmp_path / "top.yaml"
+    top.write_text(
+        "project: {name: cs}\n"
+        "layout: packaged\n"
+        "dut: {name: cs, combinational: true, reset: ''}\n"
+        "subenvs:\n" + subs + "\ntests: [{name: cs_t}]\n"
+    )
+    return top
+
+
+def test_mixed_clocked_and_combinational_leaves(tmp_path):
+    # a subsystem may mix a CLOCKED leaf and a COMBINATIONAL leaf: the clocked leaf
+    # gets its own domain; the combinational leaf keeps the bare shared cadence `clk`.
+    top = _write_clocked_top(
+        tmp_path, [("acc", _clk_leaf("acc", "a")), ("cmb", _comb_leaf("cmb", "c"))]
+    )
+    Generator(ProjectConfig.from_yaml(top)).generate_all(tmp_path / "g")
+    tb = (tmp_path / "g" / "tb_top.sv").read_text()
+    assert "clkgen #(10) ck_acc_clk (acc_clk);" in tb  # clocked leaf's own clkgen
+    assert "clkgen ck (clk);" in tb  # shared cadence for the combinational leaf
+    assert "a_if acc_a_if_inst (.clk(acc_clk), .rst_n(acc_rst_n));" in tb
+    assert "c_if cmb_c_if_inst (clk);" in tb  # combinational leaf: bare (clk)
+
+
+def test_clock_only_leaf_has_no_reset(tmp_path):
+    # a clocked leaf without external_reset gets a clock but NO reset net/generator.
+    top = _write_clocked_top(
+        tmp_path,
+        [("acc", _clk_leaf("acc", "a", reset=False)), ("mul", _clk_leaf("mul", "m"))],
+    )
+    Generator(ProjectConfig.from_yaml(top)).generate_all(tmp_path / "g")
+    tb = (tmp_path / "g" / "tb_top.sv").read_text()
+    assert "clkgen #(10) ck_acc_clk (acc_clk);" in tb
+    assert "reset_generator_acc_rst_n" not in tb  # no reset for the reset-less leaf
+    assert "a_if acc_a_if_inst (.clk(acc_clk));" in tb  # no reset port bound
+    assert "reset_generator_mul_rst_n" in tb  # the other leaf still has its reset
+
+
+def test_clocked_leaf_multi_clock_rejected(tmp_path):
+    multi = "clock:\n  - {name: clk, period: 10}\n  - {name: clk2, period: 8}"
+    top = _write_clocked_top(
+        tmp_path,
+        [
+            ("acc", _clk_leaf("acc", "a", clock_block=multi)),
+            ("mul", _clk_leaf("mul", "m")),
+        ],
+    )
+    with pytest.raises(Exception, match="must be single-clock"):
+        ProjectConfig.from_yaml(top)
+
+
+def test_leaf_pathname_collision_rejected(tmp_path):
+    # a direct leaf-instance `a_b` and a subsystem `a` containing leaf `b` both flatten
+    # to pathname `a_b` → duplicate tb_top nets/instances; rejected fail-closed.
+    (tmp_path / "lf1.yaml").write_text(_comb_leaf("lf1", "g1"))
+    (tmp_path / "lf2.yaml").write_text(_comb_leaf("lf2", "g2"))
+    (tmp_path / "lf3.yaml").write_text(_comb_leaf("lf3", "g3"))
+    (tmp_path / "clu.yaml").write_text(
+        "project: {name: clu}\n"
+        "layout: packaged\n"
+        "dut: {name: clu, combinational: true, reset: ''}\n"
+        "subenvs:\n  - {name: b, config: lf2.yaml}\n  - {name: d, config: lf3.yaml}\n"
+        "tests: [{name: clu_t}]\n"
+    )
+    top = tmp_path / "top.yaml"
+    top.write_text(
+        "project: {name: topx}\n"
+        "layout: packaged\n"
+        "dut: {name: topx, combinational: true, reset: ''}\n"
+        "subenvs:\n  - {name: a_b, config: lf1.yaml}\n  - {name: a, config: clu.yaml}\n"
+        "tests: [{name: topx_t}]\n"
+    )
+    with pytest.raises(Exception, match="flatten to the same path"):
+        ProjectConfig.from_yaml(top)
 
 
 def test_single_agent_parameterized_child_allowed():

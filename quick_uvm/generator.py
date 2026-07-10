@@ -448,11 +448,19 @@ class Generator:
             "project": cfg.project,
             "dut": cfg.dut,
             "clock": cfg.clock,
-            # M1 — subenvs are combinational (single clock); the shared clkgen reads
-            # `clocks`/`multi_domain` and renders its single-clock branch.
+            # M1 clocked-subenv — the subsystem tb_top generates a per-leaf clock +
+            # reset for every CLOCKED leaf (combinational leaves keep the shared cadence
+            # `clk`). `multi_domain` (any clocked leaf) drives clkgen.sv.j2's
+            # parameterized branch + the subenv_top clock/reset block; a fully
+            # combinational subsystem stays False → byte-identical single-clock output.
             "clocks": cfg.effective_clocks,
-            "multi_domain": False,
-            "timescale_unit": cfg.timescale_unit,
+            "multi_domain": any(lv.clocked for lv in cfg.leaf_views),
+            "clock_periods_ts": {
+                c.name: cfg.clock_period_ts(c) for c in cfg.effective_clocks
+            },
+            # M1 clocked-subenv — the -timescale unit is the clocked leaves' shared unit
+            # (or the top's own when none clocked → byte-identical).
+            "timescale_unit": cfg.subsystem_timescale_unit,
             "tests": cfg.tests,
             "subenvs": cfg.subenv_views,
             "layout": cfg.layout,

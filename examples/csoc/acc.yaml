@@ -1,0 +1,15 @@
+# acc — a CLOCKED leaf block (registered dout = din + 1) on its own 10 ns clock +
+# external reset. Composed into the csoc subsystem; the subsystem tb_top generates
+# acc's clock (acc_clk) + reset (acc_rst_n) — nets pathname-prefixed by the subenv.
+project: {name: acc, author: QuickUVM, year: 2026}
+dut: {name: acc, clock: clk, reset: rst_n, external_reset: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: a
+    interface: a_if
+    sequence_item: a_item
+    ports:
+      inputs:  [{name: din,  width: 8}]
+      outputs: [{name: dout, width: 8}]
+tests:
+  - {name: acc_test, num_items: 30}

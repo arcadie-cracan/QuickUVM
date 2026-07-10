@@ -725,8 +725,25 @@ generators. Needed for CDC and most real SoC blocks.
   Single-unit benches are byte-identical (the finest unit is that unit; nothing scales).
   Validated on `examples/mxclk/` (500 ps + 10 ns lanes, self-check each) — **2/2 on
   Xcelium**; unknown units in a mixed set are rejected. verible-lint-clean; CI gates it.
+- **Clocked-subenv composition landed (H1 x M1):** the H1 combinational-only guard is
+  lifted — a subsystem may now compose CLOCKED leaf blocks. Each clocked leaf becomes its
+  own M1 lane: the flattened `subenv_top` generates a pathname-prefixed clock net + reset
+  net, its own parameterized `clkgen #(period)`, and a reset generator synced to that
+  leaf's clock (its own pragma region), and binds each interface + DUT + reset-gates each
+  driver/monitor to its leaf's domain. The **entire leaf VIP layer was already
+  clocked-ready** in subenv mode (the M1 per-agent view flows into leaf generation
+  unconditionally), so the slice is almost purely `subenv_top` physical wiring + the guard
+  lift + `LeafView` clock/reset accessors. Leaf-driven (each leaf declares its own
+  clock/reset; the top stays combinational — no new top schema); the top owns the reset
+  generators. A fully COMBINATIONAL subsystem is byte-identical (the clock/reset block is
+  gated on any-clocked-leaf). Fail-closed: a composed clocked leaf must be single-clock /
+  at-most-one-reset and share the subsystem's time unit. Validated on `examples/csoc/`:
+  two clocked leaves at DIFFERENT periods (acc @10 ns + mul @8 ns) — two independent clock
+  domains in one subsystem, each self-checking — pass **2/2 on Xcelium** (0 errors).
+  verible-lint-clean; CI gates it.
 - *Deferred:* per-domain scoreboard latency across two differently-clocked streams;
-  multi-domain with `instances`/`subenvs`; multi-agent-driven (non-external) resets.
+  multi-domain with `instances`; mixed-unit / nested-multi-clock clocked leaves;
+  multi-agent-driven (non-external) resets.
 
 ### R1 — Regression & coverage infrastructure
 Per-simulator makefiles, a testlist/regression runner, seed management, and a

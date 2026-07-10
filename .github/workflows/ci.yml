@@ -320,3 +320,16 @@ jobs:
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_dsoc/*.sv gen_dsoc/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/dsoc/rtl/*.sv
+
+      # Gate the H1 x M1 clocked-subsystem path: the csoc example composes TWO CLOCKED
+      # leaf blocks (acc @10ns + mul @8ns) into one subsystem. The flattened tb_top
+      # generates a pathname-prefixed clock + reset + parameterized clkgen + reset
+      # generator per clocked leaf, each interface/DUT bound and each driver/monitor
+      # reset-gated to its own leaf's domain.
+      - name: Generate the clocked-subsystem example (H1 x M1)
+        run: quick-uvm generate -c examples/csoc/csoc.yaml -o gen_csoc
+
+      - name: Verible lint (clocked-subsystem generated SV/SVH + clocked leaf DUTs)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_csoc/*.sv gen_csoc/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/csoc/rtl/*.sv
