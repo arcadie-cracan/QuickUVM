@@ -516,10 +516,25 @@ via Jinja macros.
   each leaf self-scoreboarded: all four leaves pass **21/21 on Xcelium** (0 errors).
   verible-lint-clean; CI gates it.
 
+**Status — parameterized / reused nested subsystems landed:**
+- A whole nested subsystem (cluster) can now be REUSED (composed >=2x → auto-namespaced)
+  and/or PARAMETERIZED. Both are single recursive model transforms: the namespace prefix
+  and the `params:` override are applied down the ENTIRE cluster subtree (stacking on any
+  inner prefix), so the same cluster reused twice yields collision-free class sets and the
+  width reaches every grandchild agent. The reused leaf RTL module is recovered UNprefixed
+  (the original dut.name is captured once, before any prefix, so it survives stacking).
+- Fail-closed still: cross-LEVEL connections/scoreboards; a `params:` key that no
+  descendant agent declares. Byte-identical for every non-reused/non-parameterized path
+  (the recursion is a no-op when the prefix is "" and there are no params).
+- Validated on `examples/nsoc/`: the SAME parameterized `chan` cluster (adder + shifter)
+  composed twice — lo at W=8, hi at W=16 — auto-namespaced (lo_*/hi_*) with the width
+  propagated to every leaf; all four leaves pass **21/21 on Xcelium** (0 errors). verible-
+  lint-clean; CI gates it.
+
 **H1 is feature-complete**: composition, parameter propagation, cross-block scoreboards,
-same-block reuse (namespacing), and nested subsystems. Deferred cross-cutting extras
-(cross-level wiring, reused/parameterized nested subsystems) are noted above as future
-slices.
+same-block reuse, nested subsystems, and parameterized/reused nested subsystems. The one
+remaining deferred extra is **cross-LEVEL** connections/scoreboards (wiring/checking a
+subsystem's inner blocks across the hierarchy).
 
 ## Priority tier 3 — checking generality
 

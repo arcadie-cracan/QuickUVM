@@ -1515,10 +1515,8 @@ class SubenvView:
     def dut_module(self) -> str:
         """The DUT module name to instantiate (real RTL). For a namespaced block
         this is the ORIGINAL block name (the reused RTL module is unprefixed),
-        recovered by stripping the class prefix; otherwise the block name."""
-        if self.namespaced:
-            return self.cfg.dut.name.removeprefix(f"{self.prefix}_")
-        return self.cfg.dut.name
+        captured before any prefix was applied — robust to stacked prefixes."""
+        return self.cfg.original_dut_name or self.cfg.dut.name
 
     @property
     def env_class(self) -> str:
@@ -1616,6 +1614,46 @@ class LeafView:
         return out
 
 
+def _apply_namespace_prefix(cfg: ProjectConfig, prefix: str) -> None:
+    """H1 nested reuse — recursively prefix a composed subtree's class names by
+    `prefix` (stacking on any inner prefix), so the SAME subsystem config reused
+    twice yields collision-free class sets. `original_dut_name` is captured once
+    (idempotent) so `SubenvView.dut_module` recovers the true RTL module name
+    regardless of how many prefixes stack."""
+    if not cfg.original_dut_name:
+        cfg.original_dut_name = cfg.dut.name
+    cfg.dut.name = f"{prefix}_{cfg.dut.name}"
+    for a in cfg.agents:
+        a.name = f"{prefix}_{a.name}"
+        a.interface = f"{prefix}_{a.interface}"
+        a.sequence_item = f"{prefix}_{a.sequence_item}"
+        for seq in a.sequences:
+            seq.name = f"{prefix}_{seq.name}"
+    for name, gc in cfg.subenv_configs.items():
+        _apply_namespace_prefix(gc, prefix)
+        old = cfg.subenv_namespaces.get(name, "")
+        cfg.subenv_namespaces[name] = f"{prefix}_{old}" if old else prefix
+
+
+def _all_descendant_agents(cfg: ProjectConfig) -> list[AgentConfig]:
+    """Every agent in the composed subtree (all depths)."""
+    out = list(cfg.agents)
+    for gc in cfg.subenv_configs.values():
+        out.extend(_all_descendant_agents(gc))
+    return out
+
+
+def _bake_param(cfg: ProjectConfig, name: str, value: int) -> None:
+    """H1 nested param propagation — set parameter `name`'s default to `value` on
+    every descendant agent that declares it (broadcast down the subtree)."""
+    for a in cfg.agents:
+        for p in a.parameters:
+            if p.name == name:
+                p.default = value
+    for gc in cfg.subenv_configs.values():
+        _bake_param(gc, name, value)
+
+
 class ProjectConfig(BaseModel):
     project: ProjectMeta
     dut: DutConfig
@@ -1657,6 +1695,11 @@ class ProjectConfig(BaseModel):
     subenv_namespaces: dict[str, str] = Field(
         default_factory=dict, exclude=True, repr=False
     )
+    # Runtime: the block's ORIGINAL dut.name (the real RTL module), captured before
+    # any namespace prefix is applied — so a reused block's DUT is instantiated at
+    # its true unprefixed module name however many prefixes stack. "" = never
+    # prefixed (dut_module falls through to dut.name).
+    original_dut_name: str = Field(default="", exclude=True, repr=False)
 
     @property
     def subenv_views(self) -> list[SubenvView]:
@@ -1795,21 +1838,10 @@ class ProjectConfig(BaseModel):
             if child is None:
                 raise ValueError(f"subenv '{s.name}': child config not loaded.")
             # H1 nested — a child that is itself a subsystem is composed recursively
-            # (its own validate_subenv_composition already ran via from_yaml). This
-            # slice scopes OUT a few cross-level combinations (fail closed):
-            if child.subenvs:
-                if s.params:
-                    raise ValueError(
-                        f"subenv '{s.name}': `params` on a nested subsystem is not "
-                        f"supported yet (param propagation reaches direct-child agents "
-                        f"only, not grandchildren)."
-                    )
-                if self.subenv_namespaces.get(s.name):
-                    raise ValueError(
-                        f"subenv '{s.name}': namespacing (reusing) a nested subsystem "
-                        f"is not supported yet (the grandchild classes are not "
-                        f"prefixed)."
-                    )
+            # (its own validate_subenv_composition already ran via from_yaml).
+            # Reusing (namespacing) and parameterizing a nested subsystem ARE now
+            # supported (the prefix + param overrides recurse down the subtree in
+            # from_yaml); the flattened-uniqueness guard below is the safety net.
             if child.register_model is not None:
                 raise ValueError(
                     f"subenv '{s.name}': a child block with a register_model is not "
@@ -2386,34 +2418,27 @@ class ProjectConfig(BaseModel):
                 prefix = s.resolve_prefix(spath in shared)
                 cfg.subenv_namespaces[s.name] = prefix
                 if prefix:
-                    child.dut.name = f"{prefix}_{child.dut.name}"
-                    for a in child.agents:
-                        a.name = f"{prefix}_{a.name}"
-                        a.interface = f"{prefix}_{a.interface}"
-                        a.sequence_item = f"{prefix}_{a.sequence_item}"
-                        for seq in a.sequences:
-                            seq.name = f"{prefix}_{seq.name}"
-                # H1 param propagation — bake this instance's overrides into the
-                # child block's agent parameter defaults before it is generated.
-                if s.params and child.subenvs:
-                    raise ValueError(
-                        f"subenv '{s.name}': `params` on a nested subsystem is not "
-                        f"supported yet (param propagation reaches direct-child agents "
-                        f"only, not grandchildren)."
-                    )
+                    # Recurse over the WHOLE subtree so a reused subsystem's inner
+                    # blocks are prefixed too (leaf → degenerates to the flat body).
+                    _apply_namespace_prefix(child, prefix)
+                # H1 param propagation — broadcast this instance's overrides to every
+                # descendant agent that declares the parameter (a leaf reaches only
+                # its own agents; a subsystem reaches its grandchildren).
                 if s.params:
-                    declared = {p.name for a in child.agents for p in a.parameters}
+                    declared = {
+                        p.name
+                        for a in _all_descendant_agents(child)
+                        for p in a.parameters
+                    }
                     for k, v in s.params.items():
                         if k not in declared:
                             raise ValueError(
                                 f"subenv '{s.name}': params override '{k}' is not a "
-                                f"declared parameter of block '{child.dut.name}' "
+                                f"declared parameter of any agent in block "
+                                f"'{child.original_dut_name or child.dut.name}' "
                                 f"(declared: {sorted(declared)})."
                             )
-                        for a in child.agents:
-                            for p in a.parameters:
-                                if p.name == k:
-                                    p.default = v
+                        _bake_param(child, k, v)
                 cfg.subenv_configs[s.name] = child
             cfg.validate_subenv_composition()
         return cfg

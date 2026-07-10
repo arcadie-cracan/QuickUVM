@@ -49,7 +49,14 @@ module tb_top;
   initial begin
 {% for lv in leaf_views %}
 {% for agent in lv.agents %}
-    uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::set(null, "*", "{{ lv.pathname }}_{{ agent.interface }}_vif", {{ lv.pathname }}_{{ agent.interface }}_inst);
+{% set vset %}    uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::set(null, "*", "{{ lv.pathname }}_{{ agent.interface }}_vif", {{ lv.pathname }}_{{ agent.interface }}_inst);{% endset %}
+{% if vset | length <= 100 %}
+{{ vset }}
+{% else %}
+    uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::set(
+        null, "*", "{{ lv.pathname }}_{{ agent.interface }}_vif",
+        {{ lv.pathname }}_{{ agent.interface }}_inst);
+{% endif %}
 {% endfor %}
 {% endfor %}
     run_test();

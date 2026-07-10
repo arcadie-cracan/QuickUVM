@@ -1,0 +1,12 @@
+project: {name: shl, author: QuickUVM, year: 2026}
+dut: {name: shl, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: s
+    interface: s_if
+    sequence_item: s_item
+    parameters: [{name: W, default: 8}]
+    ports:
+      inputs:  [{name: din,  width_param: W}]
+      outputs: [{name: dout, width_param: W}]
+tests: [{name: shl_test, num_items: 20}]

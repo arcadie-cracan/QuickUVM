@@ -256,3 +256,16 @@ jobs:
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_nested/*.sv gen_nested/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/nested/rtl/*.sv
+
+      # Gate the H1 parameterized/reused-nested-subsystem path: the nsoc example
+      # composes the SAME parameterized `chan` cluster (adder + shifter) twice — lo at
+      # W=8, hi at W=16. Exercises recursive namespace prefixing (lo_*/hi_* down the
+      # whole cluster subtree) + param broadcast to grandchild agents, with the reused
+      # leaf RTL modules recovered unprefixed.
+      - name: Generate the parameterized-reused-nested example (H1)
+        run: quick-uvm generate -c examples/nsoc/nsoc.yaml -o gen_nsoc
+
+      - name: Verible lint (parameterized-reused-nested generated SV/SVH + DUTs)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_nsoc/*.sv gen_nsoc/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/nsoc/rtl/*.sv

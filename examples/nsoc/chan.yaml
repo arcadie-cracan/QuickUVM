@@ -1,0 +1,9 @@
+# chan — a parameterized sub-subsystem: composes an adder + a shifter, both at width W.
+project: {name: chan, author: QuickUVM, year: 2026}
+layout: packaged
+dut: {name: chan, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+subenvs:
+  - {name: adder,   config: add.yaml}
+  - {name: shifter, config: shl.yaml}
+tests: [{name: chan_test}]
