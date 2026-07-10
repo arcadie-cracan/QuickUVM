@@ -1,0 +1,14 @@
+# xr — stg2's second leaf (dout = din ^ 8'hA5). An independent block that makes
+# stg2 a real subsystem (>=2 blocks); exercised on its own, not cross-wired.
+project: {name: xr, author: QuickUVM, year: 2026}
+dut: {name: xr, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: x
+    interface: x_if
+    sequence_item: x_seq_item
+    ports:
+      inputs:  [{name: din,  width: 8}]
+      outputs: [{name: dout, width: 8}]
+tests:
+  - {name: xr_test, num_items: 30}

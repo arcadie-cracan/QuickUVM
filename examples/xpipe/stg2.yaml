@@ -1,0 +1,10 @@
+# stg2 — a sub-subsystem (cluster) composing two leaf blocks: inv + xr.
+# Its inner leaf `inv` is the DESTINATION of the top's cross-level pipeline wire.
+project: {name: stg2, author: QuickUVM, year: 2026}
+layout: packaged
+dut: {name: stg2, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+subenvs:
+  - {name: inv, config: inv.yaml}
+  - {name: xr, config: xr.yaml}
+tests: [{name: stg2_test}]

@@ -1,0 +1,14 @@
+# add — stg1 leaf, pipeline stage 1 (dout = din + 1). Active agent drives din;
+# its dout feeds the stg2 leaf `inv` through a CROSS-LEVEL connection at the top.
+project: {name: add, author: QuickUVM, year: 2026}
+dut: {name: add, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: a
+    interface: a_if
+    sequence_item: a_seq_item
+    ports:
+      inputs:  [{name: din,  width: 8}]
+      outputs: [{name: dout, width: 8}]
+tests:
+  - {name: add_test, num_items: 30}

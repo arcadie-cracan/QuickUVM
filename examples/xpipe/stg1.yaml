@@ -1,0 +1,10 @@
+# stg1 — a sub-subsystem (cluster) composing two leaf blocks: add + dbl.
+# Its inner leaf `add` is the SOURCE of the top's cross-level pipeline wire.
+project: {name: stg1, author: QuickUVM, year: 2026}
+layout: packaged
+dut: {name: stg1, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+subenvs:
+  - {name: add, config: add.yaml}
+  - {name: dbl, config: dbl.yaml}
+tests: [{name: stg1_test}]

@@ -1462,20 +1462,26 @@ class SubenvConfig(BaseModel):
 
 
 class SubenvConnection(BaseModel):
-    """H1 — a top-level wire between two composed blocks: the source block's
-    output port drives the destination block's input port (a pipeline). Both
-    endpoints are `block.port` (subenv name + interface signal). The destination
-    block's agent must be passive (the connection, not the agent, drives it)."""
+    """H1 — a wire between two composed blocks: the source block's output port
+    drives the destination block's input port (a pipeline). Each endpoint is a
+    dotted path `<block>.<port>`, or `<sub>...<block>.<port>` to reach a LEAF block
+    inside a nested subsystem (cross-level). The path is relative to the level that
+    declares the connection; the last segment is the interface port. The
+    destination block's agent must be passive (the connection, not the agent,
+    drives it)."""
 
     model_config = ConfigDict(populate_by_name=True)
-    src: str = Field(alias="from")  # <block>.<port> producing the signal
-    dst: str = Field(alias="to")  # <block>.<port> consuming it
+    src: str = Field(alias="from")  # <block>.<port>, or <sub>...<block>.<port>
+    dst: str = Field(alias="to")  # <block>.<port>, or <sub>...<block>.<port>
 
 
 class SubenvScoreboard(BaseModel):
     """H1 — a cross-block scoreboard: predict the monitor block's output from the
     source block's transaction and compare (reusing the A2 two-stream, in-order
-    comparator). `source`/`monitor` are `block.agent` (subenv name + agent)."""
+    comparator). Each of `source`/`monitor` is a dotted path `<block>.<agent>`, or
+    `<sub>...<block>.<agent>` to reach a LEAF block inside a nested subsystem
+    (cross-level); the path is relative to the declaring level, last segment the
+    agent."""
 
     name: str
     source: str  # <block>.<agent> — the stimulus/source stream
@@ -1794,34 +1800,116 @@ class ProjectConfig(BaseModel):
         """All leaf blocks' agent VIP packages (flattened)."""
         return [f"{a.name}_pkg" for lv in self.leaf_views for a in lv.agents]
 
-    def _iface_signal(self, ref: str) -> str:
-        """Resolve a `<block>.<port>` reference to the top-level interface signal
-        `<block>_<iface>_inst.<port>` (H1 cross-block connections)."""
-        blk, port = ref.split(".")
-        child = self.subenv_configs[blk]
-        for a in child.agents:
+    def _resolve_endpoint(
+        self, ref: str, what: str
+    ) -> tuple[list[str], str, ProjectConfig]:
+        """Resolve a dotted connection/scoreboard endpoint RELATIVE TO THIS LEVEL to
+        `(block_path, item, leaf_cfg)`: the path of subenv names descended to reach a
+        LEAF block, the trailing port/agent name, and that leaf's config. At depth 1
+        (`<block>.<item>`) the block_path is `[block]` — byte-identical to the flat
+        cross-block case. Fail-closed: an unknown segment, descending into a leaf, a
+        non-leaf final segment, or any segment in a reused (namespaced) subtree all
+        raise (reused cross-level is a later slice)."""
+        parts = ref.split(".")
+        if len(parts) < 2:
+            raise ValueError(
+                f"{what} '{ref}' must name a block and a port/agent — "
+                f"'<block>.<name>', or '<subsystem>...<block>.<name>' to reach a leaf "
+                f"block inside a nested subsystem."
+            )
+        *blk_path, item = parts
+        cfg: ProjectConfig = self
+        for i, seg in enumerate(blk_path):
+            views = {sv.name: sv for sv in cfg.subenv_views}
+            sv = views.get(seg)
+            if sv is None:
+                loc = f"'{'.'.join(blk_path[:i])}'" if i else "the composed blocks"
+                raise ValueError(
+                    f"{what} '{ref}' references unknown block '{seg}' in {loc}."
+                )
+            if cfg.subenv_namespaces.get(seg):
+                raise ValueError(
+                    f"{what} '{ref}': block '{seg}' is in a reused (namespaced) "
+                    f"subtree — cross-level connections/scoreboards into a reused "
+                    f"subsystem are not supported yet (reference a non-reused block)."
+                )
+            if i < len(blk_path) - 1:
+                if not sv.is_subsystem:
+                    rest = ".".join(blk_path[i + 1 :])
+                    raise ValueError(
+                        f"{what} '{ref}': '{seg}' is a leaf block, not a subsystem — "
+                        f"cannot descend into it to reach '{rest}'."
+                    )
+                cfg = sv.cfg
+            else:
+                if sv.is_subsystem:
+                    raise ValueError(
+                        f"{what} '{ref}': block '{seg}' is a subsystem, not a leaf — "
+                        f"descend to an inner leaf block, e.g. "
+                        f"'{seg}.<inner-block>.{item}'."
+                    )
+                return blk_path, item, sv.cfg
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    def _iface_signal(self, ref: str, prefix: tuple[str, ...] = ()) -> str:
+        """Resolve a `<block>...<port>` reference to the flattened tb_top interface
+        signal `<path>_<iface>_inst.<port>`, where `<path>` is `prefix` (the declaring
+        level's path from the top) joined with the endpoint's own block path. At the
+        top with a flat `<block>.<port>` this is `<block>_<iface>_inst.<port>`
+        (byte-identical). `prefix` is empty for a top-declared wire."""
+        blk_path, port, cfg = self._resolve_endpoint(ref, "connection")
+        full = list(prefix) + blk_path
+        for a in cfg.agents:
             if any(p.name == port for _, p in a.all_ports):
-                return f"{blk}_{a.interface}_inst.{port}"
+                return f"{'_'.join(full)}_{a.interface}_inst.{port}"
         return ref  # unreachable — validated in validate_subenv_composition
 
     @property
     def resolved_connections(self) -> list[dict[str, str]]:
-        """H1 — each cross-block wire as top interface signals: dst driven by src."""
+        """H1 — this level's own cross-block wires as interface signals (dst driven by
+        src), resolved relative to this level. For the flattened tb_top assigns use
+        `all_resolved_connections`."""
         return [
             {"dst": self._iface_signal(c.dst), "src": self._iface_signal(c.src)}
             for c in self.connections
         ]
 
+    @property
+    def all_resolved_connections(self) -> list[dict[str, str]]:
+        """H1 nested — EVERY cross-block wire in the whole tree (this level + every
+        nested cluster), each resolved to its flattened tb_top signal name (prefixed
+        by the declaring level's path from the top). This is what tb_top emits as
+        `assign dst = src;`. Flat single-level → identical to resolved_connections."""
+        out: list[dict[str, str]] = []
+
+        def walk(cfg: ProjectConfig, prefix: tuple[str, ...]) -> None:
+            for c in cfg.connections:
+                out.append(
+                    {
+                        "dst": cfg._iface_signal(c.dst, prefix),
+                        "src": cfg._iface_signal(c.src, prefix),
+                    }
+                )
+            for sv in cfg.subenv_views:
+                if sv.is_subsystem:
+                    walk(sv.cfg, prefix + (sv.name,))
+
+        walk(self, ())
+        return out
+
     def cross_block_sb_endpoints(
         self, sb: SubenvScoreboard
     ) -> tuple[str, AgentConfig, str, AgentConfig]:
-        """(source-block-handle, source-agent, monitor-block-handle, monitor-agent)
-        for a cross-block scoreboard. The block handle is the subenv name."""
-        sblk, sag = sb.source.split(".")
-        mblk, mag = sb.monitor.split(".")
-        sagent = next(a for a in self.subenv_configs[sblk].agents if a.name == sag)
-        magent = next(a for a in self.subenv_configs[mblk].agents if a.name == mag)
-        return sblk, sagent, mblk, magent
+        """(source-handle-chain, source-agent, monitor-handle-chain, monitor-agent)
+        for a cross-block scoreboard declared at THIS level. The handle chain is the
+        dotted path of child-env handles from this level's env down to the leaf
+        (e.g. 'stg1.add'); the scoreboard's connect_phase reaches the leaf agent's
+        analysis port through it. Flat same-level → a single handle (byte-identical)."""
+        spath, sag, scfg = self._resolve_endpoint(sb.source, "cross-block scoreboard")
+        mpath, mag, mcfg = self._resolve_endpoint(sb.monitor, "cross-block scoreboard")
+        sagent = next(a for a in scfg.agents if a.name == sag)
+        magent = next(a for a in mcfg.agents if a.name == mag)
+        return ".".join(spath), sagent, ".".join(mpath), magent
 
     def validate_subenv_composition(self) -> None:
         """Cross-child checks run by the loader once child configs are loaded.
@@ -1917,38 +2005,15 @@ class ProjectConfig(BaseModel):
                     _claim(a.interface, "interface")
                     _claim(a.sequence_item, "transaction")
 
-        # H1 cross-block — validate connection + scoreboard endpoints.
-        by_name = {
-            s.name: self.subenv_configs[s.name]
-            for s in self.subenvs
-            if s.name in self.subenv_configs
-        }
-
-        def _split(ref: str, what: str) -> tuple[str, str, ProjectConfig]:
-            if ref.count(".") != 1:
-                raise ValueError(f"{what} '{ref}' must be '<block>.<name>'.")
-            blk, item = ref.split(".")
-            if blk not in by_name:
-                raise ValueError(f"{what} '{ref}' references unknown block '{blk}'.")
-            if self.subenv_namespaces.get(blk):
-                raise ValueError(
-                    f"{what} '{ref}' references block '{blk}', which is namespaced "
-                    f"(its config is reused) — cross-block connections/scoreboards to "
-                    f"a reused block are not supported yet."
-                )
-            if by_name[blk].subenvs:
-                raise ValueError(
-                    f"{what} '{ref}' references block '{blk}', which is a nested "
-                    f"subsystem — cross-level connections/scoreboards (into a "
-                    f"subsystem's inner blocks) are not supported yet; reference a "
-                    f"leaf block's agent/port."
-                )
-            return blk, item, by_name[blk]
-
+        # H1 cross-block — validate connection + scoreboard endpoints. Endpoints are
+        # dotted paths resolved relative to THIS level (each level validates its own
+        # connections/scoreboards), so a path may descend into a nested subsystem to a
+        # leaf block (cross-level); _resolve_endpoint fails closed on a bad path.
         seen_dst: set[str] = set()
         for c in self.connections:
-            sblk, sport, scfg = _split(c.src, "connection 'from'")
-            dblk, dport, dcfg = _split(c.dst, "connection 'to'")
+            spath, sport, scfg = self._resolve_endpoint(c.src, "connection 'from'")
+            dpath, dport, dcfg = self._resolve_endpoint(c.dst, "connection 'to'")
+            sblk, dblk = spath[-1], dpath[-1]
             sportc = next(
                 (p for a in scfg.agents for p in a.output_ports if p.name == sport),
                 None,
@@ -1981,25 +2046,45 @@ class ProjectConfig(BaseModel):
                     f"({sportc.bit_width}-bit output driving a {dportc.bit_width}-bit "
                     f"input) — would silently truncate/pad."
                 )
-            if c.dst in seen_dst:
+            # key single-driver on the CANONICAL resolved destination path, so two
+            # spellings of the same nested input can't both drive it.
+            dkey = ".".join(dpath + [dport])
+            if dkey in seen_dst:
                 raise ValueError(
                     f"connection: multiple connections drive '{c.dst}' (a port can "
                     f"have only one driver)."
                 )
-            seen_dst.add(c.dst)
+            seen_dst.add(dkey)
+
+        # Cross-level: the per-level seen_dst above only sees THIS level's wires, but a
+        # nested leaf input can be driven by wires declared at different levels (a
+        # cluster's own internal wire and an ancestor's cross-level wire), spelled
+        # differently relative to each level. Guard driver-uniqueness on the fully
+        # resolved tb_top signal (the physical net), which collapses every spelling of
+        # one leaf input to a single string. Runs at the level that sees the whole
+        # subtree (the top); empty / flat → no-op.
+        resolved_dst: set[str] = set()
+        for rc in self.all_resolved_connections:
+            if rc["dst"] in resolved_dst:
+                raise ValueError(
+                    f"connection: multiple connections drive '{rc['dst']}' (a port can "
+                    f"have only one driver) — a cross-level wire targets a leaf input "
+                    f"that another level's wire already drives."
+                )
+            resolved_dst.add(rc["dst"])
 
         sbnames = [sb.name for sb in self.subenv_scoreboards]
         if len(sbnames) != len(set(sbnames)):
             raise ValueError("cross-block scoreboard names must be unique.")
         for sb in self.subenv_scoreboards:
             for role, ref in (("source", sb.source), ("monitor", sb.monitor)):
-                blk, agent, cfg = _split(
+                blk_path, agent, cfg = self._resolve_endpoint(
                     ref, f"cross-block scoreboard '{sb.name}' {role}"
                 )
                 if not any(a.name == agent for a in cfg.agents):
                     raise ValueError(
                         f"cross-block scoreboard '{sb.name}' {role} '{ref}': block "
-                        f"'{blk}' has no agent '{agent}'."
+                        f"'{blk_path[-1]}' has no agent '{agent}'."
                     )
 
     @model_validator(mode="after")

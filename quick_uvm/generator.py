@@ -474,6 +474,10 @@ class Generator:
         ctx, _ = self._subenv_level_ctx(cfg)
         ctx = {
             **ctx,
+            # tb_top emits EVERY level's wires (cross-cluster wires are declared at the
+            # top; a nested cluster's own wires resolve with its path prefix). Flat
+            # single-level → identical to the top's own resolved_connections.
+            "connections": cfg.all_resolved_connections,
             "leaf_views": cfg.leaf_views,
             "config_ops": cfg.config_build_ops,
             "composition_levels": cfg.composition_levels,

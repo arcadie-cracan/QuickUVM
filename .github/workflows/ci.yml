@@ -269,3 +269,16 @@ jobs:
         run: |
           verible-verilog-lint --rules_config .verible-lint.rules gen_nsoc/*.sv gen_nsoc/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/nsoc/rtl/*.sv
+
+      # Gate the H1 cross-LEVEL connections/scoreboards path: the xpipe example wires
+      # and scoreboards across nested subsystems — a top wire reaches into two clusters
+      # (stg1.add.dout -> stg2.inv.din) and a cross-level scoreboard predicts inv.dout
+      # from add's stream. Exercises dotted-path endpoint resolution (flattened tb_top
+      # signal names for the wire; a dotted child-env handle chain for the scoreboard).
+      - name: Generate the cross-level-connections example (H1)
+        run: quick-uvm generate -c examples/xpipe/xpipe.yaml -o gen_xpipe
+
+      - name: Verible lint (cross-level generated SV/SVH + leaf DUTs)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_xpipe/*.sv gen_xpipe/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/xpipe/rtl/*.sv

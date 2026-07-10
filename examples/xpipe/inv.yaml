@@ -1,0 +1,17 @@
+# inv — stg2 leaf, pipeline stage 2 (dout = ~din). PASSIVE agent: its din is
+# driven by stg1's `add` via a CROSS-LEVEL top connection (stg1.add.dout ->
+# stg2.inv.din), so it only monitors. Its dout is compared by the top xchk
+# scoreboard (expected inv.dout = ~(add.dout)).
+project: {name: inv, author: QuickUVM, year: 2026}
+dut: {name: inv, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: b
+    interface: b_if
+    sequence_item: b_seq_item
+    active: false
+    ports:
+      inputs:  [{name: din,  width: 8}]
+      outputs: [{name: dout, width: 8}]
+tests:
+  - {name: inv_test, num_items: 30}
