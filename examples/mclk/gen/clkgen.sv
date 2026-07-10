@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
 
-module clkgen #(int PERIOD = 10) (
+module clkgen #(longint PERIOD = 10) (
   output logic clk);
 
   // Clock half-period = PERIOD/2 (time units set by the sim filelist's -timescale).

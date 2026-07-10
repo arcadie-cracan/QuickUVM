@@ -987,6 +987,19 @@ class DutConfig(BaseModel):
     combinational: bool = False
 
 
+# M1 mixed-unit — SI time-unit magnitudes relative to fs, for resolving a single
+# `-timescale` (the finest/smallest unit across the clocks) and scaling each clock's
+# period into it (Xcelium takes one -timescale for the whole elaboration).
+_UNIT_MAG = {
+    "fs": 1,
+    "ps": 1_000,
+    "ns": 1_000_000,
+    "us": 1_000_000_000,
+    "ms": 1_000_000_000_000,
+    "s": 1_000_000_000_000_000,
+}
+
+
 class ClockConfig(BaseModel):
     # M1 — multi-clock: `name` is the clock NET name in tb_top (and the DUT's clock
     # port). Default "clk" so a single-clock bench is byte-identical. `clock:` in the
@@ -1800,6 +1813,24 @@ class ProjectConfig(BaseModel):
         return self.clocks if self.clocks else [self.clock]
 
     @property
+    def timescale_unit(self) -> str:
+        """M1 mixed-unit — the single `-timescale` unit: the FINEST (smallest) unit
+        across all clocks. With one unit it is that unit (byte-identical; no lookup)."""
+        units = {c.unit for c in self.effective_clocks}
+        if len(units) == 1:
+            return next(iter(units))
+        return min(units, key=lambda u: _UNIT_MAG[u])
+
+    def clock_period_ts(self, clock: ClockConfig) -> int:
+        """`clock`'s period expressed in the `timescale_unit` (so `#delay` cadence /
+        drive skew are correct under one -timescale). When the clock's unit IS the
+        timescale unit (every single-unit bench) this returns the period unchanged."""
+        ts = self.timescale_unit
+        if clock.unit == ts:
+            return clock.period
+        return clock.period * (_UNIT_MAG[clock.unit] // _UNIT_MAG[ts])
+
+    @property
     def effective_resets(self) -> list[ResetConfig]:
         """Every externally-generated reset domain: the `resets` list, or a single
         reset synthesized from `dut` when a single external reset is configured. Empty
@@ -2418,13 +2449,17 @@ class ProjectConfig(BaseModel):
         clock_names = [c.name for c in self.effective_clocks]
         if len(clock_names) != len(set(clock_names)):
             raise ValueError("clock names must be unique.")
-        # A single -timescale is emitted, so every clock must share a time unit.
+        # M1 mixed-unit — clocks may use different time units; the tb emits one
+        # -timescale at the finest unit and scales each period into it. When units are
+        # mixed they must be known SI units (so the scaling is defined).
         units = {c.unit for c in self.effective_clocks}
         if len(units) > 1:
-            raise ValueError(
-                f"clocks use multiple time units ({', '.join(sorted(units))}) but tb "
-                f"emits one -timescale — use a single unit across all clocks."
-            )
+            bad = sorted(u for u in units if u not in _UNIT_MAG)
+            if bad:
+                raise ValueError(
+                    f"unknown clock time unit(s) {bad} — to mix units use one of "
+                    f"fs/ps/ns/us/ms/s."
+                )
         resets = self.effective_resets
         reset_names = [r.name for r in resets]
         if len(reset_names) != len(set(reset_names)):

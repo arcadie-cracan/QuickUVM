@@ -1,0 +1,46 @@
+# mxclk — QuickUVM M1 MIXED-UNIT clocks: two domains in different time units.
+#
+# A fast lane at 500 ps and a slow lane at 10 ns. Xcelium takes a single
+# -timescale, so QuickUVM resolves the FINEST unit across the clocks (ps here),
+# emits `-timescale 1ps/1ps`, and scales each clock's period + drive skew into it:
+# the fast clkgen is `#(500)` and the slow one `#(10000)` (10 ns = 10000 ps). A
+# single-unit bench is unaffected (the finest unit is that unit; nothing scales).
+project: {name: mxclk, author: QuickUVM, year: 2026}
+
+dut: {name: mxclk, reset: rst_f, external_reset: true}
+
+clock:
+  - {name: clk_fast, period: 500, unit: ps}
+  - {name: clk_slow, period: 10,  unit: ns}
+
+resets:
+  - {name: rst_f, active_low: true, clock: clk_fast}
+  - {name: rst_s, active_low: true, clock: clk_slow}
+
+agents:
+  - name: fast
+    interface: fast_if
+    sequence_item: fast_item
+    clock: clk_fast
+    reset: rst_f
+    ports:
+      inputs:  [{name: fast_din,  width: 8}]
+      outputs: [{name: fast_dout, width: 8}]
+
+  - name: slow
+    interface: slow_if
+    sequence_item: slow_item
+    clock: clk_slow
+    reset: rst_s
+    ports:
+      inputs:  [{name: slow_din,  width: 8}]
+      outputs: [{name: slow_dout, width: 8}]
+
+tests:
+  - {name: mxclk_test, num_items: 40}
+
+analysis:
+  coverage: []
+  scoreboards:
+    - {name: fast_sb, source: fast}   # self-check on the 500 ps lane
+    - {name: slow_sb, source: slow}   # self-check on the 10 ns lane

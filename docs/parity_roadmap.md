@@ -717,9 +717,16 @@ generators. Needed for CDC and most real SoC blocks.
 - Validated on `examples/mclk/`: a two-clock-domain DUT (clk_sys @10, clk_io @6) with one
   external reset per domain and a self-checking scoreboard per lane — both lanes pass
   **on Xcelium** (0 errors). verible-lint-clean; CI gates it.
-- *Deferred:* multi-time-unit `-timescale` resolution (the first example keeps one unit);
-  per-domain scoreboard latency windows; multi-domain with `instances`/`subenvs`;
-  multi-agent-driven (non-external) resets.
+- **Mixed-unit `-timescale` landed:** clocks may use different time units — the tb emits
+  ONE `-timescale` at the finest unit across the clocks (`timescale_unit`) and scales each
+  clock's period + the clocking-block drive skew into it (`clock_period_ts`), so a 500 ps +
+  10 ns bench emits `-timescale 1ps/1ps` with `clkgen #(500)` / `#(10000)` and the slow
+  lane's skew `#2000`. A scoreboard latency literal uses the monitor lane's own unit.
+  Single-unit benches are byte-identical (the finest unit is that unit; nothing scales).
+  Validated on `examples/mxclk/` (500 ps + 10 ns lanes, self-check each) — **2/2 on
+  Xcelium**; unknown units in a mixed set are rejected. verible-lint-clean; CI gates it.
+- *Deferred:* per-domain scoreboard latency across two differently-clocked streams;
+  multi-domain with `instances`/`subenvs`; multi-agent-driven (non-external) resets.
 
 ### R1 — Regression & coverage infrastructure
 Per-simulator makefiles, a testlist/regression runner, seed management, and a

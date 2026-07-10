@@ -1,6 +1,6 @@
 // Top (subsystem) run filelist (H1). Run from this gen/ directory:
 //   xrun -uvm -access +rwc -f run.f +UVM_TESTNAME={{ tests[0].name }}
--timescale 1{{ clock.unit }}/1{{ clock.unit }}
+-timescale 1{{ timescale_unit }}/1{{ timescale_unit }}
 -top tb_top
 +incdir+.
 -f {{ dut.name }}_test_pkg.f

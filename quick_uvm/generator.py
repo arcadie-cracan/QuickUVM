@@ -28,6 +28,18 @@ def _make_jinja_env() -> Environment:
     )
 
 
+def _skew_literal(pct: int, period_ts: int) -> str:
+    """The clocking-block drive-skew delay (`pct`% of `period_ts` after posedge) as an
+    EXACT literal: an integer when `pct*period_ts` divides 100, else an exact 2-decimal
+    fraction. Computed here (not via `%g` in the template) because M1 mixed-unit scaling
+    can make the skew large, and `%g` would silently round/scientific-notate it."""
+    num = pct * period_ts
+    if num % 100 == 0:
+        return str(num // 100)
+    q, r = divmod(num, 100)
+    return f"{q}.{r:02d}".rstrip("0").rstrip(".")
+
+
 # ---------------------------------------------------------------------------
 # FileSpec — describes one file to generate
 # ---------------------------------------------------------------------------
@@ -87,12 +99,14 @@ class Generator:
             "sb_match_key": sb.match_key,
             "sb_max_latency": sb.max_latency,
             # M1 — the window is measured on the MONITOR (response) lane, so scale by
-            # that agent's clock period (== the sole clock for a single-domain bench).
+            # that agent's clock period (== the sole clock for a single-domain bench)
+            # and emit the literal in that lane's time unit.
             "sb_max_lat_time": (
                 sb.max_latency * cfg.agent_clock(out_agent).period
                 if sb.max_latency
                 else None
             ),
+            "sb_clock_unit": cfg.agent_clock(out_agent).unit,
         }
 
     @staticmethod
@@ -113,6 +127,7 @@ class Generator:
             "sb_match_key": None,
             "sb_max_latency": None,
             "sb_max_lat_time": None,
+            "sb_clock_unit": cfg.agent_clock(iv.agent).unit,
         }
 
     def files_to_generate(self, subenv: bool = False) -> list[FileSpec]:
@@ -133,6 +148,12 @@ class Generator:
             # declared a `clock:` LIST or a `resets:` list; a scalar `clock:` + the
             # legacy external/agent reset stays on the byte-identical single-clock path.
             "multi_domain": bool(cfg.clocks) or bool(cfg.resets),
+            # M1 mixed-unit — one -timescale at the finest unit; each clock's period
+            # scaled into it. Single-unit → the unit unchanged + periods unchanged.
+            "timescale_unit": cfg.timescale_unit,
+            "clock_periods_ts": {
+                c.name: cfg.clock_period_ts(c) for c in cfg.effective_clocks
+            },
             # M1 — per-agent resolved clock net + external reset, keyed by agent name,
             # for the multi-domain tb_top wiring.
             "agent_clocks": {a.name: cfg.agent_clock(a).name for a in cfg.agents},
@@ -188,10 +209,12 @@ class Generator:
         # measures $realtime). None unless set on the (out-of-order) scoreboard.
         max_lat = two_stream_sb.max_latency if two_stream_sb else None
         base_ctx["sb_max_latency"] = max_lat
-        # M1 — scale on the monitor lane's clock period (the sole clock, single-domain).
+        # M1 — scale on the monitor lane's clock period (the sole clock, single-domain)
+        # and emit the literal in that lane's time unit.
         base_ctx["sb_max_lat_time"] = (
             max_lat * cfg.agent_clock(sb_out_agent).period if max_lat else None
         )
+        base_ctx["sb_clock_unit"] = cfg.agent_clock(sb_out_agent).unit
         # Multi-transaction-type: with >=2 scoreboards each gets its OWN typed
         # predictor/comparator/scoreboard/reference_model, prefixed <dut>_<sbname>.
         # With <=1 the single set stays <dut>_* (byte-identical).
@@ -219,6 +242,12 @@ class Generator:
                 # dut reset, so the agent templates render byte-identical.
                 "agent_clock": cfg.agent_clock(agent),
                 "agent_reset": cfg.agent_reset(agent),
+                # M1 mixed-unit — this agent's exact clocking-block drive skew (a delay
+                # in the -timescale unit). Unchanged for a single-unit bench.
+                "agent_clock_skew": _skew_literal(
+                    cfg.agent_clock(agent).drive_offset_pct,
+                    cfg.clock_period_ts(cfg.agent_clock(agent)),
+                ),
             }
             specs.append(FileSpec("agent_if.sv.j2", f"{agent.interface}.sv", ctx))
             specs.append(
@@ -423,6 +452,7 @@ class Generator:
             # `clocks`/`multi_domain` and renders its single-clock branch.
             "clocks": cfg.effective_clocks,
             "multi_domain": False,
+            "timescale_unit": cfg.timescale_unit,
             "tests": cfg.tests,
             "subenvs": cfg.subenv_views,
             "layout": cfg.layout,
@@ -456,6 +486,7 @@ class Generator:
                 "sb_match_key": None,
                 "sb_max_latency": None,
                 "sb_max_lat_time": None,
+                "sb_clock_unit": cfg.clock.unit,
             }
             specs.append(FileSpec("sb_predictor.svh.j2", f"{p}_predictor.svh", sbx))
             specs.append(FileSpec("sb_comparator.svh.j2", f"{p}_comparator.svh", sbx))
