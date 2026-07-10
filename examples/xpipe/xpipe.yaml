@@ -1,0 +1,32 @@
+# xpipe — QuickUVM H1 CROSS-LEVEL connections + scoreboards.
+#
+# A cross-level version of `pipe`: the pipeline stages live INSIDE nested
+# subsystems. The top `xpipe` composes two clusters, stg1 (add + dbl) and stg2
+# (inv + xr). A cross-level `connections:` wire reaches into both clusters —
+# stg1's inner `add` output drives stg2's inner `inv` input — and a cross-level
+# scoreboard `xchk` predicts inv's output from add's stream and compares
+# (A2 two-stream, in-order): expected inv.dout = ~(add.dout).
+#
+# Endpoints are dotted paths relative to the declaring level (the top here):
+# `stg1.add.dout` descends stg1 -> add, port dout. A same-level `add.dout` is
+# just a 1-segment path, so the flat `pipe` bench stays byte-identical.
+project: {name: xpipe, author: QuickUVM, year: 2026}
+
+layout: packaged
+
+dut: {name: xpipe, clock: clk, reset: '', combinational: true}
+
+clock: {period: 10, unit: ns}
+
+subenvs:
+  - {name: stg1, config: stg1.yaml}
+  - {name: stg2, config: stg2.yaml}
+
+connections:
+  - {from: stg1.add.dout, to: stg2.inv.din}
+
+subenv_scoreboards:
+  - {name: xchk, source: stg1.add.a, monitor: stg2.inv.b}
+
+tests:
+  - {name: xpipe_test}

@@ -507,9 +507,9 @@ via Jinja macros.
   + real DUT (flattened, path-prefixed names); the reused leaf RTL module stays
   unprefixed. The top test package imports every leaf package and includes each level's
   composition classes (deepest-first).
-- Fail-closed (this slice): cross-LEVEL connections/scoreboards (into a subsystem's
-  inner blocks), `params` on a nested subsystem, and namespacing (reusing) a nested
-  subsystem are rejected; every subsystem/block/agent/interface/transaction name must be
+- Fail-closed (this slice; later slices lifted these): cross-LEVEL connections/
+  scoreboards, `params` on a nested subsystem, and namespacing (reusing) a nested
+  subsystem were rejected; every subsystem/block/agent/interface/transaction name must be
   unique across the flattened tree. Byte-identical for flat single-level subsystems.
 - Validated on `examples/nested/`: a 3-level hierarchy — top `nested` composes
   `clusterA` + `clusterB`, each composing two leaf blocks — driven top→cluster→leaf,
@@ -523,18 +523,40 @@ via Jinja macros.
   inner prefix), so the same cluster reused twice yields collision-free class sets and the
   width reaches every grandchild agent. The reused leaf RTL module is recovered UNprefixed
   (the original dut.name is captured once, before any prefix, so it survives stacking).
-- Fail-closed still: cross-LEVEL connections/scoreboards; a `params:` key that no
-  descendant agent declares. Byte-identical for every non-reused/non-parameterized path
-  (the recursion is a no-op when the prefix is "" and there are no params).
+- Fail-closed still: a `params:` key that no descendant agent declares; cross-level into a
+  REUSED (namespaced) subtree (a distinct follow-up). Byte-identical for every
+  non-reused/non-parameterized path (the recursion is a no-op when the prefix is "" and
+  there are no params).
 - Validated on `examples/nsoc/`: the SAME parameterized `chan` cluster (adder + shifter)
   composed twice — lo at W=8, hi at W=16 — auto-namespaced (lo_*/hi_*) with the width
   propagated to every leaf; all four leaves pass **21/21 on Xcelium** (0 errors). verible-
   lint-clean; CI gates it.
 
+**Status — cross-LEVEL connections / scoreboards landed:**
+- A connection/scoreboard endpoint may now be a dotted PATH reaching a LEAF block inside a
+  nested subsystem (`stg1.add.dout`), resolved RELATIVE to the level that declares it
+  (any level may declare — the top for a cross-cluster wire, a cluster for its own). One
+  path-walk resolver (`_resolve_endpoint`) feeds both features; a same-level `add.dout` is
+  a 1-segment path, so the flat `pipe` bench stays byte-identical.
+- WIRES surface as flattened tb_top assigns: `tb_top` gathers EVERY level's connections
+  (`all_resolved_connections`), each resolved to its full path-prefixed interface instance
+  (`stg1_add_a_if_inst.dout`) — the physical signal the flatten machinery already
+  instantiates. SCOREBOARDS emit at their declaring env with a dotted child-env handle
+  chain (`stg1.add.a_agnt.ap`), reachable because each child env is a handle named for the
+  subenv.
+- Fail-closed: an endpoint naming a subsystem directly (not a leaf), descending into a
+  leaf, an unknown segment, or any segment in a reused (namespaced) subtree (deferred).
+  Single-driver is keyed on the canonical resolved destination.
+- Validated on `examples/xpipe/`: a top wire reaches into two clusters
+  (`stg1.add.dout -> stg2.inv.din`) and a cross-level scoreboard predicts `inv.dout =
+  ~(add.dout)` across them; all five scoreboards (four leaf self-checks + the cross-level
+  `xchk`) pass **31/31 on Xcelium** (0 errors). verible-lint-clean; CI gates it.
+
 **H1 is feature-complete**: composition, parameter propagation, cross-block scoreboards,
-same-block reuse, nested subsystems, and parameterized/reused nested subsystems. The one
-remaining deferred extra is **cross-LEVEL** connections/scoreboards (wiring/checking a
-subsystem's inner blocks across the hierarchy).
+same-block reuse, nested subsystems, parameterized/reused nested subsystems, and
+cross-level connections/scoreboards. The one remaining deferred extra is cross-level into
+a **reused** (namespaced) subtree — the resolver would need to consume the stacked-prefix
+names and disambiguate reuse instances.
 
 ## Priority tier 3 — checking generality
 

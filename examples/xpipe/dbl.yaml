@@ -1,0 +1,14 @@
+# dbl — stg1's second leaf (dout = din << 1). An independent block that makes
+# stg1 a real subsystem (>=2 blocks); exercised on its own, not cross-wired.
+project: {name: dbl, author: QuickUVM, year: 2026}
+dut: {name: dbl, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: d
+    interface: d_if
+    sequence_item: d_seq_item
+    ports:
+      inputs:  [{name: din,  width: 8}]
+      outputs: [{name: dout, width: 8}]
+tests:
+  - {name: dbl_test, num_items: 30}

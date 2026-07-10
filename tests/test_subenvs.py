@@ -30,6 +30,7 @@ CHANNELS = (
 )
 NESTED = Path(__file__).resolve().parents[1] / "examples" / "nested" / "nested.yaml"
 NSOC = Path(__file__).resolve().parents[1] / "examples" / "nsoc" / "nsoc.yaml"
+XPIPE = Path(__file__).resolve().parents[1] / "examples" / "xpipe" / "xpipe.yaml"
 
 
 def _block(name, agent, iface):
@@ -389,7 +390,11 @@ def test_nested_tb_top_instantiates_all_leaf_duts(tmp_path):
     assert '`include "clusterA_env.svh"' in pkg  # cluster composition class included
 
 
-def test_nested_cross_level_connection_rejected(tmp_path):
+def test_connection_naming_subsystem_directly_rejected(tmp_path):
+    # A cross-level endpoint must descend to a LEAF block: naming a subsystem
+    # directly (cA.dout, where cA is a cluster) is rejected — you must reach an
+    # inner leaf (cA.<leaf>.dout). (Cross-level into a leaf is supported; see
+    # test_cross_level_connection_resolves_into_nested_leaf.)
     from quick_uvm.models import ProjectConfig as PC
 
     top = tmp_path / "top.yaml"
@@ -403,8 +408,168 @@ def test_nested_cross_level_connection_rejected(tmp_path):
         "connections: [{from: cA.dout, to: cB.din}]\n"  # cA is a subsystem
         "tests: [{name: t}]\n"
     )
-    with pytest.raises(Exception, match="is a nested subsystem"):
+    with pytest.raises(Exception, match="is a subsystem, not a leaf"):
         PC.from_yaml(top)
+
+
+# ---- H1 cross-LEVEL connections + scoreboards (into nested leaves) -----------
+
+
+def test_cross_level_connection_resolves_into_nested_leaf():
+    # xpipe: a top wire reaches into two clusters — stg1.add.dout -> stg2.inv.din.
+    top = ProjectConfig.from_yaml(XPIPE)
+    assert top.all_resolved_connections == [
+        {"dst": "stg2_inv_b_if_inst.din", "src": "stg1_add_a_if_inst.dout"}
+    ]
+
+
+def test_cross_level_scoreboard_handle_chain():
+    # the cross-level scoreboard's endpoints resolve to dotted child-env handle
+    # chains (declaring-level-relative): stg1.add / stg2.inv, agents a / b.
+    top = ProjectConfig.from_yaml(XPIPE)
+    sb = top.subenv_scoreboards[0]
+    s_h, s_ag, m_h, m_ag = top.cross_block_sb_endpoints(sb)
+    assert (s_h, s_ag.name, m_h, m_ag.name) == ("stg1.add", "a", "stg2.inv", "b")
+
+
+def test_cross_level_tb_top_and_env_emitted(tmp_path):
+    Generator(ProjectConfig.from_yaml(XPIPE)).generate_all(tmp_path)
+    top = (tmp_path / "tb_top.sv").read_text()
+    # the flattened cross-level wire, with the real leaf interface instances present
+    assert "assign stg2_inv_b_if_inst.din = stg1_add_a_if_inst.dout;" in top
+    assert "a_if stg1_add_a_if_inst (clk);" in top
+    assert "b_if stg2_inv_b_if_inst (clk);" in top
+    e = (tmp_path / "xpipe_env.svh").read_text()
+    # the dotted handle chain reaches the nested leaf agents' analysis ports
+    assert "stg1.add.a_agnt.ap.connect(xchk.src_axp);" in e
+    assert "stg2.inv.b_agnt.ap.connect(xchk.mon_axp);" in e
+
+
+def test_cross_level_double_drive_rejected(tmp_path):
+    # A nested leaf input driven by TWO wires at different levels (a cluster's own
+    # internal wire AND an ancestor's cross-level wire) must be caught, even though
+    # each spells the destination differently relative to its own level — otherwise
+    # tb_top emits two `assign`s to one net (multiply-driven).
+    from quick_uvm.models import ProjectConfig as PC
+
+    # p: active source; q: passive sink (driven by a wire); ext: active source
+    (tmp_path / "p.yaml").write_text(
+        "project: {name: p}\n"
+        "dut: {name: p, combinational: true, reset: ''}\n"
+        "agents:\n"
+        "  - {name: pa, interface: p_if, sequence_item: p_item,\n"
+        "     ports: {inputs: [{name: din, width: 8}], outputs: [{name: dout, width: 8}]}}\n"
+        "tests: [{name: p_t}]\n"
+    )
+    (tmp_path / "q.yaml").write_text(
+        "project: {name: q}\n"
+        "dut: {name: q, combinational: true, reset: ''}\n"
+        "agents:\n"
+        "  - {name: qa, interface: q_if, sequence_item: q_item, active: false,\n"
+        "     ports: {inputs: [{name: din, width: 8}], outputs: [{name: dout, width: 8}]}}\n"
+        "tests: [{name: q_t}]\n"
+    )
+    (tmp_path / "ext.yaml").write_text(
+        "project: {name: ext}\n"
+        "dut: {name: ext, combinational: true, reset: ''}\n"
+        "agents:\n"
+        "  - {name: ea, interface: e_if, sequence_item: e_item,\n"
+        "     ports: {inputs: [{name: din, width: 8}], outputs: [{name: dout, width: 8}]}}\n"
+        "tests: [{name: e_t}]\n"
+    )
+    # mid drives its OWN leaf input internally: p.dout -> q.din
+    (tmp_path / "mid.yaml").write_text(
+        "project: {name: mid}\n"
+        "layout: packaged\n"
+        "dut: {name: mid, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        "  - {name: p, config: p.yaml}\n"
+        "  - {name: q, config: q.yaml}\n"
+        "connections: [{from: p.dout, to: q.din}]\n"
+        "tests: [{name: mid_t}]\n"
+    )
+    # the top ALSO drives the same physical input via a cross-level wire: ext.dout -> mid.q.din
+    top = tmp_path / "top.yaml"
+    top.write_text(
+        "project: {name: topd}\n"
+        "layout: packaged\n"
+        "dut: {name: topd, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        "  - {name: mid, config: mid.yaml}\n"
+        "  - {name: ext, config: ext.yaml}\n"
+        "connections: [{from: ext.dout, to: mid.q.din}]\n"
+        "tests: [{name: topd_t}]\n"
+    )
+    with pytest.raises(Exception, match="multiple connections drive"):
+        PC.from_yaml(top)
+
+
+def test_scoreboard_declared_at_nested_cluster_emitted(tmp_path):
+    # "any level": a nested CLUSTER declares its OWN scoreboard over its leaves;
+    # it resolves relative to that cluster and the cluster's env (not the top)
+    # emits the connect. The top just composes the clusters.
+    from quick_uvm.models import ProjectConfig as PC
+
+    # four distinct leaves (unique across the flattened tree)
+    for blk, agent, iface in (
+        ("p", "pa", "pa_if"),
+        ("q", "qa", "qa_if"),
+        ("r", "ra", "ra_if"),
+        ("s", "sa", "sa_if"),
+    ):
+        (tmp_path / f"{blk}.yaml").write_text(
+            f"project: {{name: {blk}}}\n"
+            f"dut: {{name: {blk}, combinational: true, reset: ''}}\n"
+            "agents:\n"
+            f"  - name: {agent}\n"
+            f"    interface: {iface}\n"
+            f"    sequence_item: {agent}_item\n"
+            "    ports:\n"
+            "      inputs:  [{name: din,  width: 8}]\n"
+            "      outputs: [{name: dout, width: 8}]\n"
+            f"tests: [{{name: {blk}_t}}]\n"
+        )
+    # the nested cluster owns the scoreboard (same-level over its own p/q leaves)
+    (tmp_path / "sub.yaml").write_text(
+        "project: {name: sub}\n"
+        "layout: packaged\n"
+        "dut: {name: sub, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        "  - {name: p, config: p.yaml}\n"
+        "  - {name: q, config: q.yaml}\n"
+        "subenv_scoreboards: [{name: nsb, source: p.pa, monitor: q.qa}]\n"
+        "tests: [{name: sub_t}]\n"
+    )
+    # a distinct second cluster (r + s, no scoreboard) so the top composes >=2
+    (tmp_path / "sub2.yaml").write_text(
+        "project: {name: sub2}\n"
+        "layout: packaged\n"
+        "dut: {name: sub2, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        "  - {name: r, config: r.yaml}\n"
+        "  - {name: s, config: s.yaml}\n"
+        "tests: [{name: sub2_t}]\n"
+    )
+    top = tmp_path / "top.yaml"
+    top.write_text(
+        "project: {name: topx}\n"
+        "layout: packaged\n"
+        "dut: {name: topx, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        "  - {name: s1, config: sub.yaml}\n"
+        "  - {name: s2, config: sub2.yaml}\n"
+        "tests: [{name: topx_t}]\n"
+    )
+    cfg = PC.from_yaml(top)
+    sub_cfg = cfg.subenv_configs["s1"]
+    s_h, s_ag, m_h, m_ag = sub_cfg.cross_block_sb_endpoints(
+        sub_cfg.subenv_scoreboards[0]
+    )
+    assert (s_h, s_ag.name, m_h, m_ag.name) == ("p", "pa", "q", "qa")
+    Generator(cfg).generate_all(tmp_path / "gen")
+    sub_env = (tmp_path / "gen" / "sub_env.svh").read_text()
+    assert "p.pa_agnt.ap.connect(nsb.src_axp);" in sub_env
+    assert "q.qa_agnt.ap.connect(nsb.mon_axp);" in sub_env
 
 
 # ---- H1 parameterized / reused nested subsystems ---------------------------
@@ -621,7 +786,7 @@ def test_namespaced_block_rejects_connection(tmp_path):
         "connections: [{from: lo.dout, to: hi.din}]\n"
         "tests: [{name: t}]\n"
     )
-    with pytest.raises(Exception, match="is namespaced"):
+    with pytest.raises(Exception, match="reused .namespaced. subtree"):
         PC.from_yaml(top)
 
 
