@@ -31,6 +31,7 @@ CHANNELS = (
 NESTED = Path(__file__).resolve().parents[1] / "examples" / "nested" / "nested.yaml"
 NSOC = Path(__file__).resolve().parents[1] / "examples" / "nsoc" / "nsoc.yaml"
 XPIPE = Path(__file__).resolve().parents[1] / "examples" / "xpipe" / "xpipe.yaml"
+DSOC = Path(__file__).resolve().parents[1] / "examples" / "dsoc" / "dsoc.yaml"
 
 
 def _block(name, agent, iface):
@@ -770,23 +771,106 @@ def test_namespace_false_collision_hint(tmp_path):
         PC.from_yaml(top)
 
 
-def test_namespaced_block_rejects_connection(tmp_path):
-    # A namespaced (reused) block may not be referenced by a cross-block wire yet.
+# ---- H1 cross-level into a REUSED (namespaced) subtree ----------------------
+
+
+def test_agent_original_name_captured_under_reuse():
+    # _apply_namespace_prefix captures each agent's original name (idempotent), so a
+    # cross-level endpoint can name a reused leaf agent as originally declared.
+    top = ProjectConfig.from_yaml(DSOC)
+    left = top.subenv_configs["left"]  # a namespaced lane instance
+    src_leaf = left.subenv_configs["src"]
+    a = src_leaf.agents[0]
+    assert (a.name, a.original_name) == ("left_sa", "sa")
+
+
+def test_reused_cross_level_wires_resolve_into_namespaced_instances():
+    # dsoc rings the two reused lane instances: each src drives the OTHER lane's snk.
+    top = ProjectConfig.from_yaml(DSOC)
+    assert top.all_resolved_connections == [
+        {
+            "dst": "right_snk_right_snk_if_inst.din",
+            "src": "left_src_left_src_if_inst.dout",
+        },
+        {
+            "dst": "left_snk_left_snk_if_inst.din",
+            "src": "right_src_right_src_if_inst.dout",
+        },
+    ]
+
+
+def test_reused_cross_level_scoreboard_uses_original_agent_names():
+    # the endpoint names the agent by its ORIGINAL name (sa/ka); the resolved handle
+    # carries the auto-applied prefix (left_sa / right_ka).
+    top = ProjectConfig.from_yaml(DSOC)
+    l2r = next(sb for sb in top.subenv_scoreboards if sb.name == "l2r")
+    s_h, s_ag, m_h, m_ag = top.cross_block_sb_endpoints(l2r)
+    assert (s_h, s_ag.name, m_h, m_ag.name) == (
+        "left.src",
+        "left_sa",
+        "right.snk",
+        "right_ka",
+    )
+
+
+def test_reused_cross_level_tb_top_and_env_emitted(tmp_path):
+    Generator(ProjectConfig.from_yaml(DSOC)).generate_all(tmp_path)
+    top = (tmp_path / "tb_top.sv").read_text()
+    # ring wires between the namespaced leaf interface instances
+    assert (
+        "assign right_snk_right_snk_if_inst.din = left_src_left_src_if_inst.dout;"
+        in top
+    )
+    assert (
+        "assign left_snk_left_snk_if_inst.din = right_src_right_src_if_inst.dout;"
+        in top
+    )
+    e = (tmp_path / "dsoc_env.svh").read_text()
+    # the dotted handle chain carries the prefix on the agent handle (left_sa_agnt)
+    assert "left.src.left_sa_agnt.ap.connect(l2r.src_axp);" in e
+    assert "right.snk.right_ka_agnt.ap.connect(l2r.mon_axp);" in e
+
+
+def test_reused_cross_level_unknown_original_agent_rejected(tmp_path):
+    # a trailing token that matches neither the original nor the prefixed name is
+    # still rejected (fail-closed) even into a reused subtree.
     from quick_uvm.models import ProjectConfig as PC
 
-    cfg = _mkblock(tmp_path)
+    for blk, agent, iface, active in (
+        ("src", "sa", "src_if", "true"),
+        ("snk", "ka", "snk_if", "false"),
+    ):
+        (tmp_path / f"{blk}.yaml").write_text(
+            f"project: {{name: {blk}}}\n"
+            f"dut: {{name: {blk}, combinational: true, reset: ''}}\n"
+            "agents:\n"
+            f"  - {{name: {agent}, interface: {iface}, sequence_item: {agent}_item,"
+            f" active: {active},\n"
+            "     ports: {inputs: [{name: din, width: 8}], outputs: [{name: dout, width: 8}]}}\n"
+            f"tests: [{{name: {blk}_t}}]\n"
+        )
+    (tmp_path / "lane.yaml").write_text(
+        "project: {name: lane}\n"
+        "layout: packaged\n"
+        "dut: {name: lane, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        "  - {name: src, config: src.yaml}\n"
+        "  - {name: snk, config: snk.yaml}\n"
+        "tests: [{name: lane_t}]\n"
+    )
     top = tmp_path / "top.yaml"
     top.write_text(
-        "project: {name: top}\n"
+        "project: {name: dt}\n"
         "layout: packaged\n"
-        "dut: {name: top, combinational: true, reset: ''}\n"
+        "dut: {name: dt, combinational: true, reset: ''}\n"
         "subenvs:\n"
-        f"  - {{name: lo, config: {cfg}, params: {{W: 8}}}}\n"
-        f"  - {{name: hi, config: {cfg}, params: {{W: 16}}}}\n"
-        "connections: [{from: lo.dout, to: hi.din}]\n"
-        "tests: [{name: t}]\n"
+        "  - {name: left, config: lane.yaml}\n"
+        "  - {name: right, config: lane.yaml}\n"
+        # 'nope' is neither the original (sa) nor the prefixed (left_sa) agent name
+        "subenv_scoreboards: [{name: b, source: left.src.nope, monitor: right.snk.ka}]\n"
+        "tests: [{name: dt_t}]\n"
     )
-    with pytest.raises(Exception, match="reused .namespaced. subtree"):
+    with pytest.raises(Exception, match="has no agent 'nope'"):
         PC.from_yaml(top)
 
 

@@ -1,0 +1,11 @@
+# lane — a cluster composing an active source (src) + a passive sink (snk).
+# Reused TWICE by the top (as left / right), so its whole subtree is
+# auto-namespaced (left_* / right_*). The cross-instance wiring lives at the top.
+project: {name: lane, author: QuickUVM, year: 2026}
+layout: packaged
+dut: {name: lane, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+subenvs:
+  - {name: src, config: src.yaml}
+  - {name: snk, config: snk.yaml}
+tests: [{name: lane_test}]

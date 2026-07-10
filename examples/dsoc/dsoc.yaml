@@ -1,0 +1,35 @@
+# dsoc — QuickUVM H1 CROSS-LEVEL into a REUSED (namespaced) subtree.
+#
+# The top reuses the SAME `lane` cluster twice (left / right) — so lane's whole
+# subtree is auto-namespaced (left_*/right_*) — and then wires the two instances
+# together in a ring across the hierarchy: each lane's source drives the OTHER
+# lane's sink. Two cross-level scoreboards check each sink's output.
+#
+# Endpoints descend into the namespaced subtrees by the subenv PATH (left.src,
+# right.snk — the instance names, which reuse preserves) and name the leaf agent
+# by its ORIGINAL name (sa, ka — as declared in src.yaml/snk.yaml); QuickUVM maps
+# them to the prefixed handles (left.src.left_sa_agnt, ...). The left_/right_
+# prefix stays an internal artifact — the config reads the same as a non-reused
+# cross-level bench (see ../xpipe/).
+project: {name: dsoc, author: QuickUVM, year: 2026}
+
+layout: packaged
+
+dut: {name: dsoc, clock: clk, reset: '', combinational: true}
+
+clock: {period: 10, unit: ns}
+
+subenvs:
+  - {name: left,  config: lane.yaml}
+  - {name: right, config: lane.yaml}   # SAME cluster, reused -> auto-namespaced
+
+connections:
+  - {from: left.src.dout,  to: right.snk.din}   # left source -> right sink
+  - {from: right.src.dout, to: left.snk.din}    # right source -> left sink (ring)
+
+subenv_scoreboards:
+  - {name: l2r, source: left.src.sa,  monitor: right.snk.ka}
+  - {name: r2l, source: right.src.sa, monitor: left.snk.ka}
+
+tests:
+  - {name: dsoc_test}

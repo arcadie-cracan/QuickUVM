@@ -545,18 +545,33 @@ via Jinja macros.
   chain (`stg1.add.a_agnt.ap`), reachable because each child env is a handle named for the
   subenv.
 - Fail-closed: an endpoint naming a subsystem directly (not a leaf), descending into a
-  leaf, an unknown segment, or any segment in a reused (namespaced) subtree (deferred).
-  Single-driver is keyed on the canonical resolved destination.
+  leaf, or an unknown segment. Single-driver is keyed tree-globally on the canonical
+  resolved destination (a leaf input driven by wires at two different levels is caught).
 - Validated on `examples/xpipe/`: a top wire reaches into two clusters
   (`stg1.add.dout -> stg2.inv.din`) and a cross-level scoreboard predicts `inv.dout =
   ~(add.dout)` across them; all five scoreboards (four leaf self-checks + the cross-level
   `xchk`) pass **31/31 on Xcelium** (0 errors). verible-lint-clean; CI gates it.
 
-**H1 is feature-complete**: composition, parameter propagation, cross-block scoreboards,
-same-block reuse, nested subsystems, parameterized/reused nested subsystems, and
-cross-level connections/scoreboards. The one remaining deferred extra is cross-level into
-a **reused** (namespaced) subtree — the resolver would need to consume the stacked-prefix
-names and disambiguate reuse instances.
+**Status — cross-level into a REUSED (namespaced) subtree landed:**
+- A cross-level endpoint may now descend into a reused subtree. The path uses subenv
+  INSTANCE names (which reuse preserves — `left.src`), so it disambiguates the reuse
+  instance for free; only the trailing agent token needed work. It is the agent's
+  ORIGINAL name (`sa`), captured once in `_apply_namespace_prefix` (`AgentConfig.
+  original_name`, like `original_dut_name`) so the prefix stays a fully internal
+  artifact — the config reads identically to a non-reused cross-level bench. Wires
+  needed nothing beyond lifting the guard (ports are never mangled, and the resolved
+  leaf agent's already-prefixed interface yields the exact `left_src_left_src_if_inst`
+  tb_top instance); scoreboards map `sa`→`left_sa` for the `left.src.left_sa_agnt.ap`
+  handle.
+- Validated on `examples/dsoc/`: the SAME `lane` cluster (src + snk) reused twice
+  (left/right, auto-namespaced) and ring-wired across the hierarchy — each lane's src
+  drives the OTHER lane's snk, with two cross-level scoreboards checking each sink; all
+  six scoreboards pass **31/31 on Xcelium** (0 errors). verible-lint-clean; CI gates it.
+
+**H1 is feature-complete** — every cross-cutting combination now works: composition,
+parameter propagation, cross-block scoreboards, same-block reuse, nested subsystems,
+parameterized/reused nested subsystems, cross-level connections/scoreboards, and
+cross-level into a reused subtree.
 
 ## Priority tier 3 — checking generality
 

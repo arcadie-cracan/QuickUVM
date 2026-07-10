@@ -1,0 +1,16 @@
+# snk — lane's passive sink leaf (dout = ~din). Its din is driven by the OTHER
+# lane instance's src (a cross-instance, cross-level connection), so its agent is
+# passive: it only monitors. Its dout is checked by a cross-level scoreboard.
+project: {name: snk, author: QuickUVM, year: 2026}
+dut: {name: snk, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: ka
+    interface: snk_if
+    sequence_item: snk_item
+    active: false
+    ports:
+      inputs:  [{name: din,  width: 8}]
+      outputs: [{name: dout, width: 8}]
+tests:
+  - {name: snk_test, num_items: 30}

@@ -652,6 +652,11 @@ class AgentConfig(BaseModel):
     # C3 — instantiate this parameterized VIP more than once at different values
     # (opt-in, byte-identical when empty). Requires `parameters`.
     instances: list[InstanceConfig] = Field(default_factory=list)
+    # Runtime: the agent's ORIGINAL name, captured before any H1 namespace prefix is
+    # applied (like ProjectConfig.original_dut_name). So a cross-level endpoint into a
+    # reused subtree can name the agent as originally declared (`g`, not `left_g`) and
+    # the resolver maps it to the prefixed handle. "" = never prefixed.
+    original_name: str = Field(default="", exclude=True, repr=False)
 
     @property
     def param_decl(self) -> str:
@@ -1623,13 +1628,16 @@ class LeafView:
 def _apply_namespace_prefix(cfg: ProjectConfig, prefix: str) -> None:
     """H1 nested reuse — recursively prefix a composed subtree's class names by
     `prefix` (stacking on any inner prefix), so the SAME subsystem config reused
-    twice yields collision-free class sets. `original_dut_name` is captured once
-    (idempotent) so `SubenvView.dut_module` recovers the true RTL module name
+    twice yields collision-free class sets. `original_dut_name` / `original_name` are
+    captured once (idempotent) so `SubenvView.dut_module` recovers the true RTL module
+    name and a cross-level endpoint can name a reused leaf agent as originally declared,
     regardless of how many prefixes stack."""
     if not cfg.original_dut_name:
         cfg.original_dut_name = cfg.dut.name
     cfg.dut.name = f"{prefix}_{cfg.dut.name}"
     for a in cfg.agents:
+        if not a.original_name:
+            a.original_name = a.name
         a.name = f"{prefix}_{a.name}"
         a.interface = f"{prefix}_{a.interface}"
         a.sequence_item = f"{prefix}_{a.sequence_item}"
@@ -1658,6 +1666,14 @@ def _bake_param(cfg: ProjectConfig, name: str, value: int) -> None:
                 p.default = value
     for gc in cfg.subenv_configs.values():
         _bake_param(gc, name, value)
+
+
+def _leaf_agent(cfg: ProjectConfig, token: str) -> AgentConfig | None:
+    """The leaf agent a cross-level endpoint's trailing token names, or None. Under H1
+    reuse an agent's name is prefixed (`g` → `left_g`); the endpoint uses the ORIGINAL
+    name, so match on `original_name` (falling back to `name` when not reused). The
+    returned agent's `.name` is the (possibly prefixed) handle the templates emit."""
+    return next((a for a in cfg.agents if (a.original_name or a.name) == token), None)
 
 
 class ProjectConfig(BaseModel):
@@ -1807,9 +1823,11 @@ class ProjectConfig(BaseModel):
         `(block_path, item, leaf_cfg)`: the path of subenv names descended to reach a
         LEAF block, the trailing port/agent name, and that leaf's config. At depth 1
         (`<block>.<item>`) the block_path is `[block]` — byte-identical to the flat
-        cross-block case. Fail-closed: an unknown segment, descending into a leaf, a
-        non-leaf final segment, or any segment in a reused (namespaced) subtree all
-        raise (reused cross-level is a later slice)."""
+        cross-block case. The path descends by subenv INSTANCE name (preserved under
+        reuse), so it addresses a leaf inside a reused (namespaced) subtree too; the
+        trailing agent token is the ORIGINAL name (the resolver maps it to the prefixed
+        handle — see `_leaf_agent`). Fail-closed on an unknown segment, descending into
+        a leaf, or a non-leaf final segment."""
         parts = ref.split(".")
         if len(parts) < 2:
             raise ValueError(
@@ -1826,12 +1844,6 @@ class ProjectConfig(BaseModel):
                 loc = f"'{'.'.join(blk_path[:i])}'" if i else "the composed blocks"
                 raise ValueError(
                     f"{what} '{ref}' references unknown block '{seg}' in {loc}."
-                )
-            if cfg.subenv_namespaces.get(seg):
-                raise ValueError(
-                    f"{what} '{ref}': block '{seg}' is in a reused (namespaced) "
-                    f"subtree — cross-level connections/scoreboards into a reused "
-                    f"subsystem are not supported yet (reference a non-reused block)."
                 )
             if i < len(blk_path) - 1:
                 if not sv.is_subsystem:
@@ -1907,8 +1919,12 @@ class ProjectConfig(BaseModel):
         analysis port through it. Flat same-level → a single handle (byte-identical)."""
         spath, sag, scfg = self._resolve_endpoint(sb.source, "cross-block scoreboard")
         mpath, mag, mcfg = self._resolve_endpoint(sb.monitor, "cross-block scoreboard")
-        sagent = next(a for a in scfg.agents if a.name == sag)
-        magent = next(a for a in mcfg.agents if a.name == mag)
+        sagent = _leaf_agent(scfg, sag)
+        magent = _leaf_agent(mcfg, mag)
+        if sagent is None or magent is None:  # pragma: no cover
+            # unreachable: validate_subenv_composition rejects a missing agent (with a
+            # clear message) before generation ever calls this.
+            raise AssertionError("unvalidated cross-block scoreboard endpoint")
         return ".".join(spath), sagent, ".".join(mpath), magent
 
     def validate_subenv_composition(self) -> None:
@@ -2081,7 +2097,7 @@ class ProjectConfig(BaseModel):
                 blk_path, agent, cfg = self._resolve_endpoint(
                     ref, f"cross-block scoreboard '{sb.name}' {role}"
                 )
-                if not any(a.name == agent for a in cfg.agents):
+                if _leaf_agent(cfg, agent) is None:
                     raise ValueError(
                         f"cross-block scoreboard '{sb.name}' {role} '{ref}': block "
                         f"'{blk_path[-1]}' has no agent '{agent}'."
