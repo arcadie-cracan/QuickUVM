@@ -1676,6 +1676,43 @@ class LeafView:
                 out.append((inst, p.name))
         return out
 
+    # ---- M1 clocked-subenv — per-leaf clock/reset domain (empty for a combinational
+    # leaf, which keeps the shared cadence `clk`). Nets are pathname-prefixed so two
+    # clocked leaves that both default `clk`/`rst_n` never collide in the flat tb_top.
+
+    @property
+    def clocked(self) -> bool:
+        return not self.sv.cfg.dut.combinational
+
+    @property
+    def clock_net(self) -> str:
+        """This clocked leaf's tb_top clock NET (e.g. `acc_clk`)."""
+        return f"{self.pathname}_{self.sv.cfg.effective_clocks[0].name}"
+
+    @property
+    def clock_port(self) -> str:
+        """The leaf DUT's clock PORT name (unprefixed — a module port)."""
+        return self.sv.cfg.dut.clock
+
+    @property
+    def clock_period_ts(self) -> int:
+        return self.sv.cfg.clock_period_ts(self.sv.cfg.effective_clocks[0])
+
+    @property
+    def reset(self) -> ResetConfig | None:
+        er = self.sv.cfg.effective_resets
+        return er[0] if er else None
+
+    @property
+    def reset_net(self) -> str:
+        r = self.reset
+        return f"{self.pathname}_{r.name}" if r else ""
+
+    @property
+    def reset_port(self) -> str:
+        """The leaf DUT's / interface's reset PORT name (unprefixed)."""
+        return self.sv.cfg.dut.reset
+
 
 def _apply_namespace_prefix(cfg: ProjectConfig, prefix: str) -> None:
     """H1 nested reuse — recursively prefix a composed subtree's class names by
@@ -1829,6 +1866,17 @@ class ProjectConfig(BaseModel):
         if clock.unit == ts:
             return clock.period
         return clock.period * (_UNIT_MAG[clock.unit] // _UNIT_MAG[ts])
+
+    @property
+    def subsystem_timescale_unit(self) -> str:
+        """M1 clocked-subenv — the `-timescale` unit for a SUBSYSTEM tb_top: the single
+        (validated) time unit shared by its clocked leaves, so a non-`ns` clocked
+        subsystem needn't have the combinational top redundantly declare a clock. No
+        clocked leaves → the top's own `timescale_unit` (byte-identical)."""
+        units = {
+            lv.sv.cfg.effective_clocks[0].unit for lv in self.leaf_views if lv.clocked
+        }
+        return next(iter(units)) if len(units) == 1 else self.timescale_unit
 
     @property
     def effective_resets(self) -> list[ResetConfig]:
@@ -2098,11 +2146,21 @@ class ProjectConfig(BaseModel):
                     f"supported in a subsystem yet."
                 )
             if not child.dut.combinational:
-                raise ValueError(
-                    f"subenv '{s.name}': only combinational child blocks are supported "
-                    f"in a subsystem yet (clock/reset plumbing for composed clocked "
-                    f"blocks is a later slice)."
-                )
+                # Clocked child (a registered, typically external-reset block): the
+                # subenv tb_top generates a per-leaf clock + reset with pathname-
+                # prefixed nets (M1). For this slice a composed clocked block must be
+                # single-clock / at-most-one-reset (nested multi-clock leaves are a
+                # later slice); cross-leaf time-unit agreement is checked below.
+                if len(child.effective_clocks) != 1:
+                    raise ValueError(
+                        f"subenv '{s.name}': a composed clocked block must be single-"
+                        f"clock (a nested multi-clock leaf is not supported yet)."
+                    )
+                if len(child.effective_resets) > 1:
+                    raise ValueError(
+                        f"subenv '{s.name}': a composed clocked block must have at "
+                        f"most one reset (multiple leaf resets not supported yet)."
+                    )
             if any(a.parameters for a in child.agents) and len(child.agents) > 1:
                 raise ValueError(
                     f"subenv '{s.name}': a parameterized child block must be "
@@ -2139,10 +2197,24 @@ class ProjectConfig(BaseModel):
                         )
                     coll.add(val)
 
+        # M1 clocked-subenv — every CLOCKED composed block must share one time unit
+        # (the flattened tb_top emits a single -timescale). The subsystem's timescale
+        # is that shared leaf unit (see subsystem_timescale_unit); mixed units across
+        # leaves are a later slice.
+        clocked_units = {
+            lv.sv.cfg.effective_clocks[0].unit for lv in self.leaf_views if lv.clocked
+        }
+        if len(clocked_units) > 1:
+            raise ValueError(
+                "clocked composed blocks must share one time unit (the subsystem "
+                f"tb emits one -timescale) — found {sorted(clocked_units)}."
+            )
+
         # H1 nested — the WHOLE flattened tree shares the top package namespace, so
         # every subsystem prefix + every leaf's block/agent/interface/transaction name
-        # must be unique across the tree (the per-level loop only sees direct
-        # children). Runs only when there is nesting; flat → no-op.
+        # AND every leaf's flattened pathname (which prefixes its tb_top interface / DUT
+        # / clock-net identifiers) must be unique across the tree (the per-level loop
+        # only sees direct children). Runs only when there is nesting; flat → no-op.
         if any(sv.is_subsystem for sv in self.subenv_views):
             tree: dict[str, str] = {}
 
@@ -2166,6 +2238,18 @@ class ProjectConfig(BaseModel):
                     _claim(a.name, "agent name")
                     _claim(a.interface, "interface")
                     _claim(a.sequence_item, "transaction")
+            # Two distinct leaves can flatten to the SAME pathname (e.g. leaf `a_b` vs
+            # subsystem `a` → leaf `b`), which would emit duplicate tb_top instance /
+            # net identifiers — fail closed.
+            paths: dict[str, str] = {}
+            for lv in self.leaf_views:
+                if lv.pathname in paths:
+                    raise ValueError(
+                        f"nested: two composed leaves flatten to the same path-"
+                        f"prefixed name '{lv.pathname}' — rename a subenv so every "
+                        f"leaf's flattened path is unique."
+                    )
+                paths[lv.pathname] = lv.sv.block
 
         # H1 cross-block — validate connection + scoreboard endpoints. Endpoints are
         # dotted paths resolved relative to THIS level (each level validates its own
@@ -2512,9 +2596,9 @@ class ProjectConfig(BaseModel):
             )
         if multi and self.subenvs:
             raise ValueError(
-                "multiple clock/reset domains in a subsystem (`subenvs`) bench is not "
-                "supported yet — composed subenvs are combinational in this slice "
-                "(clocked-subenv composition is a follow-up)."
+                "a subsystem (`subenvs`) bench must not declare top-level `clock:`/"
+                "`resets:` lists — a composed clocked block carries its own clock/"
+                "reset (the subsystem tb_top generates one per clocked leaf)."
             )
         # Which agents actually get a <agent>_cover instance in the env: the
         # listed agents when an analysis block is present, else just the primary.

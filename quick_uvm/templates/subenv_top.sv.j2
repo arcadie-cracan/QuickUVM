@@ -10,16 +10,61 @@
 module tb_top;
   import uvm_pkg::*;
   import {{ dut.name }}_test_pkg::*;
+{% if multi_domain %}
+
+  // M1 — a clock (and reset) net per CLOCKED leaf; combinational leaves share `clk`.
+{% for lv in leaf_views %}
+{% if lv.clocked %}
+  logic {{ lv.clock_net }};
+{% if lv.reset_net %}
+  logic {{ lv.reset_net }};
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if leaf_views | rejectattr('clocked') | list | length > 0 %}
+  logic clk;
+{% endif %}
+
+  // One clock generator per clocked leaf (+ the shared cadence for combinational leaves)
+{% for lv in leaf_views %}
+{% if lv.clocked %}
+  clkgen #({{ lv.clock_period_ts }}) ck_{{ lv.clock_net }} ({{ lv.clock_net }});
+{% endif %}
+{% endfor %}
+{% if leaf_views | rejectattr('clocked') | list | length > 0 %}
+  clkgen ck (clk);
+{% endif %}
+{% for lv in leaf_views %}
+{% if lv.clocked and lv.reset_net %}
+
+  // Reset generator for {{ lv.reset_net }} (deassert synced to {{ lv.clock_net }}).
+  // pragma quickuvm custom reset_generator_{{ lv.reset_net }} begin
+  initial begin
+    {{ lv.reset_net }} = 1'b{% if lv.reset.active_low %}0{% else %}1{% endif %};   // assert
+    repeat (5) @(posedge {{ lv.clock_net }});
+    // NOTE: the driver and monitor block until this deasserts — if you edit this
+    // block you MUST drive {{ lv.reset_net }} to its inactive level or the TB will hang.
+    {{ lv.reset_net }} = 1'b{% if lv.reset.active_low %}1{% else %}0{% endif %};   // deassert
+  end
+  // pragma quickuvm custom reset_generator_{{ lv.reset_net }} end
+{% endif %}
+{% endfor %}
+{% else %}
 
   logic clk;
 
   // Instantiate clock generator
   clkgen ck (clk);
+{% endif %}
 
   // Instantiate each block's interfaces
 {% for lv in leaf_views %}
 {% for agent in lv.agents %}
+{% if lv.clocked %}
+  {{ agent.interface }}{{ agent.param_args_values }} {{ lv.pathname }}_{{ agent.interface }}_inst (.clk({{ lv.clock_net }}){% if lv.reset_net %}, .{{ lv.reset_port }}({{ lv.reset_net }}){% endif %});
+{% else %}
   {{ agent.interface }}{{ agent.param_args_values }} {{ lv.pathname }}_{{ agent.interface }}_inst (clk);
+{% endif %}
 {% endfor %}
 {% endfor %}
 
@@ -28,11 +73,13 @@ module tb_top;
 {% for lv in leaf_views %}
   {{ lv.dut_module }}{{ lv.dut_param_args }} {{ lv.pathname }}_dut (
 {% for inst, pname in lv.dut_conns %}
-    .{{ pname }}({{ inst }}.{{ pname }}){% if not loop.last or not lv.sv.cfg.dut.combinational %},{% endif %}
+    .{{ pname }}({{ inst }}.{{ pname }}){% if not loop.last or lv.clocked %},{% endif %}
 
 {% endfor %}
-{% if not lv.sv.cfg.dut.combinational %}
-    .{{ lv.sv.cfg.dut.clock }}(clk)
+{% if lv.clocked %}
+    .{{ lv.clock_port }}({{ lv.clock_net }}){% if lv.reset_net %},
+    .{{ lv.reset_port }}({{ lv.reset_net }}){% endif %}
+
 {% endif %}
   );
 {% endfor %}

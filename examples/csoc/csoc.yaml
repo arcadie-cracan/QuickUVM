@@ -1,0 +1,22 @@
+# csoc — QuickUVM H1 x M1: a subsystem composing CLOCKED leaf blocks.
+#
+# The top is a combinational shell (like soc.yaml) but its two children are
+# REGISTERED, each on its own clock + external reset: acc @10ns, mul @8ns — two
+# independent clock domains. QuickUVM flattens them into one tb_top and, for each
+# clocked leaf, generates a pathname-prefixed clock net + reset net, its own
+# parameterized clkgen, and a reset generator synced to that leaf's clock; each
+# interface + DUT is bound to its leaf's domain and each driver/monitor reset-gates
+# on its leaf's reset. A fully COMBINATIONAL subsystem (soc/nested/...) is
+# unaffected — the clock/reset plumbing only appears when a leaf is clocked.
+project: {name: csoc, author: QuickUVM, year: 2026}
+
+layout: packaged
+
+dut: {name: csoc, combinational: true, reset: ''}
+
+subenvs:
+  - {name: acc, config: acc.yaml}   # clocked @10ns -> acc_clk / acc_rst_n
+  - {name: mul, config: mul.yaml}   # clocked @8ns  -> mul_clk / mul_rst_n
+
+tests:
+  - {name: csoc_test}
