@@ -1,0 +1,12 @@
+# nsoc — QuickUVM H1: a parameterized, REUSED nested subsystem.
+# The SAME chan cluster (adder + shifter) is composed twice — lo at W=8, hi at
+# W=16. Auto-namespacing recurses over the whole cluster subtree (lo_*/hi_*) and
+# the width propagates to every leaf agent.
+project: {name: nsoc, author: QuickUVM, year: 2026}
+layout: packaged
+dut: {name: nsoc, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+subenvs:
+  - {name: lo, config: chan.yaml, params: {W: 8}}
+  - {name: hi, config: chan.yaml, params: {W: 16}}
+tests: [{name: nsoc_test}]

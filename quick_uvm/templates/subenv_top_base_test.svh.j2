@@ -40,7 +40,13 @@ class {{ dut.name }}_base_test extends uvm_test;
       `uvm_fatal("NOVIF",
                  "No virtual interface '{{ vkey }}' in config DB (see tb_top.sv)")
 {% endfor %}
-    uvm_config_db#({{ op.cfg_class }})::set(this, "{{ op.db_path }}", "env_cfg", {{ op.field }});
+{% set cset %}    uvm_config_db#({{ op.cfg_class }})::set(this, "{{ op.db_path }}", "env_cfg", {{ op.field }});{% endset %}
+{% if cset | length <= 100 %}
+{{ cset }}
+{% else %}
+    uvm_config_db#({{ op.cfg_class }})::set(
+        this, "{{ op.db_path }}", "env_cfg", {{ op.field }});
+{% endif %}
 {% endfor %}
 
     uvm_config_db#({{ dut.name }}_env_cfg)::set(this, "e", "env_cfg", env_cfg);

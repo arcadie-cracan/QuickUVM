@@ -29,6 +29,7 @@ CHANNELS = (
     Path(__file__).resolve().parents[1] / "examples" / "channels" / "channels.yaml"
 )
 NESTED = Path(__file__).resolve().parents[1] / "examples" / "nested" / "nested.yaml"
+NSOC = Path(__file__).resolve().parents[1] / "examples" / "nsoc" / "nsoc.yaml"
 
 
 def _block(name, agent, iface):
@@ -406,7 +407,49 @@ def test_nested_cross_level_connection_rejected(tmp_path):
         PC.from_yaml(top)
 
 
-def test_params_on_nested_subsystem_rejected(tmp_path):
+# ---- H1 parameterized / reused nested subsystems ---------------------------
+
+
+def test_reused_cluster_namespaced_and_parameterized_recursively():
+    top = ProjectConfig.from_yaml(NSOC)
+    # the SAME chan cluster reused as lo/hi -> its whole subtree is prefixed
+    assert [c.dut.name for c in top.composition_levels] == [
+        "lo_chan",
+        "hi_chan",
+        "nsoc",
+    ]
+    lv = {tuple(v.path): v for v in top.leaf_views}
+    # grandchild leaf classes are prefixed per instance (no collision)...
+    assert lv[("lo", "adder")].agents[0].name == "lo_a"
+    assert lv[("hi", "adder")].agents[0].name == "hi_a"
+    assert lv[("lo", "adder")].agents[0].interface == "lo_a_if"
+    # ...but the reused RTL DUT module is recovered UNprefixed (original name)
+    assert lv[("lo", "adder")].dut_module == "add"
+    assert lv[("hi", "adder")].dut_module == "add"
+    assert lv[("lo", "shifter")].dut_module == "shl"
+    # the width is BROADCAST down to the grandchild agents
+    assert lv[("lo", "adder")].agents[0].param_args_values == "#(8)"
+    assert lv[("hi", "adder")].agents[0].param_args_values == "#(16)"
+    assert lv[("hi", "shifter")].agents[0].param_args_values == "#(16)"
+
+
+def test_reused_parameterized_cluster_generates(tmp_path):
+    Generator(ProjectConfig.from_yaml(NSOC)).generate_all(tmp_path)
+    top = (tmp_path / "tb_top.sv").read_text()
+    # reused unprefixed RTL modules at the propagated widths
+    assert "add#(8) lo_adder_dut (" in top
+    assert "add#(16) hi_adder_dut (" in top
+    assert "shl#(16) hi_shifter_dut (" in top
+    # distinct, prefixed cluster env classes — no collision between lo/hi
+    assert (tmp_path / "lo_chan_env.svh").exists()
+    assert (tmp_path / "hi_chan_env.svh").exists()
+    assert (tmp_path / "lo_add_env.svh").exists()
+    txn = (tmp_path / "hi_a_item.svh").read_text()
+    assert "class hi_a_item #(parameter int W = 16)" in txn  # propagated width
+
+
+def test_param_key_matching_no_descendant_agent_rejected(tmp_path):
+    # A params key that no descendant agent declares must error (fail-closed).
     from quick_uvm.models import ProjectConfig as PC
 
     top = tmp_path / "top.yaml"
@@ -415,11 +458,11 @@ def test_params_on_nested_subsystem_rejected(tmp_path):
         "layout: packaged\n"
         "dut: {name: t, combinational: true, reset: ''}\n"
         "subenvs:\n"
-        f"  - {{name: cA, config: {NESTED.parent / 'clusterA.yaml'}, params: {{W: 8}}}}\n"
-        f"  - {{name: cB, config: {NESTED.parent / 'clusterB.yaml'}}}\n"
+        f"  - {{name: lo, config: {NSOC.parent / 'chan.yaml'}, params: {{ZZ: 4}}}}\n"
+        f"  - {{name: hi, config: {NSOC.parent / 'chan.yaml'}, params: {{W: 16}}}}\n"
         "tests: [{name: t}]\n"
     )
-    with pytest.raises(Exception, match="on a nested subsystem is not supported"):
+    with pytest.raises(Exception, match="not a declared parameter of any agent"):
         PC.from_yaml(top)
 
 
@@ -789,5 +832,5 @@ def test_unknown_param_override_rejected(tmp_path):
         f"  - {{name: mac, config: {PSOC.parent / 'mac' / 'mac.yaml'}, params: {{W: 16}}}}\n"
         "tests: [{name: t}]\n"
     )
-    with pytest.raises(Exception, match="is not a declared parameter of block"):
+    with pytest.raises(Exception, match="is not a declared parameter of"):
         ProjectConfig.from_yaml(top_yaml)
