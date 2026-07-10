@@ -149,6 +149,19 @@ jobs:
           verible-verilog-lint --rules_config .verible-lint.rules gen_reqrsp/*.sv gen_reqrsp/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/reqrsp/rtl/reqrsp.sv
 
+      # Gate the M1 multi-clock/multi-reset path: the mclk example is a two-clock-domain
+      # bench (clk_sys @10, clk_io @6) with one external reset per domain. The `clock:`
+      # list splits into a parameterized clkgen instantiated per domain; each reset
+      # generator syncs to its clock; each interface + driver/monitor is bound and
+      # reset-gated to its agent's own domain.
+      - name: Generate the multi-clock/multi-reset example (M1)
+        run: quick-uvm generate -c examples/mclk/mclk.yaml -o gen_mclk
+
+      - name: Verible lint (multi-clock generated SV/SVH + DUT)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_mclk/*.sv gen_mclk/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/mclk/rtl/mclk.sv
+
       # Gate the A2 multi-transaction-type path: the splitter example has >=2
       # scoreboards, so each gets its own typed predictor/comparator/scoreboard set
       # (<dut>_<sbname>_*) for a DUT with two different-typed output channels.

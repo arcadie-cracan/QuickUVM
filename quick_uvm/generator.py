@@ -86,8 +86,12 @@ class Generator:
             "sb_match": sb.match,
             "sb_match_key": sb.match_key,
             "sb_max_latency": sb.max_latency,
+            # M1 — the window is measured on the MONITOR (response) lane, so scale by
+            # that agent's clock period (== the sole clock for a single-domain bench).
             "sb_max_lat_time": (
-                sb.max_latency * cfg.clock.period if sb.max_latency else None
+                sb.max_latency * cfg.agent_clock(out_agent).period
+                if sb.max_latency
+                else None
             ),
         }
 
@@ -121,6 +125,18 @@ class Generator:
             "project": cfg.project,
             "dut": cfg.dut,
             "clock": cfg.clock,
+            # M1 — every clock/reset domain (single-domain → one element that renders
+            # byte-identical to the legacy scalar wiring).
+            "clocks": cfg.effective_clocks,
+            "resets": cfg.effective_resets,
+            # M1 — the multi-domain tb_top/clkgen path is taken iff the user explicitly
+            # declared a `clock:` LIST or a `resets:` list; a scalar `clock:` + the
+            # legacy external/agent reset stays on the byte-identical single-clock path.
+            "multi_domain": bool(cfg.clocks) or bool(cfg.resets),
+            # M1 — per-agent resolved clock net + external reset, keyed by agent name,
+            # for the multi-domain tb_top wiring.
+            "agent_clocks": {a.name: cfg.agent_clock(a).name for a in cfg.agents},
+            "agent_resets": {a.name: cfg.agent_reset(a) for a in cfg.agents},
             "agents": cfg.agents,
             "tests": cfg.tests,
             "analysis": cfg.analysis,
@@ -172,7 +188,10 @@ class Generator:
         # measures $realtime). None unless set on the (out-of-order) scoreboard.
         max_lat = two_stream_sb.max_latency if two_stream_sb else None
         base_ctx["sb_max_latency"] = max_lat
-        base_ctx["sb_max_lat_time"] = max_lat * cfg.clock.period if max_lat else None
+        # M1 — scale on the monitor lane's clock period (the sole clock, single-domain).
+        base_ctx["sb_max_lat_time"] = (
+            max_lat * cfg.agent_clock(sb_out_agent).period if max_lat else None
+        )
         # Multi-transaction-type: with >=2 scoreboards each gets its OWN typed
         # predictor/comparator/scoreboard/reference_model, prefixed <dut>_<sbname>.
         # With <=1 the single set stays <dut>_* (byte-identical).
@@ -195,6 +214,11 @@ class Generator:
                 **base_ctx,
                 "agent": agent,
                 "coverage_model": cfg.coverage_model_for(agent.name),
+                # M1 — this agent's resolved clock domain + external reset (None if
+                # none). For a single-domain bench these equal the global clock / the
+                # dut reset, so the agent templates render byte-identical.
+                "agent_clock": cfg.agent_clock(agent),
+                "agent_reset": cfg.agent_reset(agent),
             }
             specs.append(FileSpec("agent_if.sv.j2", f"{agent.interface}.sv", ctx))
             specs.append(
@@ -395,6 +419,10 @@ class Generator:
             "project": cfg.project,
             "dut": cfg.dut,
             "clock": cfg.clock,
+            # M1 — subenvs are combinational (single clock); the shared clkgen reads
+            # `clocks`/`multi_domain` and renders its single-clock branch.
+            "clocks": cfg.effective_clocks,
+            "multi_domain": False,
             "tests": cfg.tests,
             "subenvs": cfg.subenv_views,
             "layout": cfg.layout,

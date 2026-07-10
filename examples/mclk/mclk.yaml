@@ -1,0 +1,51 @@
+# mclk — QuickUVM M1: a MULTI-CLOCK / MULTI-RESET bench.
+#
+# The DUT has two independent registered lanes, each in its own clock + reset
+# domain. `clock:` is a LIST (the union grammar — a single object stays
+# byte-identical); `resets:` lists one externally-generated reset per domain,
+# each synced to its clock. Each agent names the domain it runs on via
+# `clock:`/`reset:`; QuickUVM emits one parameterized clkgen per clock, one
+# reset generator per reset (synced to its clock), and binds each interface +
+# reset-gates each driver/monitor to its own domain. Each lane self-checks with
+# its own single-stream scoreboard.
+project: {name: mclk, author: QuickUVM, year: 2026}
+
+dut: {name: mclk, reset: rst_sys_n, external_reset: true}
+
+# Two clock domains (the `clock:` key accepts a list).
+clock:
+  - {name: clk_sys, period: 10, unit: ns}
+  - {name: clk_io,  period: 6,  unit: ns}
+
+# One external reset per domain, each deasserted synchronously to its clock.
+resets:
+  - {name: rst_sys_n, active_low: true, clock: clk_sys}
+  - {name: rst_io_n,  active_low: true, clock: clk_io}
+
+agents:
+  - name: sys
+    interface: sys_if
+    sequence_item: sys_item
+    clock: clk_sys
+    reset: rst_sys_n
+    ports:
+      inputs:  [{name: sys_din,  width: 8}]
+      outputs: [{name: sys_dout, width: 8}]
+
+  - name: io
+    interface: io_if
+    sequence_item: io_item
+    clock: clk_io
+    reset: rst_io_n
+    ports:
+      inputs:  [{name: io_din,  width: 8}]
+      outputs: [{name: io_dout, width: 8}]
+
+tests:
+  - {name: mclk_test, num_items: 40}
+
+analysis:
+  coverage: []
+  scoreboards:
+    - {name: sys_sb, source: sys}   # single-stream self-check on the sys lane
+    - {name: io_sb,  source: io}    # single-stream self-check on the io  lane

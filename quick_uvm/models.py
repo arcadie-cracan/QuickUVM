@@ -7,7 +7,14 @@ from pathlib import Path
 from typing import ClassVar, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 # A pragmatic subset of SystemVerilog reserved words a user might accidentally use
 # as a coverage bin name. Not exhaustive (IEEE 1800 has ~250); the identifier-format
@@ -657,6 +664,11 @@ class AgentConfig(BaseModel):
     # reused subtree can name the agent as originally declared (`g`, not `left_g`) and
     # the resolver maps it to the prefixed handle. "" = never prefixed.
     original_name: str = Field(default="", exclude=True, repr=False)
+    # M1 — multi-clock/reset: name the clock domain / external reset this agent runs on.
+    # None ⇒ the sole/first clock, and the reset bound to that clock (byte-identical for
+    # a single-clock/single-reset bench).
+    clock: str | None = None
+    reset: str | None = None
 
     @property
     def param_decl(self) -> str:
@@ -976,9 +988,36 @@ class DutConfig(BaseModel):
 
 
 class ClockConfig(BaseModel):
+    # M1 — multi-clock: `name` is the clock NET name in tb_top (and the DUT's clock
+    # port). Default "clk" so a single-clock bench is byte-identical. `clock:` in the
+    # YAML accepts one ClockConfig (today) or a LIST of them (a domain each).
+    name: str = "clk"
     period: int = 10
     unit: str = "ns"
     drive_offset_pct: int = 20  # percent of period to delay drive after posedge
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        _check_sv_identifier(v, "clock name")
+        return v
+
+
+class ResetConfig(BaseModel):
+    """M1 — one externally-generated reset domain. `clock` names the ClockConfig whose
+    posedge the deassert synchronizes to (sync reset); None ⇒ asynchronous (deassert
+    after a fixed delay). A single-reset bench is synthesized from `dut.reset` /
+    `reset_active_low` / `external_reset` when `resets` is empty (byte-identical)."""
+
+    name: str
+    active_low: bool = True
+    clock: str | None = None  # bound clock domain (sync deassert); None ⇒ async
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v: str) -> str:
+        _check_sv_identifier(v, "reset name")
+        return v
 
 
 class TestConfig(BaseModel):
@@ -1679,7 +1718,15 @@ def _leaf_agent(cfg: ProjectConfig, token: str) -> AgentConfig | None:
 class ProjectConfig(BaseModel):
     project: ProjectMeta
     dut: DutConfig
+    # M1 — `clock:` accepts a single ClockConfig (today, byte-identical) OR a list of
+    # them. A list is split by a before-validator into `clock` (the primary/first, kept
+    # for every legacy single-clock read + the -timescale/scoreboard unit) and `clocks`
+    # (the full domain list). Read `effective_clocks` in templates.
     clock: ClockConfig = Field(default_factory=ClockConfig)
+    clocks: list[ClockConfig] = Field(default_factory=list, exclude=True, repr=False)
+    # M1 — externally-generated reset domains (opt-in). Empty ⇒ `effective_resets`
+    # synthesizes today's single reset from `dut` (byte-identical).
+    resets: list[ResetConfig] = Field(default_factory=list)
     agents: list[AgentConfig] = Field(default_factory=list)
     tests: list[TestConfig] = Field(default_factory=lambda: [TestConfig(name="test1")])
     analysis: AnalysisConfig | None = None
@@ -1722,6 +1769,74 @@ class ProjectConfig(BaseModel):
     # its true unprefixed module name however many prefixes stack. "" = never
     # prefixed (dut_module falls through to dut.name).
     original_dut_name: str = Field(default="", exclude=True, repr=False)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split_clock_list(cls, data: object) -> object:
+        """M1 — accept `clock:` as either a single mapping (today) or a LIST of them.
+        A list is split into `clocks` (the full domain list) + `clock` (the primary /
+        first, for every legacy single-clock read). A scalar leaves `clocks` empty, so a
+        single-clock bench is byte-identical."""
+        if isinstance(data, dict) and isinstance(data.get("clock"), list):
+            clocks = data["clock"]
+            data = {**data, "clocks": clocks, "clock": (clocks[0] if clocks else {})}
+        return data
+
+    @field_serializer("clock")
+    def _ser_clock(self, clock: ClockConfig, _info: object) -> object:
+        """Round-trip the union: dump `clock` as the full list when multi-clock (so a
+        dumped config reloads with every domain — `clocks` is derived + excluded), else
+        the single mapping (a single-clock dump is byte-identical)."""
+        if self.clocks:
+            return [c.model_dump() for c in self.clocks]
+        return clock.model_dump()
+
+    # ---- M1 multi-clock / multi-reset — resolvers (single-domain → byte-identical) --
+
+    @property
+    def effective_clocks(self) -> list[ClockConfig]:
+        """Every clock domain: the `clocks` list, or `[self.clock]` for a single-clock
+        bench (whose sole clock is named `clk` — byte-identical)."""
+        return self.clocks if self.clocks else [self.clock]
+
+    @property
+    def effective_resets(self) -> list[ResetConfig]:
+        """Every externally-generated reset domain: the `resets` list, or a single
+        reset synthesized from `dut` when a single external reset is configured. Empty
+        when the reset is agent-driven / the DUT is combinational (no top generator)."""
+        if self.resets:
+            return self.resets
+        # (validate_dut already rejects external_reset without a reset name, so the
+        # `and self.dut.reset` guard here is belt-and-suspenders.)
+        if self.dut.external_reset and self.dut.reset:
+            return [
+                ResetConfig(
+                    name=self.dut.reset,
+                    active_low=self.dut.reset_active_low,
+                    clock=self.effective_clocks[0].name,
+                )
+            ]
+        return []
+
+    def agent_clock(self, agent: AgentConfig) -> ClockConfig:
+        """The clock domain an agent runs on — its named `clock`, or the sole/first."""
+        if agent.clock:
+            return next(
+                (c for c in self.effective_clocks if c.name == agent.clock),
+                self.effective_clocks[0],
+            )
+        return self.effective_clocks[0]
+
+    def agent_reset(self, agent: AgentConfig) -> ResetConfig | None:
+        """The external reset an agent gates on — its named `reset`, else the reset
+        bound to its clock domain, else the first; None when no external reset."""
+        resets = self.effective_resets
+        if not resets:
+            return None
+        if agent.reset:
+            return next((r for r in resets if r.name == agent.reset), resets[0])
+        ac = self.agent_clock(agent).name
+        return next((r for r in resets if r.clock == ac), resets[0])
 
     @property
     def subenv_views(self) -> list[SubenvView]:
@@ -2296,6 +2411,75 @@ class ProjectConfig(BaseModel):
             raise ValueError(
                 "dut.combinational and dut.external_reset are mutually exclusive "
                 "(a combinational DUT has no reset)."
+            )
+        # M1 — multi-clock / multi-reset validation. A scalar `clock:` with no `resets:`
+        # list is single-domain — the checks below run but pass trivially (one clock,
+        # the synthesized/absent reset); the legacy tb_top path renders byte-identical.
+        clock_names = [c.name for c in self.effective_clocks]
+        if len(clock_names) != len(set(clock_names)):
+            raise ValueError("clock names must be unique.")
+        # A single -timescale is emitted, so every clock must share a time unit.
+        units = {c.unit for c in self.effective_clocks}
+        if len(units) > 1:
+            raise ValueError(
+                f"clocks use multiple time units ({', '.join(sorted(units))}) but tb "
+                f"emits one -timescale — use a single unit across all clocks."
+            )
+        resets = self.effective_resets
+        reset_names = [r.name for r in resets]
+        if len(reset_names) != len(set(reset_names)):
+            raise ValueError("reset names must be unique.")
+        clock_set = set(clock_names)
+        for r in resets:
+            if r.name in clock_set:
+                raise ValueError(
+                    f"reset '{r.name}' collides with a clock name — clock and reset "
+                    f"nets share the tb_top namespace, so they must differ."
+                )
+            if r.clock is not None and r.clock not in clock_set:
+                raise ValueError(
+                    f"reset '{r.name}' names clock '{r.clock}', which is not a "
+                    f"declared clock ({', '.join(clock_names)})."
+                )
+        reset_set = set(reset_names)
+        for a in self.agents:
+            if a.clock is not None and a.clock not in clock_set:
+                raise ValueError(
+                    f"agent '{a.name}' names clock '{a.clock}', which is not a "
+                    f"declared clock ({', '.join(clock_names)})."
+                )
+            if a.reset is not None and a.reset not in reset_set:
+                raise ValueError(
+                    f"agent '{a.name}' names reset '{a.reset}', which is not a "
+                    f"declared reset ({', '.join(sorted(reset_set)) or 'none'})."
+                )
+        # The multi-domain tb_top wires clocks/resets as its own top-level nets, so an
+        # agent port sharing a clock/reset net name would double-drive it. (Legacy path
+        # allows an agent-driven reset port named `dut.reset` — so multi-domain only.)
+        multi = bool(self.clocks) or bool(self.resets)
+        if multi:
+            net_names = clock_set | reset_set
+            for a in self.agents:
+                for _, p in a.all_ports:
+                    if p.name in net_names:
+                        raise ValueError(
+                            f"agent '{a.name}' port '{p.name}' collides with a "
+                            f"clock/reset net of the same name — rename the port "
+                            f"or the domain."
+                        )
+        # The multi-domain tb_top wires per-AGENT interfaces; it does not yet weave the
+        # C3 multi-instantiation (`instances`) wiring. Reject the combo (fail-closed).
+        if multi and any(a.instances for a in self.agents):
+            raise ValueError(
+                "multiple clock/reset domains combined with a multi-instantiated agent "
+                "(`instances`) is not supported yet — use one clock domain per bench, "
+                "or a single instance per agent."
+            )
+        if multi and self.subenvs:
+            raise ValueError(
+                "multiple clock/reset domains in a subsystem (`subenvs`) bench is not "
+                "supported yet — composed subenvs are combinational in this slice "
+                "(clocked-subenv composition is a follow-up)."
             )
         # Which agents actually get a <agent>_cover instance in the env: the
         # listed agents when an analysis block is present, else just the primary.
