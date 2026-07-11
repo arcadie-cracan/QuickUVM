@@ -51,14 +51,16 @@ function {{ sb_out_item }} {{ sb_prefix }}_predictor::predict({{ sb_in_item }} t
   // TODO: Replace this stub with the actual DUT prediction.
   // Example for a simple register (din → dout):
 {% if dut.reset %}
-  // if (!extr.{{ dut.reset }}) begin
+{% set _rname = sb_in_reset.name if sb_in_reset else dut.reset %}
+{% set _ral = sb_in_reset.active_low if sb_in_reset else dut.reset_active_low %}
+  // if ({% if _ral %}!{% endif %}extr.{{ _rname }}) begin
 {% for port in sb_in_agent.output_ports %}
   //   extr.{{ port.name }} = '0;
 {% endfor %}
   // end else begin
 {% for out in sb_in_agent.output_ports %}
 {% for inp in sb_in_agent.input_ports %}
-{% if inp.name != dut.reset %}
+{% if inp.name != _rname %}
   //   extr.{{ out.name }} = extr.{{ inp.name }};
 {% endif %}
 {% endfor %}

@@ -1,0 +1,7 @@
+dualreg_tb_pkg.sv
+a_if.sv
+b_if.sv
+
+// Add extra package/source files below (preserved across regeneration):
+// pragma quickuvm custom extra_pkg_files begin
+// pragma quickuvm custom extra_pkg_files end

@@ -1,0 +1,48 @@
+# dualreg — QuickUVM M1 MULTI AGENT-DRIVEN resets (mixed polarity).
+#
+# Two registered lanes on one clock, but each lane's reset is driven by ITS OWN
+# agent's sequences (agent-driven, NOT a top-generated external reset). Agent a
+# drives an ACTIVE-LOW reset (a_rst_n); agent b drives an ACTIVE-HIGH reset
+# (b_rst). Each agent's `reset_port` names which of its input ports is the reset;
+# `reset_port_active_low` overrides the global polarity per agent. The driver parks
+# each reset asserted at time 0, the sequences constrain it inactive during normal
+# stimulus, and the monitor re-samples it — all at each agent's own polarity.
+project: {name: dualreg, author: QuickUVM, year: 2026}
+
+dut: {name: dualreg, clock: clk, reset: a_rst_n, reset_active_low: true}
+
+clock: {period: 10, unit: ns}
+
+agents:
+  # lane a: active-low reset (a_rst_n == dut.reset, so reset_port is implicit)
+  - name: a
+    interface: a_if
+    sequence_item: a_item
+    ports:
+      inputs:
+        - {name: a_rst_n, width: 1, randomize: true}
+        - {name: adin,    width: 8, randomize: true}
+      outputs:
+        - {name: adout, width: 8}
+
+  # lane b: this agent drives its OWN active-high reset port
+  - name: b
+    interface: b_if
+    sequence_item: b_item
+    reset_port: b_rst
+    reset_port_active_low: false
+    ports:
+      inputs:
+        - {name: b_rst, width: 1, randomize: true}
+        - {name: bdin,  width: 8, randomize: true}
+      outputs:
+        - {name: bdout, width: 8}
+
+tests:
+  - {name: dualreg_test, num_items: 40}
+
+analysis:
+  coverage: []
+  scoreboards:
+    - {name: a_sb, source: a}   # lane a self-check (active-low reset-aware)
+    - {name: b_sb, source: b}   # lane b self-check (active-high reset-aware)

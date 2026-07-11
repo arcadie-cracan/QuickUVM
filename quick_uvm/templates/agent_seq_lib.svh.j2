@@ -22,10 +22,6 @@ class {{ sequence.name }}{{ agent.param_decl }} extends uvm_sequence #({{ agent.
   int unsigned count = {{ sequence.count }};
 
 {% endif %}
-{% set ns = namespace(has_reset=false) %}
-{% for port in agent.input_ports %}
-{% if port.name == dut.reset %}{% set ns.has_reset = true %}{% endif %}
-{% endfor %}
 {% if sequence.kind == 'random' %}
   task body;
     {{ agent.sequence_item }}{{ agent.param_args }} tr = {{ agent.sequence_item }}{{ agent.param_args }}::type_id::create("tr");
@@ -36,8 +32,8 @@ class {{ sequence.name }}{{ agent.param_decl }} extends uvm_sequence #({{ agent.
   task do_item ({{ agent.sequence_item }}{{ agent.param_args }} tr);
     start_item(tr);
     if (!(tr.randomize() with {
-{% if ns.has_reset %}
-      tr.{{ dut.reset }}=='1;
+{% if agent_driven_reset %}
+      tr.{{ agent_driven_reset.name }}=='{% if agent_driven_reset.active_low %}1{% else %}0{% endif %};
 {% endif %}
 
       // pragma quickuvm custom do_item_constraints begin
@@ -58,8 +54,8 @@ class {{ sequence.name }}{{ agent.param_decl }} extends uvm_sequence #({{ agent.
     start_item(tr);
     if (!(tr.randomize() with {
       tr.{{ sequence.field }} == {% if fld.width_param %}{{ fld.width_param }}{% else %}{{ fld.width }}{% endif %}'(i);
-{% if ns.has_reset %}
-      tr.{{ dut.reset }}=='1;
+{% if agent_driven_reset %}
+      tr.{{ agent_driven_reset.name }}=='{% if agent_driven_reset.active_low %}1{% else %}0{% endif %};
 {% endif %}
 
       // pragma quickuvm custom do_item_constraints begin
@@ -91,7 +87,7 @@ class {{ sequence.name }}{{ agent.param_decl }} extends uvm_sequence #({{ agent.
     // pragma quickuvm custom body begin
     repeat(count) begin
       start_item(tr);
-      if (!(tr.randomize(){% if ns.has_reset %} with { tr.{{ dut.reset }}=='1; }{% endif %}))
+      if (!(tr.randomize(){% if agent_driven_reset %} with { tr.{{ agent_driven_reset.name }}=='{% if agent_driven_reset.active_low %}1{% else %}0{% endif %}; }{% endif %}))
         `uvm_fatal("{{ sequence.name | upper }}", "{{ sequence.name }} randomization failed")
       finish_item(tr);
     end

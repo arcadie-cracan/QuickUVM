@@ -174,6 +174,19 @@ jobs:
           verible-verilog-lint --rules_config .verible-lint.rules gen_mxclk/*.sv gen_mxclk/*.svh
           verible-verilog-lint --rules_config .verible-lint.rules examples/mxclk/rtl/mxclk.sv
 
+      # Gate the M1 multi-agent-driven-reset path: the dualreg example has two registered
+      # lanes on one clock, each reset DRIVEN by its own agent's sequences at its own
+      # polarity — agent a an active-low reset, agent b an active-high reset. Each agent's
+      # `reset_port` names its reset input; the driver parks it, sequences constrain it
+      # inactive, and the monitor re-samples it, all at that agent's polarity.
+      - name: Generate the multi-agent-driven-reset example (M1)
+        run: quick-uvm generate -c examples/dualreg/dualreg.yaml -o gen_dualreg
+
+      - name: Verible lint (multi-agent-driven-reset generated SV/SVH + DUT)
+        run: |
+          verible-verilog-lint --rules_config .verible-lint.rules gen_dualreg/*.sv gen_dualreg/*.svh
+          verible-verilog-lint --rules_config .verible-lint.rules examples/dualreg/rtl/dualreg.sv
+
       # Gate the A2 multi-transaction-type path: the splitter example has >=2
       # scoreboards, so each gets its own typed predictor/comparator/scoreboard set
       # (<dut>_<sbname>_*) for a DUT with two different-typed output channels.
