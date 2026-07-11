@@ -81,7 +81,7 @@ package {{ dut.name }}_tb_pkg;
 
   // Sequences (per agent)
 {% for agent in agents %}
-  `include "{{ agent.name }}_seq.svh"
+  `include "{{ agent.default_seq_name }}.svh"
 {% for seq in agent.sequences %}
   `include "{{ seq.name }}.svh"
 {% endfor %}

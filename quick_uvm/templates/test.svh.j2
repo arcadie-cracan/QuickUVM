@@ -19,7 +19,7 @@
 {% set seq_start = 'e.vsqr' %}
 {% set seq_params = '' %}
 {% else %}
-{% set seq_type = pa.name ~ '_seq' %}
+{% set seq_type = pa.default_seq_name %}
 {% set seq_start = 'e.' ~ pa.name ~ '_agnt.sqr' %}
 {% set seq_params = pa.param_args_values %}
 {% endif %}
@@ -46,8 +46,8 @@ class {{ test.name }} extends {{ dut.name }}_base_test;
     fork
 {% for inst in instances %}
       begin
-        {{ inst.agent.name }}_seq{{ inst.pav }} {{ inst.name }}_seq;
-        {{ inst.name }}_seq = {{ inst.agent.name }}_seq{{ inst.pav }}::type_id::create("{{ inst.name }}_seq");
+        {{ inst.agent.default_seq_name }}{{ inst.pav }} {{ inst.name }}_seq;
+        {{ inst.name }}_seq = {{ inst.agent.default_seq_name }}{{ inst.pav }}::type_id::create("{{ inst.name }}_seq");
         {{ inst.name }}_seq.start(e.{{ inst.handle }}.sqr);
       end
 {% endfor %}

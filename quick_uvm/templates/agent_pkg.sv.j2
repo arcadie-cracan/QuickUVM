@@ -30,7 +30,7 @@ package {{ agent.name }}_pkg;
   `include "{{ agent.name }}_sequencer.svh"
   `include "{{ agent.name }}_monitor.svh"
   `include "{{ agent.name }}_agent.svh"
-  `include "{{ agent.name }}_seq.svh"
+  `include "{{ agent.default_seq_name }}.svh"
 {% for seq in agent.sequences %}
   `include "{{ seq.name }}.svh"
 {% endfor %}
