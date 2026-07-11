@@ -11,7 +11,7 @@ module clkgen #(longint PERIOD = {{ clock_periods_ts[clocks[0].name] }}) (
   output logic clk);
 
   // Clock half-period = PERIOD/2 (time units set by the sim filelist's -timescale).
-  // Each tb_top instance sets its own PERIOD. Customize the generator below as needed.
+  // Each {{ top_name }} instance sets its own PERIOD. Customize the generator below as needed.
   // pragma quickuvm custom clock_generator begin
   initial begin
     clk <= '0;

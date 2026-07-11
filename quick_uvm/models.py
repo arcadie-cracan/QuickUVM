@@ -1818,6 +1818,11 @@ class ProjectConfig(BaseModel):
     # <dut>_env_pkg, and a <dut>_test_pkg, with per-package .f filelists — for
     # separate compilation and cross-project reuse of the agent VIP.
     layout: Literal["flat", "packaged"] = "flat"
+    # Name of the generated top module + file: `module <top_name>;` in <top_name>.sv,
+    # and the elaboration `-top`. Default "tb_top" (byte-identical); set to e.g. "tb"
+    # for the OpenTitan/uvmdvgen convention. NB: a hand-authored sim wrapper that
+    # references tb_top.sv / `-top tb_top` must be updated to match when this changes.
+    top_name: str = "tb_top"
     # H1 — sub-environments. When set, this is a subsystem (top) bench that
     # composes >=2 child block envs (each referenced by config path) instead of
     # defining its own agents. Opt-in: empty → an ordinary bench (byte-identical).
@@ -2375,6 +2380,14 @@ class ProjectConfig(BaseModel):
                         f"cross-block scoreboard '{sb.name}' {role} '{ref}': block "
                         f"'{blk_path[-1]}' has no agent '{agent}'."
                     )
+
+    @field_validator("top_name")
+    @classmethod
+    def _check_top_name(cls, v: str) -> str:
+        # It becomes `module <top_name>;` + the `-top` elaboration target, so it must
+        # be a legal, non-reserved SystemVerilog identifier.
+        _check_sv_identifier(v, "top_name")
+        return v
 
     @model_validator(mode="after")
     def validate_agents(self) -> ProjectConfig:
