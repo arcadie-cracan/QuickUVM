@@ -75,11 +75,13 @@ def test_analysis_wires_per_agent_coverage_and_scoreboard(tmp_path):
     )
     Generator(cfg).generate_all(tmp_path)
     e = (tmp_path / "d_env.svh").read_text()
-    # per-agent coverage collectors
-    assert "drv_cov drv_cov;" in e
-    assert "mon_cov mon_cov;" in e
-    assert "drv_agnt.ap.connect(drv_cov.analysis_export);" in e
-    assert "mon_agnt.ap.connect(mon_cov.analysis_export);" in e
+    # per-agent coverage collectors — the handle is `<agent>_cov_h`, NOT `<agent>_cov`
+    # (which is the TYPE): `<agent>_cov <agent>_cov;` shadows the type and Xcelium
+    # rejects the subsequent `<agent>_cov::type_id` at elaboration.
+    assert "drv_cov drv_cov_h;" in e
+    assert "mon_cov mon_cov_h;" in e
+    assert "drv_agnt.ap.connect(drv_cov_h.analysis_export);" in e
+    assert "mon_agnt.ap.connect(mon_cov_h.analysis_export);" in e
     # scoreboard bound to its source agent
     assert "d_scoreboard sbd;" in e
     assert "drv_agnt.ap.connect(sbd.axp);" in e
