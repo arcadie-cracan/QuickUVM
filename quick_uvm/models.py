@@ -677,6 +677,12 @@ class AgentConfig(BaseModel):
     # agent resets. Distinct from `reset` (which names an EXTERNAL reset domain).
     reset_port: str | None = None
     reset_port_active_low: bool | None = None
+    # K1 — emit an interface protocol checker (opt-in, byte-identical when False):
+    # a sample SVA property on this agent's interface (an output is never X/Z once
+    # reset deasserts) plus a `sva_properties` pragma region for your own protocol
+    # assertions. Lives IN the interface (no bind), so it samples on the interface's
+    # own clk/reset domain and is correct across multi-clock / C3 / H1 for free.
+    assertions: bool = False
 
     @property
     def default_seq_name(self) -> str:

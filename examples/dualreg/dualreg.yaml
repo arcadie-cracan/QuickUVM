@@ -1,4 +1,4 @@
-# dualreg — QuickUVM M1 MULTI AGENT-DRIVEN resets (mixed polarity).
+# dualreg — QuickUVM M1 MULTI AGENT-DRIVEN resets (mixed polarity) + K1 assertions.
 #
 # Two registered lanes on one clock, but each lane's reset is driven by ITS OWN
 # agent's sequences (agent-driven, NOT a top-generated external reset). Agent a
@@ -7,6 +7,11 @@
 # `reset_port_active_low` overrides the global polarity per agent. The driver parks
 # each reset asserted at time 0, the sequences constrain it inactive during normal
 # stimulus, and the monitor re-samples it — all at each agent's own polarity.
+#
+# K1: each agent sets `assertions: true`, so its interface carries a sample SVA
+# property (the registered output is never X/Z once reset deasserts) gated at that
+# agent's own polarity — `disable iff (!a_rst_n)` for lane a, `disable iff (b_rst)`
+# for lane b — plus a `sva_properties` pragma region for your own protocol checks.
 project: {name: dualreg, author: QuickUVM, year: 2026}
 
 dut: {name: dualreg, clock: clk, reset: a_rst_n, reset_active_low: true}
@@ -18,6 +23,7 @@ agents:
   - name: a
     interface: a_if
     sequence_item: a_item
+    assertions: true
     ports:
       inputs:
         - {name: a_rst_n, width: 1, randomize: true}
@@ -29,6 +35,7 @@ agents:
   - name: b
     interface: b_if
     sequence_item: b_item
+    assertions: true
     reset_port: b_rst
     reset_port_active_low: false
     ports:

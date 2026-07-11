@@ -50,4 +50,23 @@ interface {{ agent.interface }}{{ agent.param_decl }} (input clk{% if agent_rese
 {% endfor %}
   endclocking
 {% endif %}
+{% if agent.assertions %}
+
+  //----------------------------------------------------------------------
+  // K1 — interface protocol checker (opt-in). A sample property + a hook for
+  // your own SVA, sampling on this interface's clk/reset domain.
+  //----------------------------------------------------------------------
+{% set _rst = agent_reset or agent_driven_reset %}
+{% if _rst and agent.output_ports %}
+{% set _out = agent.output_ports[0].name %}
+  // Sample: an output is never X/Z once reset is deasserted (replace/extend below).
+  a_{{ _out }}_known: assert property (
+      @(posedge clk) disable iff ({% if _rst.active_low %}!{% endif %}{{ _rst.name }}) !$isunknown({{ _out }}))
+    else $error("{{ agent.interface }} checker: {{ _out }} X after reset");
+{% endif %}
+  // pragma quickuvm custom sva_properties begin
+  //   Add interface protocol assertions here, e.g.:
+  //   a_req_ack: assert property (@(posedge clk) req |-> ##[1:3] ack);
+  // pragma quickuvm custom sva_properties end
+{% endif %}
 endinterface

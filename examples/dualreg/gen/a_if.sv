@@ -29,4 +29,17 @@ interface a_if (input clk);
     // pragma quickuvm custom clocking_block_additional begin
     // pragma quickuvm custom clocking_block_additional end
   endclocking
+
+  //----------------------------------------------------------------------
+  // K1 — interface protocol checker (opt-in). A sample property + a hook for
+  // your own SVA, sampling on this interface's clk/reset domain.
+  //----------------------------------------------------------------------
+  // Sample: an output is never X/Z once reset is deasserted (replace/extend below).
+  a_adout_known: assert property (
+      @(posedge clk) disable iff (!a_rst_n) !$isunknown(adout))
+    else $error("a_if checker: adout X after reset");
+  // pragma quickuvm custom sva_properties begin
+  //   Add interface protocol assertions here, e.g.:
+  //   a_req_ack: assert property (@(posedge clk) req |-> ##[1:3] ack);
+  // pragma quickuvm custom sva_properties end
 endinterface
