@@ -648,10 +648,30 @@ multi-transaction-type scoreboards all landed (see the status blocks below).
   multi-transaction-type comparators. The reqrsp example grows a second lane (a
   different latency → reordering) to drive the out-of-order slice.
 
-### K1 — Assertion / protocol-checker scaffolding
-Generate an interface assertion module + SVA hook pragmas (protocol properties are user
-code, but the binding/structure is scaffolded).
-**Accept:** an `*_if` emits a bound checker module with a sample property.
+### K1 — Assertion / protocol-checker scaffolding — DONE
+Generate interface-level SVA scaffolding — a sample protocol property + a user-SVA hook
+pragma — so a generated bench ships with checking structure (the protocol properties are
+user code; the binding/structure is scaffolded).
+**Accept:** an `*_if` emits a sample property + a user-SVA hook. ✅
+
+**Status — landed (in-interface, opt-in):**
+- Per-agent `assertions: true` (`AgentConfig`, byte-identical when `False`) makes that
+  agent's interface carry a sample SVA property plus a `sva_properties` pragma region for
+  the user's own protocol assertions. The sample asserts the first output is never X/Z
+  once reset deasserts (`!$isunknown(<out>)` with `$error`, no UVM dependency in interface
+  scope), gated at the agent's OWN reset polarity: `disable iff (!<rst>)` active-low,
+  `disable iff (<rst>)` active-high (resolved from `agent_reset` / `agent_driven_reset`).
+  A combinational / no-reset agent ships the pragma scaffold only (a live `$isunknown`
+  would fire at t=0).
+- Design: the SVA lives INSIDE the interface (no `bind`, no extra file, no top.sv/run.f
+  change) — chosen over a separate bound module because, riding inside the interface that
+  is already instantiated everywhere, it is correct **for free** across multi-clock
+  (samples on the interface's own `clk`/reset), C3 parameterization, and H1 composition,
+  with zero bind machinery. (A separable bound-checker module remains a possible follow-up.)
+- Validated on `examples/dualreg/` — both agents opt in, exercising active-low (`a_rst_n`)
+  AND active-high (`b_rst`) in one bench: **Xcelium exit 0, UVM_ERROR/FATAL/WARNING all 0**,
+  assertions live. Byte-identical when off (the 26-example byte-identity gate is unmoved);
+  verible-lint-clean; CI already lints `dualreg` + gates byte-identity.
 
 ### C5 — RAL-driven CSR test library — DONE  *(surfaced by the OpenTitan comparison)*
 Generate the standard, register-model-driven CSR test suite that every real register block
