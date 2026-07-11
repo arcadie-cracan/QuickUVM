@@ -94,6 +94,8 @@ class Generator:
             "sb_out_item": out_agent.sequence_item + out_agent.param_args_values,
             "sb_in_agent": in_agent,
             "sb_out_agent": out_agent,
+            # M1 — the reference model excludes the SOURCE agent's agent-driven reset.
+            "sb_in_reset": cfg.agent_driven_reset(in_agent),
             "sb_two_stream": sb.monitor is not None,
             "sb_match": sb.match,
             "sb_match_key": sb.match_key,
@@ -122,6 +124,7 @@ class Generator:
             "sb_out_item": item,
             "sb_in_agent": iv.agent,
             "sb_out_agent": iv.agent,
+            "sb_in_reset": cfg.agent_driven_reset(iv.agent),
             "sb_two_stream": False,
             "sb_match": "in_order",
             "sb_match_key": None,
@@ -202,6 +205,8 @@ class Generator:
         )
         base_ctx["sb_in_agent"] = sb_in_agent
         base_ctx["sb_out_agent"] = sb_out_agent
+        # M1 — the reference model excludes the source agent's agent-driven reset input.
+        base_ctx["sb_in_reset"] = cfg.agent_driven_reset(sb_in_agent)
         base_ctx["sb_two_stream"] = two_stream_sb is not None
         base_ctx["sb_match"] = two_stream_sb.match if two_stream_sb else "in_order"
         base_ctx["sb_match_key"] = two_stream_sb.match_key if two_stream_sb else None
@@ -242,6 +247,10 @@ class Generator:
                 # dut reset, so the agent templates render byte-identical.
                 "agent_clock": cfg.agent_clock(agent),
                 "agent_reset": cfg.agent_reset(agent),
+                # M1 multi agent-driven reset — this agent's own reset port + polarity
+                # (None on the external/combinational path). Falls back to dut.reset →
+                # byte-identical for a single-reset agent-driven bench.
+                "agent_driven_reset": cfg.agent_driven_reset(agent),
                 # M1 mixed-unit — this agent's exact clocking-block drive skew (a delay
                 # in the -timescale unit). Unchanged for a single-unit bench.
                 "agent_clock_skew": _skew_literal(
@@ -300,13 +309,24 @@ class Generator:
             # Use the first test's num_items as default sequence length;
             # per-test specialisation happens in the test .svh files.
             first_test = cfg.tests[0] if cfg.tests else TestConfig(name="test1")
-            ctx = {**base_ctx, "agent": agent, "test": first_test}
+            adr = cfg.agent_driven_reset(agent)
+            ctx = {
+                **base_ctx,
+                "agent": agent,
+                "test": first_test,
+                "agent_driven_reset": adr,
+            }
             specs.append(
                 FileSpec("agent_sequence.svh.j2", f"{agent.name}_seq.svh", ctx)
             )
             # S2 — the per-agent sequence library (one class per declared sequence)
             for seq in agent.sequences:
-                seq_ctx = {**base_ctx, "agent": agent, "sequence": seq}
+                seq_ctx = {
+                    **base_ctx,
+                    "agent": agent,
+                    "sequence": seq,
+                    "agent_driven_reset": adr,
+                }
                 specs.append(
                     FileSpec("agent_seq_lib.svh.j2", f"{seq.name}.svh", seq_ctx)
                 )
@@ -489,6 +509,9 @@ class Generator:
                 "sb_out_item": magent.sequence_item + magent.param_args_values,
                 "sb_in_agent": sagent,
                 "sb_out_agent": magent,
+                # subenv tops are combinational (leaf resets are external/top-driven),
+                # so the cross-block reference model has no agent-driven reset.
+                "sb_in_reset": None,
                 "sb_two_stream": True,
                 "sb_match": "in_order",
                 "sb_match_key": None,

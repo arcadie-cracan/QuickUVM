@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, NamedTuple
 
 import yaml
 from pydantic import (
@@ -669,6 +669,14 @@ class AgentConfig(BaseModel):
     # a single-clock/single-reset bench).
     clock: str | None = None
     reset: str | None = None
+    # M1 — multi AGENT-DRIVEN reset: name which of THIS agent's own input ports it
+    # drives as reset (the driver parks it, sequences constrain it inactive, the monitor
+    # samples it). None ⇒ fall back to the port named `dut.reset` if the agent has it
+    # (single-reset bench is byte-identical). `reset_port_active_low` overrides the
+    # `dut.reset_active_low` for this agent (None ⇒ global), for mixed-polarity multi-
+    # agent resets. Distinct from `reset` (which names an EXTERNAL reset domain).
+    reset_port: str | None = None
+    reset_port_active_low: bool | None = None
 
     @property
     def param_decl(self) -> str:
@@ -1014,6 +1022,14 @@ class ClockConfig(BaseModel):
     def _check_name(cls, v: str) -> str:
         _check_sv_identifier(v, "clock name")
         return v
+
+
+class DrivenReset(NamedTuple):
+    """M1 — an agent-driven reset (the agent's sequences drive it): the reset PORT name
+    + its active-low polarity. Returned by `ProjectConfig.agent_driven_reset`."""
+
+    name: str
+    active_low: bool
 
 
 class ResetConfig(BaseModel):
@@ -1917,6 +1933,25 @@ class ProjectConfig(BaseModel):
         ac = self.agent_clock(agent).name
         return next((r for r in resets if r.clock == ac), resets[0])
 
+    def agent_driven_reset(self, agent: AgentConfig) -> DrivenReset | None:
+        """M1 — this agent's AGENT-DRIVEN reset (name + polarity) that its own sequences
+        drive, or None. Only for the agent-driven path (no top reset generator): None
+        when the reset is EXTERNAL (`dut.external_reset`) or the DUT has no reset.
+        `reset_port` names the agent's own reset input port; when unset it falls back to
+        the port named `dut.reset` if the agent has one (byte-identical). Polarity is
+        `reset_port_active_low`, else the global `dut.reset_active_low`."""
+        if self.dut.external_reset or not self.dut.reset:
+            return None
+        name = agent.reset_port or self.dut.reset
+        if not any(p.name == name for p in agent.input_ports):
+            return None
+        active_low = (
+            agent.reset_port_active_low
+            if agent.reset_port_active_low is not None
+            else self.dut.reset_active_low
+        )
+        return DrivenReset(name=name, active_low=active_low)
+
     @property
     def subenv_views(self) -> list[SubenvView]:
         """H1 — the composed child block envs (in `subenvs` order), once their
@@ -2600,6 +2635,31 @@ class ProjectConfig(BaseModel):
                 "`resets:` lists — a composed clocked block carries its own clock/"
                 "reset (the subsystem tb_top generates one per clocked leaf)."
             )
+        # M1 — per-agent AGENT-DRIVEN reset ports. `reset_port` names one of the agent's
+        # OWN input ports; it is the agent-driven (non-external) path, and combining it
+        # with M1 clock/reset domain LISTS is a later slice (fail-closed).
+        for a in self.agents:
+            if a.reset_port is not None:
+                if not any(p.name == a.reset_port for p in a.input_ports):
+                    raise ValueError(
+                        f"agent '{a.name}': reset_port '{a.reset_port}' is not one of "
+                        f"its input ports."
+                    )
+                if self.dut.external_reset:
+                    raise ValueError(
+                        f"agent '{a.name}': reset_port is an AGENT-DRIVEN reset and "
+                        f"cannot be combined with dut.external_reset (external reset "
+                        f"is top-generated, not agent-driven)."
+                    )
+                if multi:
+                    raise ValueError(
+                        f"agent '{a.name}': reset_port combined with M1 `clock:`/"
+                        f"`resets:` lists is not supported yet (single-clock only)."
+                    )
+            if a.reset_port_active_low is not None and a.reset_port is None:
+                raise ValueError(
+                    f"agent '{a.name}': reset_port_active_low requires reset_port."
+                )
         # Which agents actually get a <agent>_cover instance in the env: the
         # listed agents when an analysis block is present, else just the primary.
         # A coverage model on any other agent would compile but never be sampled.

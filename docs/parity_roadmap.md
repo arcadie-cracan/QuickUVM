@@ -690,7 +690,7 @@ against the RAL and passes.
 
 ## Priority tier 4 — clocking & infrastructure
 
-### M1 — Multi-clock / multi-reset — DONE (first slice)
+### M1 — Multi-clock / multi-reset — DONE
 Promote `clock`/`reset` to lists; per-agent clock association; multiple clock-gens + reset
 generators. Needed for CDC and most real SoC blocks.
 **Accept:** a 2-clock-domain bench generates and runs. ✅
@@ -741,9 +741,26 @@ generators. Needed for CDC and most real SoC blocks.
   two clocked leaves at DIFFERENT periods (acc @10 ns + mul @8 ns) — two independent clock
   domains in one subsystem, each self-checking — pass **2/2 on Xcelium** (0 errors).
   verible-lint-clean; CI gates it.
+- **Multi agent-driven resets landed (M1 complete):** the AGENT-DRIVEN reset path (the
+  reset is an agent input port its sequences drive, vs a top-generated external reset) is
+  now PER-AGENT and polarity-correct. A new `AgentConfig.reset_port` names which of the
+  agent's own input ports it drives as reset (unset ⇒ falls back to the port named
+  `dut.reset`, byte-identical); `reset_port_active_low` overrides the global polarity per
+  agent. One resolver `agent_driven_reset(agent)` (name + polarity, or None on the
+  external/combinational path) threads through the six agent-driven sites (driver park,
+  default sequence + seq-library constraints ×4, cover bins, monitor re-sample, reference
+  model), each gated so an active-low single-reset bench (`simple_reg`) is byte-for-byte
+  identical. This ALSO fixes a latent bug: driver-park / seq-constraint / cover-bins
+  hardcoded the active-*low* literals, so an active-high agent-driven reset generated wrong
+  stimulus. Fail-closed: a `reset_port` that isn't the agent's own input port, combined
+  with `dut.external_reset`, or combined with M1 `clock:`/`resets:` lists. Validated on
+  `examples/dualreg/`: two registered lanes, each reset by its own agent at OPPOSITE
+  polarities (a active-low + b active-high) — both self-check and pass **2/2 on Xcelium**
+  (0 errors). verible-lint-clean; CI gates it.
 - *Deferred:* per-domain scoreboard latency across two differently-clocked streams;
   multi-domain with `instances`; mixed-unit / nested-multi-clock clocked leaves;
-  multi-agent-driven (non-external) resets.
+  agent-driven resets combined with M1 multi-clock domains; a dedicated assert-then-
+  deassert reset sequence-kind body.
 
 ### R1 — Regression & coverage infrastructure
 Per-simulator makefiles, a testlist/regression runner, seed management, and a

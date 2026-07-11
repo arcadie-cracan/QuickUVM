@@ -77,12 +77,8 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
     //---------------------------------------------
     // Re-test async reset and re-assign if asserted
     //---------------------------------------------
-{% set reset_in_ports = namespace(found=false) %}
-{% for port in agent.input_ports %}
-  {% if port.name == dut.reset %}{% set reset_in_ports.found = true %}{% endif %}
-{% endfor %}
-{% if dut.reset and reset_in_ports.found %}
-    if ({% if dut.reset_active_low %}!{% endif %}vif.{{ dut.reset }}) t.{{ dut.reset }} = {% if dut.reset_active_low %}'0{% else %}'1{% endif %};
+{% if agent_driven_reset %}
+    if ({% if agent_driven_reset.active_low %}!{% endif %}vif.{{ agent_driven_reset.name }}) t.{{ agent_driven_reset.name }} = {% if agent_driven_reset.active_low %}'0{% else %}'1{% endif %};
 {% endif %}
     //---------------------------------------------
     // Sample DUT outputs #1step before posedge clk
