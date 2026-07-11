@@ -1,0 +1,45 @@
+# wbx — K2 whitebox PROBE example.
+#
+# The interesting state is INTERNAL to the DUT and invisible at its ports: a FIFO
+# fill-level counter, an FSM state (enum), and a `real` accumulator. `probes:` taps
+# them by hierarchical path (relative to the DUT instance) onto a generated probe
+# interface — OBSERVE-only (a continuous `assign`, never driven). The probe monitor
+# covers the fill-level (numeric bins) and the FSM state (SYMBOLIC enum bins); the
+# probe interface's SVA pragma asserts internal invariants; the `real` accumulator is
+# asserted (a real cannot be a covergroup coverpoint, so it carries no `coverage`).
+project: {name: wbx, author: QuickUVM, year: 2026}
+
+dut:
+  name: wbx
+  reset: rst_n
+  external_reset: true
+
+clock: {period: 10, unit: ns}
+
+agents:
+  # command port: push/pop a small FIFO; `busy` is the only DUT output
+  - name: cmd
+    interface: cmd_if
+    sequence_item: cmd_item
+    active: true
+    ports:
+      inputs:
+        - {name: push, width: 1}
+        - {name: data, width: 8}
+        - {name: pop,  width: 1}
+      outputs:
+        - {name: busy, width: 1, randomize: false}
+
+tests:
+  - {name: rand_test, num_items: 200}
+
+# the probe SVA + coverage are the checkers here — no data-path scoreboard
+analysis:
+  coverage: []
+  scoreboards: []
+
+# K2 — observe internal signals (paths relative to the DUT instance):
+probes:
+  - {name: fifo_lvl,  path: fill_level, width: 3, coverage: true}
+  - {name: fsm_state, path: state, enum: {IDLE: 0, BUSY: 1, FULL: 2}, width: 2, coverage: true}
+  - {name: acc,       path: acc, real: true}     # SVA-checkable; not covergroup-legal

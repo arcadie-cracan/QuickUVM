@@ -4,7 +4,7 @@ A general-purpose comparison: QuickUVM as a generator for **any digital function
 verification project**, not one protocol. Judged against the four pillars of a UVM
 environment — **stimulus, checking, coverage, reuse** — plus registers and infra.
 
-> Status: reflects QuickUVM **v0.9.1**. The capability matrix is kept in sync with the
+> Status: reflects QuickUVM **v0.9.2**. The capability matrix is kept in sync with the
 > shipped feature set; see `parity_roadmap.md` for what is planned and in what order.
 
 ## Tools compared
@@ -35,7 +35,7 @@ QuickUVM's most differentiated capability and the core of its identity.
 
 Legend: ✓ full · ◑ partial / skeleton-only · ✗ none · — n/a
 
-| Dimension | QuickUVM v0.9.1 | UVMF | Doulos | icdk uvmgen | gen_uvm |
+| Dimension | QuickUVM v0.9.2 | UVMF | Doulos | icdk uvmgen | gen_uvm |
 |---|---|---|---|---|---|
 | **Foundations** |
 | Language / templating | Python / Jinja2 | Python / Jinja2 | Perl | Python / Mako | Python |
@@ -51,6 +51,7 @@ Legend: ✓ full · ◑ partial / skeleton-only · ✗ none · — n/a
 | Scoreboard | ◑ single-stream, in-order | ✓ (+strategies) | ◑ | ◑ | ◑ |
 | Out-of-order / multi-stream / predictor framework | ✗ | ✓ | ✗ | ✗ | ✗ |
 | SVA / interface assertions | ✗ | ✓ | ◑ | ✗ | ✗ |
+| Whitebox internal-signal observation (spy/probe) | ✓ (K2: opt-in XMR probe interface + monitor) | ◑ (bind conventions) | ◑ | ✗ | ✗ |
 | **Pillar 3 — Coverage** |
 | Functional coverage from fields | ✗ (one empty covergroup) | ◑/✓ | ◑ | ◑ | ✗ |
 | Register coverage | ✗ | ✓ | ◑ | ◑ | ✗ |

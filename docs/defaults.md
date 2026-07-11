@@ -34,6 +34,7 @@ no-consensus flags below are where the survey explicitly **failed** to find a mo
 | **Virtual-seq mechanism** | `vseq_base` with `` `uvm_declare_p_sequencer ``; all vseqs extend it; subsequencer handles via `connect()`/`p_sequencer` **not** config_db [Cummings/Bergeron DVCon'16] | `<dut>_base_vseq` + `<dut>_virtual_sequencer`; `p_sequencer.<agent>_sqr` | **matches** (config_db path was *refuted*) |
 | **Virtual-seq *policy*** | "add a vsqr **as a habit**"; the modal skeleton's Test "runs a virtual sequence to start one simple sequence per agent" [Cummings/Bergeron; EasierUVM] | **auto** vsqr + default vseq for ≥2 active agents (see below) | **matches** |
 | **RAL** | opt-in, only when a register map is declared [uvmtb_template, gen_uvm, EasierUVM] | `register_model` opt-in | **matches** |
+| **Whitebox observation** | black-box default; internal-signal access is opt-in/whitebox and separated out (bind files, backdoor) [OpenTitan, VA Cookbook] | black-box default; `probes:` opt-in (K2), observe-only | **matches** |
 | **Sequence library** | **no consensus** on a fixed set — only "a base sequence + a vseq" is mandated | one `<agent>_seq`; richer library opt-in (S2) | **matches** (opt-in is the safe call) |
 | **Layout** | modal = **layered** per-interface/env packages, `_agent/_if/_pkg/_env` [UVMF, EasierUVM] | **flat** single `<dut>_tb_pkg` | **deliberate divergence** — flat is simpler for the small/education case; layered is roadmap **F2** ("powerful when needed") |
 

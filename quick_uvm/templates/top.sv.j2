@@ -157,8 +157,19 @@ module {{ top_name }};
 {% endif %}
   // pragma quickuvm custom dut_connections end
 {% endif %}
+{% if probes %}
+
+  // K2 whitebox probes — OBSERVE-only continuous taps of internal DUT signals.
+  {{ dut.name }}_probe_if probe_if (.{{ probe_clock }}({{ probe_clock }}){% if probe_reset %}, .{{ probe_reset.name }}({{ probe_reset.name }}){% endif %});
+{% for p in probes %}
+  assign probe_if.{{ p.name }} = dut_inst.{{ p.path }};
+{% endfor %}
+{% endif %}
 
   initial begin
+{% if probes %}
+    uvm_config_db#(virtual {{ dut.name }}_probe_if)::set(null, "*", "{{ dut.name }}_probe_vif", probe_if);
+{% endif %}
 {% if has_instances %}
 {% for inst in instances %}
     uvm_config_db#(virtual {{ inst.agent.interface }}{{ inst.pav }})::set(null, "*", "{{ inst.vif_key }}", {{ inst.if_inst }});

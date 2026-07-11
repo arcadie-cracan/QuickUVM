@@ -673,6 +673,45 @@ user code; the binding/structure is scaffolded).
   assertions live. Byte-identical when off (the 26-example byte-identity gate is unmoved);
   verible-lint-clean; CI already lints `dualreg` + gates byte-identity.
 
+### K2 — Whitebox spy/probe observation — DONE  *(builds on K1)*
+OBSERVE-only access to INTERNAL DUT signals (FSM state, FIFO levels, internal
+handshakes) for coverage / checkers / debug — without exposing debug ports. Black-box
+observation stays the default; whitebox is strictly opt-in.
+**Accept:** a `probes:` entry taps an internal signal (invisible at the DUT ports) that
+is asserted + covered in the TB and passes on the CI simulator; a wrong *internal*
+encoding is caught. ✅
+
+**Status — landed (XMR + probe interface + passive probe monitor):**
+- Mechanism = **hierarchical reference (XMR)**, chosen over `bind` and `uvm_hdl` after a
+  deep survey ([`whitebox_observation_investigation.md`](whitebox_observation_investigation.md)).
+  XMR uniquely matches the "one exact path
+  per net" data model of the Architect extension, is **fail-closed at elaboration** (a
+  wrong/renamed path is a compile error, not a silent miss), is the **most portable**
+  (the only door that works on Verilator; `uvm_hdl` is fail-OPEN and Verilator-less), and
+  reuses QuickUVM's existing interface + `config_db` + K1-SVA machinery. *bind rejected:
+  the schema is path-from-DUT-instance, not (module-type, local-signal); multi-instance
+  clobbers one `config_db` key; Verilator can't bind to instance paths. uvm_hdl rejected:
+  fail-open + no Verilator — it stays the register-backdoor door only.*
+- Top-level `probes: [{name, path, width|enum|type|struct|real, clock?, coverage?}]`.
+  `path` is relative to the DUT instance; the generator emits `assign probe_if.<name> =
+  dut_inst.<path>;` (never `force`). The observed field reuses the S1 type machinery, so
+  an enum FSM gets **symbolic** coverage (the monitor `$cast`s the raw bits); a `real`
+  probe is SVA-checkable but carries no `coverage` (SV forbids a real coverpoint).
+- Fail-closed validation: legal SV identifiers; non-empty path; unique names; no
+  collision with agent port / interface / clock / reset nets; `clock` names a declared
+  clock (default the sole/first); a single probe clocking domain (multi-domain deferred);
+  probes rejected with `subenvs` (H1 — per-leaf DUTs) and with `instances` (C3 — no single
+  DUT), each with a follow-up note.
+- Validated on `examples/wbx/`: a FIFO block whose internal `fill_level` / FSM `state` /
+  `real acc` are invisible at the ports — probed, asserted (`probe_sva`), and covered
+  (numeric + symbolic). **Xcelium exit 0, 0 warn/err**; and a **mutation proof** — an FSM
+  that declares `FULL` one slot early makes the probe SVA `a_full_max` **fire** and fail
+  the sim, catching a wrong internal encoding. Byte-identical when absent (the byte-identity
+  gate is unmoved); verible-lint-clean.
+- *Deferred:* multi-clock-domain probes (one probe clocking block for now); probes under H1
+  composition (path prefixing) and C3 multi-instantiation; a `bind`-by-type observer for
+  "every instance of a repeated sub-block."
+
 ### C5 — RAL-driven CSR test library — DONE  *(surfaced by the OpenTitan comparison)*
 Generate the standard, register-model-driven CSR test suite that every real register block
 needs and that QuickUVM is ~90% positioned for (it already wires the RAL): `csr_rw`,
