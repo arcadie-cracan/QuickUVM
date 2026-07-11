@@ -84,13 +84,18 @@ Bench-level (prefix = `<dut>`, e.g. `alu`):
 | Default virtual sequence | `<dut>_vseq` | `alu_vseq` |
 | Base test | `<dut>_base_test` | `alu_base_test` |
 | Package | `<dut>_tb_pkg` | `alu_tb_pkg` |
-| TB top module | `tb_top` | `tb_top` |
+| TB top module | `tb_top` (configurable via `top_name`) | `tb_top` |
 | Register adapter | config-named (`_adapter`) | `alu_reg_adapter` |
 
 > **Transaction suffix: `_seq_item`** (project decision) — it names the UVM concept (a
 > `uvm_sequence_item`) precisely. The `sequence_item:` field in the YAML config sets it;
 > `quick-uvm init` scaffolds `<agent>_seq_item`. (Historically the templates used
 > `_trans`; `_seq_item` is the convention going forward.)
+
+> **Top module name: `top_name`** (default `tb_top`) — set `top_name:` in the YAML to
+> rename the generated top module + its file + the elaboration `-top` (e.g. `tb`, the
+> OpenTitan/uvmdvgen convention). The default is byte-identical. A hand-authored sim
+> wrapper referencing `tb_top.sv` / `-top tb_top` must be updated to match.
 
 Handles / members:
 

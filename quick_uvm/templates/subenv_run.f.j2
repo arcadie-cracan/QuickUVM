@@ -1,15 +1,15 @@
 // Top (subsystem) run filelist (H1). Run from this gen/ directory:
 //   xrun -uvm -access +rwc -f run.f +UVM_TESTNAME={{ tests[0].name }}
 -timescale 1{{ timescale_unit }}/1{{ timescale_unit }}
--top tb_top
+-top {{ top_name }}
 +incdir+.
 -f {{ dut.name }}_test_pkg.f
 clkgen.sv
 // Real block DUTs — a subsystem does NOT emit per-block DUT stubs, so list each
-// composed block's RTL here (compiled before tb_top):
+// composed block's RTL here (compiled before {{ top_name }}):
 // pragma quickuvm custom subenv_dut_sources begin
 // pragma quickuvm custom subenv_dut_sources end
-tb_top.sv
+{{ top_name }}.sv
 
 // Add extra sim args, incdirs or sources below (preserved across regeneration):
 // pragma quickuvm custom extra_run_args begin

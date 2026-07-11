@@ -30,14 +30,14 @@ class {{ dut.name }}_base_test extends uvm_test;
     env_cfg.{{ inst.cfg_field }} = {{ inst.agent.name }}_cfg{{ inst.pav }}::type_id::create("{{ inst.cfg_field }}");
     env_cfg.{{ inst.cfg_field }}.is_active = UVM_{{ "ACTIVE" if inst.agent.active else "PASSIVE" }};
     if (!uvm_config_db#(virtual {{ inst.agent.interface }}{{ inst.pav }})::get(this, "", "{{ inst.vif_key }}", env_cfg.{{ inst.cfg_field }}.vif))
-      `uvm_fatal("NOVIF", "No virtual interface '{{ inst.vif_key }}' in config DB (see tb_top.sv)")
+      `uvm_fatal("NOVIF", "No virtual interface '{{ inst.vif_key }}' in config DB (see {{ top_name }}.sv)")
 {% endfor %}
 {% else %}
 {% for agent in agents %}
     env_cfg.{{ agent.name }}_cfg = {{ agent.name }}_cfg{{ agent.param_args_values }}::type_id::create("{{ agent.name }}_cfg");
     env_cfg.{{ agent.name }}_cfg.is_active = UVM_{{ "ACTIVE" if agent.active else "PASSIVE" }};
     if (!uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::get(this, "", "{{ agent.interface }}_vif", env_cfg.{{ agent.name }}_cfg.vif))
-      `uvm_fatal("NOVIF", "No virtual interface '{{ agent.interface }}_vif' in config DB (see tb_top.sv)")
+      `uvm_fatal("NOVIF", "No virtual interface '{{ agent.interface }}_vif' in config DB (see {{ top_name }}.sv)")
 {% endfor %}
 {% endif %}
 {% if register_model %}

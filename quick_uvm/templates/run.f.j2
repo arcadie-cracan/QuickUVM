@@ -7,7 +7,7 @@
 +incdir+..
 clkgen.sv
 {{ dut.name }}.sv
-tb_top.sv
+{{ top_name }}.sv
 {% if reference_model.language == 'c' %}
 {{ dut.name }}_reference_model.c
 {% endif %}

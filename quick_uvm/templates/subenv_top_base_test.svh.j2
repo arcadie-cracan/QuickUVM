@@ -38,7 +38,7 @@ class {{ dut.name }}_base_test extends uvm_test;
     if (!uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::get(
           this, "", "{{ vkey }}", {{ acfg }}.vif))
       `uvm_fatal("NOVIF",
-                 "No virtual interface '{{ vkey }}' in config DB (see tb_top.sv)")
+                 "No virtual interface '{{ vkey }}' in config DB (see {{ top_name }}.sv)")
 {% endfor %}
 {% set cset %}    uvm_config_db#({{ op.cfg_class }})::set(this, "{{ op.db_path }}", "env_cfg", {{ op.field }});{% endset %}
 {% if cset | length <= 100 %}

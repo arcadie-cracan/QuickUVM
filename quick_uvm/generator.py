@@ -170,6 +170,7 @@ class Generator:
             "auto_vseq": cfg.auto_vseq_name,
             "reference_model": cfg.reference_model,
             "layout": cfg.layout,
+            "top_name": cfg.top_name,
             # C3 — multi-instantiation: per-instance views for the env/top/scoreboard.
             # Empty for a bench without `instances` → the legacy per-agent wiring
             # runs unchanged (byte-identical).
@@ -443,7 +444,7 @@ class Generator:
             specs.append(FileSpec("env_pkg.sv.j2", f"{dut}_env_pkg.sv", base_ctx))
             specs.append(FileSpec("env_pkg.f.j2", f"{dut}_env_pkg.f", base_ctx))
             return specs
-        specs.append(FileSpec("top.sv.j2", "tb_top.sv", base_ctx))
+        specs.append(FileSpec("top.sv.j2", f"{cfg.top_name}.sv", base_ctx))
         if cfg.layout == "packaged":
             # F2: a standalone <agent>_pkg per agent + a <dut>_env_pkg + a
             # <dut>_test_pkg, each with its own .f filelist.
@@ -500,6 +501,7 @@ class Generator:
             "tests": cfg.tests,
             "subenvs": cfg.subenv_views,
             "layout": cfg.layout,
+            "top_name": cfg.top_name,
             "connections": cfg.resolved_connections,
             "subenv_scoreboards": xsbs,
             # env_vseq_base.svh.j2 (reused) reads these; a top vseq is virtual-only.
@@ -600,7 +602,7 @@ class Generator:
                     "subenv_top_test.svh.j2", f"{test.name}.svh", {**ctx, "test": test}
                 )
             )
-        specs.append(FileSpec("subenv_top.sv.j2", "tb_top.sv", ctx))
+        specs.append(FileSpec("subenv_top.sv.j2", f"{cfg.top_name}.sv", ctx))
         specs.append(FileSpec("subenv_test_pkg.sv.j2", f"{top}_test_pkg.sv", ctx))
         specs.append(FileSpec("subenv_test_pkg.f.j2", f"{top}_test_pkg.f", ctx))
         specs.append(FileSpec("subenv_run.f.j2", "run.f", ctx))
