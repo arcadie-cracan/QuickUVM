@@ -1,0 +1,95 @@
+# rvtimer — an rv_timer-equivalent block bench, reproduced with QuickUVM.
+#
+# Empirical maturity comparison vs OpenTitan's rv_timer DV env
+# (docs/comparison_opentitan.md + docs/maturity_assessment_rv_timer.md). It models
+# the SAME DV environment structure as a real IP-block bench — a register-bus agent
+# + an external uvm_reg_block RAL + the C5 CSR test suite + a golden-model data-path
+# scoreboard + an interrupt agent + SVA + functional coverage — with the register
+# bus held GENERIC (single-cycle / APB-style), NOT TileLink: TL-UL is OpenTitan-
+# specific and outside QuickUVM's generic-generator scope, so holding it generic
+# isolates the DV-*generation* capability from the bus protocol (see the report).
+#
+# Two agents: `host` drives the register bus (addr/wdata/wr -> rdata); `irq`
+# passively monitors the timer interrupt output. The RAL exposes 4 clean R/W config
+# registers (CTRL/CFG/MTIMECMP/INTR_ENABLE, backdoor-readable) + a RO INTR_STATE.
+project:
+  name: rvtimer
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: rvtimer
+  reset: rst_n
+  external_reset: true        # reset driven by the generated reset_generator in top
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  # register-bus master (generic single-cycle / APB-style; drives the RAL front-door)
+  - name: host
+    interface: host_if
+    sequence_item: host_seq_item
+    seq_item_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: addr,  width: 5}
+        - {name: wdata, width: 16}
+        - {name: wr,    width: 1}
+      outputs:
+        - {name: rdata, width: 16}
+
+  # interrupt-output monitor (passive). QuickUVM has no reactive/responder agent, so
+  # the interrupt line is modelled as a monitored output (see the report's "reactive
+  # agent" gap). `assertions: true` adds an in-interface SVA checker on the intr pin.
+  - name: irq
+    interface: irq_if
+    sequence_item: irq_seq_item
+    active: false
+    assertions: true
+    ports:
+      outputs:
+        - {name: intr, width: 1, randomize: false}
+
+tests:
+  - {name: rand_test, num_items: 60}   # random register traffic (data-path scoreboard)
+
+register_model:
+  package: rvtimer_ral_pkg
+  block: rvtimer_reg_block
+  bus_agent: host
+  adapter: reg_adapter
+  # Backdoor: the model's HDL slices (ctrl/cfg/mtimecmp/inten/intr_state) hang off the
+  # DUT instance; gives the "rw" (uvm_reg_access_seq) test its frontdoor-vs-backdoor
+  # peek/poke. The generator emits reg_model.add_hdl_path(...) for it.
+  backdoor_root: tb_top.dut_inst
+  # C5 — a runnable CSR test per kind (run via +UVM_TESTNAME):
+  #   rvtimer_csr_hw_reset_test / _bit_bash_test / _rw_test
+  csr_tests: [hw_reset, bit_bash, rw]
+
+analysis:
+  coverage: [host]
+  scoreboards:
+    - {name: reg_sb, source: host}   # data-path golden-model check on the register bus
+
+# V1 — config-driven functional coverage: which register is accessed, read vs write,
+# and the cross (was every register both read and written?).
+coverage_models:
+  - agent: host
+    goal: 90
+    coverpoints:
+      - field: addr
+        bins:
+          - {name: ctrl,        value: 0}
+          - {name: cfg,         value: 2}
+          - {name: mtimecmp,    value: 4}
+          - {name: intr_enable, value: 6}
+          - {name: intr_state,  value: 8}
+      - field: wr
+        bins:
+          - {name: rd, value: 0}
+          - {name: wr, value: 1}
+    crosses:
+      - {name: reg_x_dir, fields: [addr, wr]}

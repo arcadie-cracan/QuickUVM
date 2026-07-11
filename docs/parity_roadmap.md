@@ -786,6 +786,22 @@ generators. Needed for CDC and most real SoC blocks.
 Per-simulator makefiles, a testlist/regression runner, seed management, and a
 coverage-merge flow (coverage closure needs all of these).
 **Accept:** `make regress` runs N tests × M seeds and merges coverage.
+- **Pair with Xcelium-in-CI.** The empirical assessment (below) found a latent
+  generator bug — the explicit `analysis.coverage:` path emitted `<agent>_cov
+  <agent>_cov;` (member == type), which verible accepts but Xcelium rejects at
+  elaboration — that verible-only CI missed. A minimal Xcelium smoke in CI (or an
+  example that exercises each opt-in path) would have caught it.
+
+### Empirical validation — `rvtimer` reproduce-and-compare
+[`maturity_assessment_rv_timer.md`](maturity_assessment_rv_timer.md) upgrades the
+on-paper [`comparison_opentitan.md`](comparison_opentitan.md) to a **built,
+Xcelium-green** `rv_timer`-equivalent bench ([`examples/rvtimer/`](../examples/rvtimer/),
+4 tests 0/0/0). Verdict: **generation parity is strong and proven** (~873 lines of DV
+generated, ~42 hand-written); the honest gaps are reuse/VIP + closure infra. Net-new
+action items it surfaced, beyond R1/V2:
+- **CSR-test register exclusions** — a `csr_excl`-equivalent config knob so a
+  hardware-set RO register (e.g. an interrupt-status reg) opts out of
+  `uvm_reg_access_seq` without a manual `NO_REG_ACCESS_TEST` resource in the RAL.
 
 ## Out of scope / low ROI (revisit only on demand)
 
