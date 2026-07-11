@@ -24,6 +24,36 @@ jobs:
       - name: pytest
         run: pytest -q
 
+  # ── Byte-identity: every committed example regenerates to itself ──────────
+  # The shipped examples/<x>/gen/ trees must reproduce byte-for-byte from their
+  # <x>.yaml — the "output changes only when a feature is used" discipline. The
+  # python job's pytest (test_example_byte_identity.py) covers this in-process;
+  # this job is the end-to-end suspenders: it regenerates EVERY committed example
+  # in place via the real CLI and fails on any drift (modified OR new files).
+  example-byte-identity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -e .
+      - name: Regenerate every committed example in place
+        run: |
+          set -euo pipefail
+          for ex in $(git ls-files 'examples/**/gen/**' | sed 's#/gen/.*##' | sort -u); do
+            name=$(basename "$ex")
+            quick-uvm generate -c "$ex/$name.yaml" -o "$ex/gen" --no-backup
+          done
+      - name: Assert no drift from committed gen/
+        run: |
+          if [ -n "$(git status --porcelain -- examples)" ]; then
+            echo "::error::Committed examples drifted from generator output — regenerate and commit:"
+            git status --porcelain -- examples
+            git diff -- examples | head -300
+            exit 1
+          fi
+
   # ── Generated SystemVerilog: must be Verible-lint-clean and formatted ─────
   # Hard gate on the *product*: every release ships UVM that passes a standard
   # public linter. See docs/style_systemverilog.md.
