@@ -175,9 +175,18 @@ register_model:
   backdoor_root: top.dut_inst.regs_inst
   reg_test_door: backdoor              # frontdoor (default) | backdoor
   frontdoor: reg_frontdoor             # generate+install a custom uvm_reg_frontdoor (body = pragma)
+
+# Optional — K2 whitebox probes: OBSERVE-only taps of INTERNAL DUT signals (never
+# driven). `path` is relative to the DUT instance; a generated probe interface + a
+# passive probe monitor let you assert/cover buried state (FSM, FIFO level, ...).
+probes:
+  - {name: fifo_lvl,  path: u_core.u_fifo.fill_level, width: 4, coverage: true}
+  - {name: fsm_state, path: u_core.state_q, enum: {IDLE: 0, RUN: 1, DONE: 2}, width: 2, coverage: true}
+  - {name: dsp_acc,   path: u_dsp.acc, real: true}   # SVA-checkable; not covergroup-legal
 ```
 
-See [`examples/simple_reg/`](examples/simple_reg/) for a working example.
+See [`examples/simple_reg/`](examples/simple_reg/) (RAL) and [`examples/wbx/`](examples/wbx/)
+(whitebox probes) for working examples.
 
 ---
 
