@@ -42,16 +42,20 @@ EXAMPLE_CONFIG = (
 )
 
 
-def _agent(name, **kw):
+def _agent(name, pfx="", **kw):
+    # `pfx` prefixes the port names so a SECOND agent gets DISTINCT ports (the flat
+    # tb_top binds every agent port to one DUT port, so names must be unique across
+    # agents). The first agent keeps `dout`/`din`/`rst_n` (referenced by the coverage
+    # fixtures below).
     return AgentConfig(
         name=name,
         interface=f"{name}_if",
         sequence_item=f"{name}_trans",
         ports={
-            "outputs": [PortConfig(name="dout", width=16, randomize=False)],
+            "outputs": [PortConfig(name=f"{pfx}dout", width=16, randomize=False)],
             "inputs": [
-                PortConfig(name="din", width=8),
-                PortConfig(name="rst_n", width=1),
+                PortConfig(name=f"{pfx}din", width=8),
+                PortConfig(name=f"{pfx}rst_n", width=1),
             ],
         },
         **kw,
@@ -73,13 +77,13 @@ def _cfg(**over):
 CONFIGS = {
     "example": ProjectConfig.from_yaml(EXAMPLE_CONFIG),
     "two_agents_two_tests": _cfg(
-        agents=[_agent("a0"), _agent("a1", seq_item_style="field_macros")],
+        agents=[_agent("a0"), _agent("a1", pfx="a1_", seq_item_style="field_macros")],
         tests=[TConf(name="test1"), TConf(name="test2", num_items=5)],
     ),
     "no_reset": _cfg(dut=DutConfig(name="nr", reset="")),
     "field_macros": _cfg(agents=[_agent("fm", seq_item_style="field_macros")]),
     "with_analysis": _cfg(
-        agents=[_agent("a0"), _agent("a1")],
+        agents=[_agent("a0"), _agent("a1", pfx="a1_")],
         analysis=AnalysisConfig(
             coverage=["a0", "a1"],
             scoreboards=[ScoreboardSpec(name="sbd", source="a0")],
@@ -101,7 +105,7 @@ CONFIGS = {
     # generated .c file; cover it here too (history of {%- marker-gluing defects).
     "dpi_c": _cfg(reference_model=ReferenceModelConfig(language="c")),
     "dpi_c_two_agents": _cfg(
-        agents=[_agent("a0"), _agent("a1")],
+        agents=[_agent("a0"), _agent("a1", pfx="a1_")],
         reference_model=ReferenceModelConfig(language="c"),
     ),
     # S1 — a transaction with a var-length payload field + transaction constraints
@@ -260,7 +264,7 @@ CONFIGS = {
     ),
     # F2 — packaged layout exercises the per-package pragma markers (custom imports
     # in each package, sequences_additional in agent/env, *_extra_files in the .f's).
-    "packaged": _cfg(agents=[_agent("a0"), _agent("a1")], layout="packaged"),
+    "packaged": _cfg(agents=[_agent("a0"), _agent("a1", pfx="a1_")], layout="packaged"),
 }
 
 

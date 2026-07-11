@@ -11,18 +11,18 @@
 {% set primary = agents[0] %}
 module {{ dut.name }}{{ primary.param_decl }} (
 {% if dut.combinational %}
-{% for kind, port in primary.all_ports %}
+{% for kind, port in dut_ports_all %}
   {{ 'output logic ' if kind == 'output' else 'input  ' }}{{ port.sv_span }}{{ port.name }}{{ "," if not loop.last else "" }}
 {% endfor %}
   );
 {% else %}
-{% for port in primary.output_ports %}
+{% for port in dut_ports_out %}
   output logic {{ port.sv_span }}{{ port.name }},
 {% endfor %}
-{% for port in primary.input_ports %}
+{% for port in dut_ports_in %}
   input  {{ port.sv_span }}{{ port.name }},
 {% endfor %}
-  input               {{ dut.clock }}{% if dut.reset %},
+  input               {{ dut.clock }}{% if dut_stub_reset %},
   input               {{ dut.reset }}{% endif %});
 {% endif %}
 
@@ -30,29 +30,29 @@ module {{ dut.name }}{{ primary.param_decl }} (
 {% if dut.combinational %}
   // Combinational stub — replace with your real combinational DUT.
   always_comb begin
-{% for port in primary.output_ports %}
+{% for port in dut_ports_out %}
     {{ port.name }} = '0;
 {% endfor %}
   end
 {% else %}
-{% for port in primary.output_ports %}
+{% for port in dut_ports_out %}
   logic {{ port.sv_span }}r_{{ port.name }};
 {% endfor %}
 
-{% for port in primary.output_ports %}
+{% for port in dut_ports_out %}
   assign {{ port.name }} = r_{{ port.name }};
 {% endfor %}
 
   always_ff @(posedge {{ dut.clock }}{% if dut.reset %}{% if dut.reset_active_low %}, negedge {{ dut.reset }}{% else %}, posedge {{ dut.reset }}{% endif %}{% endif %}) begin
 {% if dut.reset %}
     if ({% if dut.reset_active_low %}!{% endif %}{{ dut.reset }}) begin
-{% for port in primary.output_ports %}
+{% for port in dut_ports_out %}
       r_{{ port.name }} <= '0;
 {% endfor %}
     end else begin
-{% for port in primary.output_ports %}
+{% for port in dut_ports_out %}
 {% set ns = namespace(matched=false) %}
-{% for inp in primary.input_ports %}
+{% for inp in dut_ports_in %}
 {% if inp.name == port.name or 'in' in inp.name %}
 {% if not ns.matched %}
       r_{{ port.name }} <= {{ inp.name }};

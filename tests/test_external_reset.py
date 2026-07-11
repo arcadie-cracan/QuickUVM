@@ -21,13 +21,14 @@ from quick_uvm.models import (
 
 
 def _ag(name="bus"):
+    # ports prefixed by agent name so a multi-agent bench has DISTINCT DUT ports.
     return AgentConfig(
         name=name,
         interface=f"{name}_if",
         sequence_item=f"{name}_seq_item",
         ports={
-            "inputs": [PortConfig(name="addr", width=8)],
-            "outputs": [PortConfig(name="data", width=8)],
+            "inputs": [PortConfig(name=f"{name}_addr", width=8)],
+            "outputs": [PortConfig(name=f"{name}_data", width=8)],
         },
     )
 

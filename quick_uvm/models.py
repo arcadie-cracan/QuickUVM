@@ -2660,6 +2660,35 @@ class ProjectConfig(BaseModel):
                 raise ValueError(
                     f"agent '{a.name}': reset_port_active_low requires reset_port."
                 )
+        # A FLAT bench binds EVERY agent's ports to ONE DUT instance, so two agents
+        # sharing a port name would double-bind that DUT port (illegal SV). Per-instance
+        # (C3 `instances`) and per-leaf (`subenvs`) benches give each a separate DUT and
+        # are exempt (and a subenv top has no agents of its own).
+        if not self.subenvs and not self.instance_views:
+            owner: dict[str, str] = {}
+            for a in self.agents:
+                for _, p in a.all_ports:
+                    if p.name in owner and owner[p.name] != a.name:
+                        raise ValueError(
+                            f"agents '{owner[p.name]}' and '{a.name}' both have a port "
+                            f"'{p.name}' — the flat tb_top binds every agent port to "
+                            f"one DUT port, so port names must be unique across agents "
+                            f"(give them distinct names, or hand-wire the "
+                            f"dut_connections pragma region)."
+                        )
+                    owner[p.name] = a.name
+            # The DUT stub + tb_top thread only the PRIMARY (first) agent's parameters
+            # (the module header uses agents[0]'s `#(...)`), so a NON-primary agent's
+            # parameters — e.g. a `width_param` port — would reference an undeclared
+            # parameter. A parameterized multi-agent flat bench is unmodeled here.
+            for a in self.agents[1:]:
+                if a.parameters:
+                    raise ValueError(
+                        f"agent '{a.name}': only the FIRST agent of a flat bench may "
+                        f"be parameterized (the DUT stub + tb_top thread just primary "
+                        f"agent's parameters) — reorder it first, or use `instances` / "
+                        f"`subenvs`."
+                    )
         # Which agents actually get a <agent>_cover instance in the env: the
         # listed agents when an analysis block is present, else just the primary.
         # A coverage model on any other agent would compile but never be sampled.

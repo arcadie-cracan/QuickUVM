@@ -10,21 +10,32 @@
 
 module fifo (
   output logic full,
+  output logic [7:0] rd_data,
+  output logic empty,
   input  wr_en,
   input  [7:0] wr_data,
+  input  rd_en,
   input               clk,
   input               rst_n);
 
   // pragma quickuvm custom dut_logic begin
   logic r_full;
+  logic [7:0] r_rd_data;
+  logic r_empty;
 
   assign full = r_full;
+  assign rd_data = r_rd_data;
+  assign empty = r_empty;
 
   always_ff @(posedge clk, negedge rst_n) begin
     if (!rst_n) begin
       r_full <= '0;
+      r_rd_data <= '0;
+      r_empty <= '0;
     end else begin
       r_full <= r_full;
+      r_rd_data <= r_rd_data;
+      r_empty <= r_empty;
     end
   end
   // pragma quickuvm custom dut_logic end
