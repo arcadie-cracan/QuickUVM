@@ -333,7 +333,7 @@ class Generator:
                 "agent_driven_reset": adr,
             }
             specs.append(
-                FileSpec("agent_sequence.svh.j2", f"{agent.name}_seq.svh", ctx)
+                FileSpec("agent_sequence.svh.j2", f"{agent.default_seq_name}.svh", ctx)
             )
             # S2 — the per-agent sequence library (one class per declared sequence)
             for seq in agent.sequences:

@@ -679,6 +679,14 @@ class AgentConfig(BaseModel):
     reset_port_active_low: bool | None = None
 
     @property
+    def default_seq_name(self) -> str:
+        """Class name / file stem of the generated default per-agent sequence
+        (`<agent>_seq`). Centralized here so the duplicate-name collision check, the
+        vseq step valid-set, the auto-vseq wiring, the generator FileSpec, and the
+        sequence + test templates all derive it from one place."""
+        return f"{self.name}_seq"
+
+    @property
     def param_decl(self) -> str:
         """The `#(...)` formal parameter declaration, e.g. ` #(parameter int W = 8)`;
         empty when the agent has no parameters (byte-identical)."""
@@ -842,7 +850,7 @@ class AgentConfig(BaseModel):
                     f"agent '{self.name}': duplicate sequence name '{s.name}'."
                 )
             seen.add(s.name)
-            if s.name == f"{self.name}_seq":
+            if s.name == self.default_seq_name:
                 raise ValueError(
                     f"agent '{self.name}': sequence '{s.name}' collides with the "
                     f"generated default sequence — choose another name."
@@ -2828,7 +2836,9 @@ class ProjectConfig(BaseModel):
                         f"vsequence '{vs.name}': step targets passive agent "
                         f"'{step.agent}' — no sequencer is built for it."
                     )
-                valid_seqs = {s.name for s in ag_obj.sequences} | {f"{ag_obj.name}_seq"}
+                valid_seqs = {s.name for s in ag_obj.sequences} | {
+                    ag_obj.default_seq_name
+                }
                 if step.sequence not in valid_seqs:
                     raise ValueError(
                         f"vsequence '{vs.name}': step sequence '{step.sequence}' is "
@@ -2984,7 +2994,7 @@ class ProjectConfig(BaseModel):
                 name=name,
                 mode=self.auto_vseq_mode,
                 body=[
-                    VseqStep(agent=a.name, sequence=f"{a.name}_seq")
+                    VseqStep(agent=a.name, sequence=a.default_seq_name)
                     for a in self.active_agents
                 ],
             )
