@@ -573,6 +573,23 @@ parameter propagation, cross-block scoreboards, same-block reuse, nested subsyst
 parameterized/reused nested subsystems, cross-level connections/scoreboards, and
 cross-level into a reused subtree.
 
+### Reactive / responder (device) agent — INVESTIGATED, not scheduled
+A per-agent **reactive** mode: the driver responds to DUT-initiated transfers (a
+device/slave/target) instead of proactively initiating. Surfaced as an architectural
+gap by the OpenTitan comparison + [`maturity_assessment_rv_timer.md`](maturity_assessment_rv_timer.md)
+(the rv_timer interrupt was modeled as a *monitored* signal, not a true device agent).
+A Phase-1 industry investigation is written up in
+[`reactive_agent_investigation.md`](reactive_agent_investigation.md): the recommended
+architecture (Verilab SNUG-2016 / OpenTitan `dv_reactive_agent`) keeps the **driver
+unchanged** and puts reactivity in a second monitor analysis port + a sequencer
+`uvm_tlm_analysis_fifo` + a *forever* responder sequence — so QuickUVM's exact driver
+loop and `input_ports`/`output_ports` split already fit. Proposed minimal schema
+(`mode: initiator|responder` + `request_valid`), the response-logic pragma seam, the
+byte-identity story, and the effort/deferrals are in that doc. **Not yet scheduled** —
+implement when a device-class block (UART/SPI-device/memory-slave) forces it.
+**Accept (when built):** a `mode: responder` agent responds to a DUT master and is
+checked by a two-stream (A2) scoreboard on a real bench.
+
 ## Priority tier 3 — checking generality
 
 ### A2 — Scoreboard / comparison-strategy library — DONE
