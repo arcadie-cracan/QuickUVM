@@ -227,14 +227,14 @@ def test_vseq_passive_agent_rejected():
         interface="wr_if",
         sequence_item="wr_seq_item",
         active=False,
-        ports={"inputs": [PortConfig(name="d", width=8)], "outputs": []},
+        ports={"inputs": [PortConfig(name="wr_d", width=8)], "outputs": []},
         sequences=[SequenceConfig(name="wr_rand", kind="random")],
     )
     rd = AgentConfig(
         name="rd",
         interface="rd_if",
         sequence_item="rd_seq_item",
-        ports={"inputs": [PortConfig(name="d", width=8)], "outputs": []},
+        ports={"inputs": [PortConfig(name="rd_d", width=8)], "outputs": []},
     )
     with pytest.raises(Exception, match="passive agent"):
         _cfg(

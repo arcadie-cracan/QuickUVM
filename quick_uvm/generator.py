@@ -227,6 +227,22 @@ class Generator:
         base_ctx["sb_multi"] = sb_multi
         base_ctx["sb_prefix"] = cfg.dut.name
 
+        # DUT stub — ALL agents' ports deduped by name (first occurrence wins), so the
+        # <dut>.sv placeholder is complete for a multi-agent bench (not just agents[0]);
+        # and a separate reset port only when dut.reset isn't already an agent port (so
+        # an agent-driven reset isn't listed twice). Single-agent → the primary's ports.
+        _seen: set[str] = set()
+        _dut_ports: list[tuple[str, object]] = []
+        for _ag in cfg.agents:
+            for _kind, _p in _ag.all_ports:
+                if _p.name not in _seen:
+                    _seen.add(_p.name)
+                    _dut_ports.append((_kind, _p))
+        base_ctx["dut_ports_all"] = _dut_ports
+        base_ctx["dut_ports_out"] = [p for k, p in _dut_ports if k == "output"]
+        base_ctx["dut_ports_in"] = [p for k, p in _dut_ports if k == "input"]
+        base_ctx["dut_stub_reset"] = bool(cfg.dut.reset) and cfg.dut.reset not in _seen
+
         specs: list[FileSpec] = []
 
         # ---- global files ------------------------------------------------

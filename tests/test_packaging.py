@@ -25,8 +25,8 @@ def _ag(n):
         interface=f"{n}_if",
         sequence_item=f"{n}_seq_item",
         ports={
-            "outputs": [PortConfig(name="dout", width=8, randomize=False)],
-            "inputs": [PortConfig(name="din", width=8)],
+            "outputs": [PortConfig(name=f"{n}_dout", width=8, randomize=False)],
+            "inputs": [PortConfig(name=f"{n}_din", width=8)],
         },
     )
 

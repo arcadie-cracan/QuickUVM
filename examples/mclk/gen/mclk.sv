@@ -10,20 +10,26 @@
 
 module mclk (
   output logic [7:0] sys_dout,
+  output logic [7:0] io_dout,
   input  [7:0] sys_din,
+  input  [7:0] io_din,
   input               clk,
   input               rst_sys_n);
 
   // pragma quickuvm custom dut_logic begin
   logic [7:0] r_sys_dout;
+  logic [7:0] r_io_dout;
 
   assign sys_dout = r_sys_dout;
+  assign io_dout = r_io_dout;
 
   always_ff @(posedge clk, negedge rst_sys_n) begin
     if (!rst_sys_n) begin
       r_sys_dout <= '0;
+      r_io_dout <= '0;
     end else begin
       r_sys_dout <= sys_din;
+      r_io_dout <= sys_din;
     end
   end
   // pragma quickuvm custom dut_logic end

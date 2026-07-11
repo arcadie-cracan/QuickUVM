@@ -26,13 +26,16 @@ from quick_uvm.models import (
 
 
 def _ag(n):
+    # ports are prefixed by the agent name so distinct agents (a two-stream source +
+    # monitor) get DISTINCT DUT ports — the flat tb_top binds every agent port to one
+    # DUT port, so port names must be unique across agents.
     return AgentConfig(
         name=n,
         interface=f"{n}_if",
         sequence_item=f"{n}_trans",
         ports={
-            "outputs": [PortConfig(name="dout", width=8, randomize=False)],
-            "inputs": [PortConfig(name="din", width=8)],
+            "outputs": [PortConfig(name=f"{n}_dout", width=8, randomize=False)],
+            "inputs": [PortConfig(name=f"{n}_din", width=8)],
         },
     )
 
@@ -276,7 +279,7 @@ def test_multi_scoreboards_carry_their_own_match(tmp_path):
                 source="req",
                 monitor="rb",
                 match="out_of_order",
-                match_key="dout",
+                match_key="rb_dout",
             ),
         )
     ).generate_all(tmp_path)
@@ -356,12 +359,12 @@ def test_emit_when_multibit_port_rejected():
 
 
 def test_out_of_order_comparator_pools_by_key(tmp_path):
-    Generator(_two_stream(match="out_of_order", match_key="dout")).generate_all(
+    Generator(_two_stream(match="out_of_order", match_key="rsp_dout")).generate_all(
         tmp_path
     )
     c = (tmp_path / "d_comparator.svh").read_text()
     assert "rsp_trans exp_pool [longint][$];" in c
-    assert "exp_pool[longint'(e.dout)].push_back(e);" in c  # pool by key
+    assert "exp_pool[longint'(e.rsp_dout)].push_back(e);" in c  # pool by key
     assert "exp_pool[k].pop_front();" in c  # match pops the key's front
     assert "SB_NOEXP" in c  # actual with no pending expected → error
     assert "fork" in c  # concurrent pool / match processes
@@ -443,17 +446,17 @@ def test_match_key_composite_rejected():
 
 def test_max_latency_emits_window_check(tmp_path):
     Generator(
-        _two_stream(match="out_of_order", match_key="dout", max_latency=8)
+        _two_stream(match="out_of_order", match_key="rsp_dout", max_latency=8)
     ).generate_all(tmp_path)
     c = (tmp_path / "d_comparator.svh").read_text()
     assert "realtime exp_age [longint][$];" in c
     assert "localparam realtime MaxLatency =" in c  # cycles × clock period
-    assert "exp_age[longint'(e.dout)].push_back($realtime);" in c
+    assert "exp_age[longint'(e.rsp_dout)].push_back($realtime);" in c
     assert "SB_LATENCY" in c
 
 
 def test_no_max_latency_no_window_check(tmp_path):
-    Generator(_two_stream(match="out_of_order", match_key="dout")).generate_all(
+    Generator(_two_stream(match="out_of_order", match_key="rsp_dout")).generate_all(
         tmp_path
     )
     c = (tmp_path / "d_comparator.svh").read_text()

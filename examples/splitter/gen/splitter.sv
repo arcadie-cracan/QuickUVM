@@ -9,6 +9,12 @@
 //----------------------------------------------------------------------
 
 module splitter (
+  output logic a_valid,
+  output logic [3:0] a_id,
+  output logic [7:0] a_sum,
+  output logic b_valid,
+  output logic [3:0] b_id,
+  output logic b_flag,
   input  req_valid,
   input  [3:0] req_id,
   input  [7:0] req_data,
@@ -16,11 +22,35 @@ module splitter (
   input               rst_n);
 
   // pragma quickuvm custom dut_logic begin
+  logic r_a_valid;
+  logic [3:0] r_a_id;
+  logic [7:0] r_a_sum;
+  logic r_b_valid;
+  logic [3:0] r_b_id;
+  logic r_b_flag;
 
+  assign a_valid = r_a_valid;
+  assign a_id = r_a_id;
+  assign a_sum = r_a_sum;
+  assign b_valid = r_b_valid;
+  assign b_id = r_b_id;
+  assign b_flag = r_b_flag;
 
   always_ff @(posedge clk, negedge rst_n) begin
     if (!rst_n) begin
+      r_a_valid <= '0;
+      r_a_id <= '0;
+      r_a_sum <= '0;
+      r_b_valid <= '0;
+      r_b_id <= '0;
+      r_b_flag <= '0;
     end else begin
+      r_a_valid <= r_a_valid;
+      r_a_id <= r_a_id;
+      r_a_sum <= r_a_sum;
+      r_b_valid <= r_b_valid;
+      r_b_id <= r_b_id;
+      r_b_flag <= r_b_flag;
     end
   end
   // pragma quickuvm custom dut_logic end

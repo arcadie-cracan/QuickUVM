@@ -10,20 +10,26 @@
 
 module mxclk (
   output logic [7:0] fast_dout,
+  output logic [7:0] slow_dout,
   input  [7:0] fast_din,
+  input  [7:0] slow_din,
   input               clk,
   input               rst_f);
 
   // pragma quickuvm custom dut_logic begin
   logic [7:0] r_fast_dout;
+  logic [7:0] r_slow_dout;
 
   assign fast_dout = r_fast_dout;
+  assign slow_dout = r_slow_dout;
 
   always_ff @(posedge clk, negedge rst_f) begin
     if (!rst_f) begin
       r_fast_dout <= '0;
+      r_slow_dout <= '0;
     end else begin
       r_fast_dout <= fast_din;
+      r_slow_dout <= fast_din;
     end
   end
   // pragma quickuvm custom dut_logic end

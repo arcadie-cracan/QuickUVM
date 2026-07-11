@@ -10,21 +10,27 @@
 
 module dualreg (
   output logic [7:0] adout,
+  output logic [7:0] bdout,
   input  a_rst_n,
   input  [7:0] adin,
-  input               clk,
-  input               a_rst_n);
+  input  b_rst,
+  input  [7:0] bdin,
+  input               clk);
 
   // pragma quickuvm custom dut_logic begin
   logic [7:0] r_adout;
+  logic [7:0] r_bdout;
 
   assign adout = r_adout;
+  assign bdout = r_bdout;
 
   always_ff @(posedge clk, negedge a_rst_n) begin
     if (!a_rst_n) begin
       r_adout <= '0;
+      r_bdout <= '0;
     end else begin
       r_adout <= adin;
+      r_bdout <= adin;
     end
   end
   // pragma quickuvm custom dut_logic end

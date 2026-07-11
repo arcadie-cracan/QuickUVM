@@ -9,6 +9,9 @@
 //----------------------------------------------------------------------
 
 module reqrsp (
+  output logic rsp_valid,
+  output logic [3:0] rsp_id,
+  output logic [7:0] rsp_data,
   input  req_valid,
   input  [3:0] req_id,
   input  [7:0] req_data,
@@ -16,11 +19,23 @@ module reqrsp (
   input               rst_n);
 
   // pragma quickuvm custom dut_logic begin
+  logic r_rsp_valid;
+  logic [3:0] r_rsp_id;
+  logic [7:0] r_rsp_data;
 
+  assign rsp_valid = r_rsp_valid;
+  assign rsp_id = r_rsp_id;
+  assign rsp_data = r_rsp_data;
 
   always_ff @(posedge clk, negedge rst_n) begin
     if (!rst_n) begin
+      r_rsp_valid <= '0;
+      r_rsp_id <= '0;
+      r_rsp_data <= '0;
     end else begin
+      r_rsp_valid <= r_rsp_valid;
+      r_rsp_id <= r_rsp_id;
+      r_rsp_data <= r_rsp_data;
     end
   end
   // pragma quickuvm custom dut_logic end
