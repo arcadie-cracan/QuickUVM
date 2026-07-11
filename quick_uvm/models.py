@@ -1795,6 +1795,123 @@ def _leaf_agent(cfg: ProjectConfig, token: str) -> AgentConfig | None:
     return next((a for a in cfg.agents if (a.original_name or a.name) == token), None)
 
 
+class ProbeConfig(BaseModel):
+    """K2 — a whitebox PROBE: passively OBSERVE (never drive) one INTERNAL DUT signal
+    via a hierarchical reference (XMR), republished on a generated probe interface for
+    coverage / checkers / debug.
+
+    `path` is a plain hierarchical string RELATIVE to the DUT instance (e.g.
+    `u_core.u_fifo.fill_level`); the generator prepends the DUT instance path, so an
+    external tool that knows each net's full path can emit probes directly. The observed
+    FIELD reuses the PortConfig type machinery (width / enum / type / packed_dims /
+    struct), so an observed enum FSM gets SYMBOLIC coverage; `real` observes a real
+    signal (SVA-checkable, but NOT covergroup-legal — SV forbids a real coverpoint).
+
+    Observe-only by construction: the generated code READS the signal (a continuous
+    `assign` into an interface INPUT) — it never `force`/`deposit`s. Driving internals
+    stays out of scope (it would make the TB, not the DUT, the source of truth)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    path: str
+    width: int = 1
+    enum: dict[str, int] | None = None
+    type: str | None = None
+    packed_dims: list[int] | None = None
+    struct: list[StructMember] | None = None
+    real: bool = False
+    # M1 — the clock domain this probe is sampled on (None ⇒ the sole/first clock).
+    clock: str | None = None
+    coverage: bool = False
+
+    @model_validator(mode="after")
+    def _check_probe(self) -> ProbeConfig:
+        _check_sv_identifier(self.name, f"probe '{self.name}'")
+        if not self.path.strip():
+            raise ValueError(
+                f"probe '{self.name}': `path` must be a non-empty hierarchical "
+                f"reference relative to the DUT instance (e.g. u_core.u_fifo.level)."
+            )
+        if self.real:
+            if (
+                self.enum
+                or self.type
+                or self.packed_dims
+                or self.struct
+                or self.width != 1
+            ):
+                raise ValueError(
+                    f"probe '{self.name}': `real` is exclusive with "
+                    f"width/enum/type/packed_dims/struct."
+                )
+            if self.coverage:
+                raise ValueError(
+                    f"probe '{self.name}': a `real` probe cannot set `coverage` — SV "
+                    f"forbids a covergroup coverpoint on a real. Assert on it in the "
+                    f"probe_sva pragma, or quantize it to an integral field."
+                )
+        else:
+            # Reuse PortConfig's type validation (mutual-exclusion + enum values) —
+            # constructing it runs those validators, so type mistakes fail closed here.
+            _ = self._as_port
+        return self
+
+    @property
+    def _as_port(self) -> PortConfig:
+        return PortConfig(
+            name=self.name,
+            width=self.width,
+            enum=self.enum,
+            type=self.type,
+            packed_dims=self.packed_dims,
+            struct=self.struct,
+        )
+
+    @property
+    def is_typed(self) -> bool:
+        return (not self.real) and self._as_port.is_typed
+
+    @property
+    def if_type(self) -> str:
+        """The probe INTERFACE field type. The interface carries RAW bits (like an agent
+        interface), so integral probes are `logic [W-1:0]` and the monitor $casts to the
+        typed field for symbolic coverage. `real` and an external `type` are declared
+        directly (both are assign-compatible with the tapped RTL net)."""
+        if self.real:
+            return "real"
+        if self.type:
+            return self.type
+        w = self._as_port.bit_width
+        return f"logic [{w - 1}:0]" if w > 1 else "logic"
+
+    @property
+    def sv_type(self) -> str:
+        """The MONITOR typed field (for a symbolic coverpoint / $cast target): the
+        enum/struct typedef, the external type, a packed-array logic, or `logic`."""
+        if self.real:
+            return "real"
+        if self.enum:
+            return f"{self.name}_e"
+        if self.type:
+            return self.type
+        if self.struct:
+            return f"{self.name}_t"
+        if self.packed_dims:
+            return "logic " + "".join(f"[{d - 1}:0]" for d in self.packed_dims)
+        return f"logic [{self.width - 1}:0]" if self.width > 1 else "logic"
+
+    @property
+    def needs_cast(self) -> bool:
+        """The raw interface bits need a `$cast` into the typed monitor field (enum /
+        struct / packed). A plain-width or external-type field is sampled directly."""
+        return bool(self.enum or self.struct or self.packed_dims)
+
+    @property
+    def struct_typedefs(self) -> list[dict]:
+        return [] if self.real else self._as_port.struct_typedefs
+
+
 class ProjectConfig(BaseModel):
     project: ProjectMeta
     dut: DutConfig
@@ -1812,6 +1929,9 @@ class ProjectConfig(BaseModel):
     analysis: AnalysisConfig | None = None
     register_model: RegisterModelConfig | None = None
     coverage_models: list[CoverageModel] = Field(default_factory=list)
+    # K2 — whitebox probes: OBSERVE-only internal DUT signals (opt-in, byte-identical
+    # when empty). See ProbeConfig.
+    probes: list[ProbeConfig] = Field(default_factory=list)
     virtual_sequences: list[VseqConfig] = Field(default_factory=list)  # C2
     reference_model: ReferenceModelConfig = Field(default_factory=ReferenceModelConfig)
     # Sane default for multi-agent subsystems: with >=2 active agents and no explicit
@@ -1931,6 +2051,29 @@ class ProjectConfig(BaseModel):
                 )
             ]
         return []
+
+    @property
+    def has_probes(self) -> bool:
+        return bool(self.probes)
+
+    @property
+    def probe_clock(self) -> str:
+        """The clock net the probe interface samples on. MVP = one probe clocking
+        domain: every probe's `clock` (if set) must agree; unset ⇒ the sole/first clock
+        (validated in validate_probes)."""
+        named = {p.clock for p in self.probes if p.clock}
+        if named:
+            return next(iter(named))
+        return self.effective_clocks[0].name
+
+    @property
+    def probe_reset(self) -> ResetConfig | None:
+        """The reset bound to the probe clock (for `disable iff` in probe SVA), or None
+        (combinational / agent-driven reset)."""
+        return next(
+            (r for r in self.effective_resets if r.clock == self.probe_clock),
+            self.effective_resets[0] if self.effective_resets else None,
+        )
 
     def agent_clock(self, agent: AgentConfig) -> ClockConfig:
         """The clock domain an agent runs on — its named `clock`, or the sole/first."""
@@ -2394,6 +2537,59 @@ class ProjectConfig(BaseModel):
         # be a legal, non-reserved SystemVerilog identifier.
         _check_sv_identifier(v, "top_name")
         return v
+
+    @model_validator(mode="after")
+    def validate_probes(self) -> ProjectConfig:
+        if not self.probes:
+            return self
+        # H1 deferred: probe paths are relative to ONE DUT instance; a subsystem bench
+        # has per-leaf DUTs — probe the leaf block's own config instead.
+        if self.subenvs:
+            raise ValueError(
+                "whitebox `probes` are not yet supported on a subsystem bench "
+                "(`subenvs`): paths are relative to one DUT instance, but a composed "
+                "bench has per-leaf DUTs. Probe the leaf block's own config instead."
+            )
+        if any(a.instances for a in self.agents):
+            raise ValueError(
+                "whitebox `probes` are not yet supported with multi-instantiated "
+                "agents (`instances`): there is no single DUT instance to resolve "
+                "paths against."
+            )
+        pnames = [p.name for p in self.probes]
+        if len(pnames) != len(set(pnames)):
+            raise ValueError("probe names must be unique.")
+        # No collision with agent port / interface / clock / reset nets — they share the
+        # tb_top + config-DB namespace with the probe interface and its signals.
+        reserved: dict[str, str] = {}
+        for a in self.agents:
+            reserved.setdefault(a.interface, f"agent '{a.name}' interface")
+            for _kind, port in a.all_ports:
+                reserved.setdefault(port.name, f"agent '{a.name}' port")
+        for c in self.effective_clocks:
+            reserved.setdefault(c.name, "a clock net")
+        for r in self.effective_resets:
+            reserved.setdefault(r.name, "a reset net")
+        clock_names = {c.name for c in self.effective_clocks}
+        for p in self.probes:
+            if p.name in reserved:
+                raise ValueError(
+                    f"probe '{p.name}' collides with {reserved[p.name]} — probe names "
+                    f"share the tb_top / config-DB namespace; rename the probe."
+                )
+            if p.clock is not None and p.clock not in clock_names:
+                raise ValueError(
+                    f"probe '{p.name}': clock '{p.clock}' is not a declared clock "
+                    f"(have {sorted(clock_names)})."
+                )
+        set_clocks = {p.clock for p in self.probes if p.clock}
+        if len(set_clocks) > 1:
+            raise ValueError(
+                f"probes span multiple clock domains {sorted(set_clocks)} — the probe "
+                f"interface has ONE clocking block for now; put them on a single "
+                f"`clock:` (multi-domain probes are a follow-up)."
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_agents(self) -> ProjectConfig:

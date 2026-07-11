@@ -7,6 +7,9 @@
 +incdir+..
 clkgen.sv
 {{ dut.name }}.sv
+{% if probes %}
+{{ dut.name }}_probe_if.sv
+{% endif %}
 {{ top_name }}.sv
 {% if reference_model.language == 'c' %}
 {{ dut.name }}_reference_model.c

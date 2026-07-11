@@ -77,6 +77,9 @@ package {{ dut.name }}_tb_pkg;
   `include "{{ dut.name }}_virtual_sequencer.svh"
   `include "{{ dut.name }}_base_vseq.svh"
 {% endif %}
+{% if cover_probes %}
+  `include "{{ dut.name }}_probe_monitor.svh"
+{% endif %}
   `include "{{ dut.name }}_env.svh"
 
   // Sequences (per agent)

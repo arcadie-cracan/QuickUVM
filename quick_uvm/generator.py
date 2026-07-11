@@ -171,6 +171,11 @@ class Generator:
             "reference_model": cfg.reference_model,
             "layout": cfg.layout,
             "top_name": cfg.top_name,
+            # K2 — whitebox probes (empty => no probe wiring emitted, byte-identical).
+            "probes": cfg.probes,
+            "probe_clock": cfg.probe_clock,
+            "probe_reset": cfg.probe_reset,
+            "cover_probes": any(p.coverage for p in cfg.probes),
             # C3 — multi-instantiation: per-instance views for the env/top/scoreboard.
             # Empty for a bench without `instances` → the legacy per-agent wiring
             # runs unchanged (byte-identical).
@@ -431,6 +436,16 @@ class Generator:
                     "sb_reference_model.svh.j2", f"{dut}_reference_model.svh", base_ctx
                 )
             )
+
+        # ---- K2 whitebox probes (opt-in; nothing emitted when empty) ------
+        if cfg.probes:
+            specs.append(FileSpec("probe_if.sv.j2", f"{dut}_probe_if.sv", base_ctx))
+            if any(p.coverage for p in cfg.probes):
+                specs.append(
+                    FileSpec(
+                        "probe_monitor.svh.j2", f"{dut}_probe_monitor.svh", base_ctx
+                    )
+                )
 
         # ---- top + package(s) + filelists --------------------------------
         if subenv:
