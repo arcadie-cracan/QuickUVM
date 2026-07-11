@@ -40,7 +40,7 @@ EXPECTED_FILES = [
     "simple_reg_env.svh",
     "reg_seq.svh",
     "simple_reg_base_test.svh",
-    "test_rand.svh",
+    "rand_test.svh",
     "simple_reg_reference_model.svh",
     "tb_top.sv",
     "simple_reg_tb_pkg.sv",
@@ -85,7 +85,7 @@ def test_tb_pkg_includes_all_components(generated_tb):
     assert "reg_seq_item.svh" in content
     assert "reg_agent.svh" in content
     assert "simple_reg_env.svh" in content
-    assert "test_rand.svh" in content
+    assert "rand_test.svh" in content
 
 
 def test_env_declares_all_agents(generated_tb):

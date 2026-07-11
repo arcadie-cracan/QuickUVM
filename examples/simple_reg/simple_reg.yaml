@@ -33,5 +33,5 @@ agents:
           randomize: true
 
 tests:
-  - name: test_rand
+  - name: rand_test
     num_items: 100
