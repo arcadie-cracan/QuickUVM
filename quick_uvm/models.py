@@ -245,6 +245,17 @@ class PortConfig(BaseModel):
     # fixed state value, so a transaction-level `constraints:` entry referencing it
     # solves against that held value. (No equivalent on the var-length `fields:` yet.)
     rand_mode: bool = True
+    # --- Bidirectional (`inouts`) ports only ---------------------------------------
+    # OPEN-DRAIN (I2C SDA/SCL, SMBus, any wired-AND bus): a driver may only pull the
+    # line LOW or RELEASE it — it can never drive high. So driving a 1 IS releasing.
+    # The generated interface emits
+    #     assign <n> = (<n>_oe && !<n>_o) ? 1'b0 : 1'bz;
+    # Requires width 1 (per-bit open-drain on a vector is a generate loop and nobody
+    # has needed it); a plain tri-state bus (open_drain: false) drives both levels.
+    open_drain: bool = False
+    # A bus with no driver floats to X, which silently poisons every sample. A pullup
+    # is what makes an open-drain line read as 1 when everyone has released it.
+    pullup: bool = False
     # S1 — typed fields + constraints (all opt-in; a plain field is byte-identical).
     # BLACK BOX by default: declare named values and QuickUVM generates the
     # testbench's OWN enum (<name>_e) for this field, which self-constrains to its
@@ -484,7 +495,10 @@ class FieldConfig(BaseModel):
         return "[$]" if self.kind == "queue" else "[]"
 
 
-PortMap = dict[Literal["inputs", "outputs"], list[PortConfig]]
+# "inouts" = an `inout` wire both the DUT and the TB drive (I2C SDA/SCL, any
+# tri-state bus). It is a third category because neither TB-driven nor DUT-driven
+# can express a net that must be RELEASED.
+PortMap = dict[Literal["inputs", "outputs", "inouts"], list[PortConfig]]
 
 
 def _default_ports() -> PortMap:
@@ -778,12 +792,51 @@ class AgentConfig(BaseModel):
         return self.ports.get("outputs", [])
 
     @property
-    def all_ports(self) -> list[tuple[Literal["input", "output"], PortConfig]]:
-        result: list[tuple[Literal["input", "output"], PortConfig]] = []
+    def inout_ports(self) -> list[PortConfig]:
+        """BIDIRECTIONAL (`inout`) ports — a shared wire both the DUT and the TB drive.
+
+        Neither `inputs` (TB-driven) nor `outputs` (DUT-driven) can express this: the
+        net is a `wire`, resolved from both sides, and the TB must be able to RELEASE
+        it. Each inout port yields three transaction fields: `<n>_o` (what we drive),
+        `<n>_oe` (whether we drive at all) and `<n>` (the RESOLVED value sampled back).
+        """
+        return self.ports.get("inouts", [])
+
+    @property
+    def has_inouts(self) -> bool:
+        return bool(self.inout_ports)
+
+    @property
+    def coverable_fields(self) -> dict[str, PortConfig]:
+        """Every transaction field a coverpoint/scoreboard may name.
+
+        That is the declared ports PLUS the fields an `inouts` port synthesises:
+        `<n>_o` (what we drive) and `<n>_oe` (whether we drive). `<n>_oe` is usually
+        the most interesting thing on a shared bus (who is holding the line?), so
+        refusing to cover it would make the feature half-useless.
+        """
+        out: dict[str, PortConfig] = {p.name: p for _, p in self.all_ports}
+        for p in self.inout_ports:
+            out[f"{p.name}_o"] = p.model_copy(update={"name": f"{p.name}_o"})
+            out[f"{p.name}_oe"] = p.model_copy(
+                update={"name": f"{p.name}_oe", "width": 1, "width_param": None}
+            )
+        return out
+
+    @property
+    def all_ports(self) -> list[tuple[Literal["input", "output", "inout"], PortConfig]]:
+        """Every DUT port this agent touches, tagged with its DIRECTION AT THE DUT.
+
+        `inout` ports come last and are emitted as `inout wire` on the DUT — a shared
+        net, not a driven one.
+        """
+        result: list[tuple[Literal["input", "output", "inout"], PortConfig]] = []
         for p in self.output_ports:
             result.append(("output", p))
         for p in self.input_ports:
             result.append(("input", p))
+        for p in self.inout_ports:
+            result.append(("inout", p))
         return result
 
     @field_validator("name", "interface", "sequence_item")
@@ -792,6 +845,42 @@ class AgentConfig(BaseModel):
         if " " in v:
             raise ValueError(f"Name '{v}' must not contain spaces.")
         return v
+
+    @model_validator(mode="after")
+    def _check_inouts(self) -> AgentConfig:
+        """Fail-closed rules for bidirectional (`inout`) ports."""
+        uni = {p.name for p in self.input_ports} | {p.name for p in self.output_ports}
+        for p in self.inout_ports:
+            if p.name in uni:
+                raise ValueError(
+                    f"agent '{self.name}': inout port '{p.name}' also appears in "
+                    f"inputs/outputs. A net is driven from one side or both — pick one."
+                )
+            if p.open_drain and p.bit_width != 1:
+                raise ValueError(
+                    f"agent '{self.name}': open_drain port '{p.name}' must be 1 bit "
+                    f"(got {p.bit_width}). Per-bit open-drain on a vector needs a "
+                    f"generate loop; declare one port per line."
+                )
+            if p.open_drain and not p.pullup:
+                raise ValueError(
+                    f"agent '{self.name}': open-drain port '{p.name}' needs "
+                    f"`pullup: true`. An open-drain line is never driven high; with "
+                    f"no pullup it floats to X the moment everyone releases, and every "
+                    f"sample downstream is poisoned. Not a style preference."
+                )
+        # The transaction adds `<n>_o` / `<n>_oe` per inout port; they must not
+        # collide with a declared port of the same name.
+        for p in self.inout_ports:
+            for suffix in ("_o", "_oe"):
+                gen = f"{p.name}{suffix}"
+                if gen in uni or any(b.name == gen for b in self.inout_ports):
+                    raise ValueError(
+                        f"agent '{self.name}': inout port '{p.name}' generates the "
+                        f"transaction field '{gen}', which collides with a declared "
+                        f"port. Rename one."
+                    )
+        return self
 
     @model_validator(mode="after")
     def _check_responder(self) -> AgentConfig:
@@ -3138,7 +3227,7 @@ class ProjectConfig(BaseModel):
                     f"model but is not wired for coverage ({hint})."
                 )
             agent = next(a for a in self.agents if a.name == cm.agent)
-            port_by_name = {p.name: p for _, p in agent.all_ports}
+            port_by_name = agent.coverable_fields
             for cp in cm.coverpoints:
                 if cp.field not in port_by_name:
                     raise ValueError(

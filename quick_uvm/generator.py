@@ -263,6 +263,7 @@ class Generator:
         base_ctx["dut_ports_all"] = _dut_ports
         base_ctx["dut_ports_out"] = [p for k, p in _dut_ports if k == "output"]
         base_ctx["dut_ports_in"] = [p for k, p in _dut_ports if k == "input"]
+        base_ctx["dut_ports_inout"] = [p for k, p in _dut_ports if k == "inout"]
         base_ctx["dut_stub_reset"] = bool(cfg.dut.reset) and cfg.dut.reset not in _seen
 
         specs: list[FileSpec] = []

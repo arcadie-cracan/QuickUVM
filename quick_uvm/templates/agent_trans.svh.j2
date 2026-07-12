@@ -57,6 +57,14 @@ class {{ agent.sequence_item }}{{ agent.param_decl }} extends uvm_sequence_item;
     `uvm_field_int({{ port.name }}, UVM_ALL_ON)
 {% endif %}
 {% endfor %}
+{% for port in agent.inout_ports %}
+    // inout: what we drive, whether we drive, and the RESOLVED line we sample back.
+    // <n>_o / <n>_oe are what WE drove -> NOCOMPARE (comparing them proves nothing).
+    // <n> is the RESOLVED line -> it IS the observable, so it must be compared.
+    `uvm_field_int({{ port.name }}_o,  UVM_ALL_ON | UVM_NOCOMPARE)
+    `uvm_field_int({{ port.name }}_oe, UVM_ALL_ON | UVM_NOCOMPARE)
+    `uvm_field_int({{ port.name }},    UVM_ALL_ON)
+{% endfor %}
 {% for fld in agent.fields %}
 {% if fld.kind == 'queue' %}
     `uvm_field_queue_int({{ fld.name }}, UVM_ALL_ON{% if not fld.randomize %} | UVM_NOCOMPARE{% endif %})
@@ -94,6 +102,18 @@ class {{ agent.sequence_item }}{{ agent.param_decl }} extends uvm_sequence_item;
 {% endif %}
 {% endif %}
 {% endfor %}
+{% if agent.has_inouts %}
+
+  // Bidirectional (inout) fields. Three per line, because a shared wire needs all three:
+  //   <n>_o   what we drive        (rand)
+  //   <n>_oe  whether we drive     (rand) — releasing is a first-class choice
+  //   <n>     the RESOLVED line    (sampled; never what we drove)
+{% for port in agent.inout_ports %}
+  rand bit {{ port.sv_span }}{{ port.name }}_o;
+  rand bit {{ port.name }}_oe;
+       logic {{ port.sv_span }}{{ port.name }};
+{% endfor %}
+{% endif %}
 {% if agent.fields %}
 
   // Transaction-only fields (var-length; (de)serialized in driver/monitor pragma)
@@ -150,6 +170,13 @@ class {{ agent.sequence_item }}{{ agent.param_decl }} extends uvm_sequence_item;
 {% for port in agent.input_ports %}
     {{ port.name }} = tr.{{ port.name }};
 {% endfor %}
+{% for port in agent.inout_ports %}
+    // All THREE, or a predictor that copies the item loses the drive state and models a
+    // bus nobody was driving.
+    {{ port.name }}    = tr.{{ port.name }};
+    {{ port.name }}_o  = tr.{{ port.name }}_o;
+    {{ port.name }}_oe = tr.{{ port.name }}_oe;
+{% endfor %}
 {% for fld in agent.fields %}
     {{ fld.name }} = tr.{{ fld.name }};
 {% endfor %}
@@ -164,6 +191,13 @@ class {{ agent.sequence_item }}{{ agent.param_decl }} extends uvm_sequence_item;
     if(!$cast(tr, rhs)) `uvm_fatal("{{ agent.sequence_item }}", "ILLEGAL do_compare() cast")
     eq  = super.do_compare(rhs, comparer);
 {% for port in agent.output_ports %}
+    eq &= ({{ port.name }} === tr.{{ port.name }});
+{% endfor %}
+{% for port in agent.inout_ports %}
+    // The RESOLVED shared line is an OBSERVABLE — compare it. (Not <n>_o/<n>_oe: those
+    // are what WE drove, so comparing them would only prove we drove what we drove.)
+    // `===` matters here: a floating tri-state resolves to X, and `==` would silently
+    // return X rather than a mismatch.
     eq &= ({{ port.name }} === tr.{{ port.name }});
 {% endfor %}
 
@@ -197,6 +231,11 @@ class {{ agent.sequence_item }}{{ agent.param_decl }} extends uvm_sequence_item;
 
   virtual function string output2string();
     string s = "";
+{% for port in agent.inout_ports %}
+    // Print the shared line AND who was holding it — a bare `sda=x` with no drive state
+    // is unreadable, and a tri-state mismatch is exactly when you need to know.
+    s = {s, $sformatf("{{ port.name }}=%b(o=%b,oe=%b)  ", {{ port.name }}, {{ port.name }}_o, {{ port.name }}_oe)};
+{% endfor %}
 {% for port in agent.output_ports %}
 {% if port.enum %}
     s = {s, $sformatf("{{ port.name }}=%s  ", {{ port.name }}.name())};

@@ -149,6 +149,9 @@ module {{ top_name }};
 {% for port in agent.input_ports %}
     .{{ port.name }}({{ agent.interface }}_inst.{{ port.name }}),
 {% endfor %}
+{% for port in agent.inout_ports %}
+    .{{ port.name }}({{ agent.interface }}_inst.{{ port.name }}),
+{% endfor %}
 {% endfor %}
     .{{ dut.clock }}(clk){% if dut.reset and not reset_port.found %},
     .{{ dut.reset }}({{ agents[0].interface }}_inst.{{ dut.reset }}){% endif %}

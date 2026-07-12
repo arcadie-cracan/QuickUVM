@@ -113,6 +113,15 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
     t.{{ port.name }} = vif.cb1.{{ port.name }};
 {% endif %}
 {% endfor %}
+{% for port in agent.inout_ports %}
+    // A shared line and BOTH drivers' states must be observed at the SAME INSTANT, or a
+    // model of the bus resolution compares the line from one cycle against a driver's
+    // state from the next. So these are sampled HERE, with the DUT outputs — not with the
+    // TB-driven inputs, even though <n>_o/<n>_oe are things we drive.
+    t.{{ port.name }}    = vif.cb1.{{ port.name }};   // the RESOLVED line
+    t.{{ port.name }}_o  = vif.{{ port.name }}_o;     // what we were driving at that instant
+    t.{{ port.name }}_oe = vif.{{ port.name }}_oe;
+{% endfor %}
 {% endif %}
 
     // pragma quickuvm custom sample_dut_additional begin

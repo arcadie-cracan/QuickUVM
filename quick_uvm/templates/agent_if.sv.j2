@@ -19,6 +19,30 @@ interface {{ agent.interface }}{{ agent.param_decl }} (input clk{% if agent_rese
 {% for port in agent.input_ports %}
   logic {{ port.sv_span }}{{ port.name }};
 {% endfor %}
+{% if agent.has_inouts %}
+
+  // Bidirectional (`inout`) nets. The DUT and the TB share the wire, so the TB must be
+  // able to RELEASE it — hence a `wire` (resolved from both sides) plus a drive value and
+  // an output enable that the driver owns.
+{% for port in agent.inout_ports %}
+  wire  {{ port.sv_span }}{{ port.name }};        // the RESOLVED line (what everyone sees)
+  logic {{ port.sv_span }}{{ port.name }}_o;      // what WE drive
+  logic {{ port.name }}_oe;     // ...and whether we drive at all
+{% if port.open_drain %}
+  // OPEN-DRAIN: a driver may only pull LOW or release — it can never drive high. So
+  // driving a 1 IS releasing, which is why the wired-AND works.
+  assign {{ port.name }} = ({{ port.name }}_oe && !{{ port.name }}_o) ? 1'b0 : 1'bz;
+{% else %}
+  assign {{ port.name }} = {{ port.name }}_oe ? {{ port.name }}_o : {{ port.bit_width }}'bz;
+{% endif %}
+{% if port.pullup %}
+  // The pullup. NOT a `pullup` primitive: primitives are illegal inside an interface
+  // (*E,INFINS). A weak continuous assign is the legal equivalent — it loses to any real
+  // driver and wins only when everyone has released, which is exactly a pullup.
+  assign (weak1, weak0) {{ port.name }} = '1;   // nobody driving => reads 1, not X
+{% endif %}
+{% endfor %}
+{% endif %}
 
   // pragma quickuvm custom signals_additional begin
   // pragma quickuvm custom signals_additional end
@@ -34,6 +58,13 @@ interface {{ agent.interface }}{{ agent.param_decl }} (input clk{% if agent_rese
 {% else %}
     input  {{ port.name }};
 {% endif %}
+{% endfor %}
+{% for port in agent.inout_ports %}
+    // We drive <n>_o/<n>_oe and sample the RESOLVED <n> — never the value we drove.
+{% if agent.active %}
+    output {{ port.name }}_o, {{ port.name }}_oe;
+{% endif %}
+    input  {{ port.name }};
 {% endfor %}
 
     // pragma quickuvm custom clocking_block_additional begin

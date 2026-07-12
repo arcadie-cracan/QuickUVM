@@ -573,16 +573,42 @@ parameter propagation, cross-block scoreboards, same-block reuse, nested subsyst
 parameterized/reused nested subsystems, cross-level connections/scoreboards, and
 cross-level into a reused subtree.
 
-### P0 — `inout` / tri-state / open-drain ports — NOT SUPPORTED  *(new; blocks I2C)*
-`PortConfig.direction` is `Literal["input", "output"]`; there is **zero** tristate, pull-up
-or open-drain support anywhere in the generator or templates. QuickUVM therefore cannot even
-*declare* an I2C interface (SDA/SCL are `inout`, open-drain, weak-pullup-resolved), nor any
-bidirectional bus. Surfaced by the target survey
-([`reproduce_campaign.md`](reproduce_campaign.md) §1.2) — found by `grep`, so **prove it with
-a small bidirectional example, not with a 15-day I2C bench**. SPI's 4-wire modes are not
-bidirectional, so the reactive-agent work is unaffected.
-**Accept:** a bidirectional open-drain bus (two drivers + a pullup) generates, and a
-multi-master collision is caught.
+### P0 — `inout` / tri-state / open-drain ports — DONE
+A third port category, `inouts:`, completing the SV direction keywords
+(`inputs`/`outputs`/`inouts` <-> `input`/`output`/`inout`). Neither TB-driven nor DUT-driven
+can express a net that must be **released**. Unblocks I2C and every bidirectional bus.
+**Accept:** a bidirectional open-drain bus generates, and a multi-driver collision is caught. ✅
+
+**Status — landed:**
+- `ports.inouts: [{name, width, open_drain, pullup}]`. Each yields THREE transaction fields:
+  `<n>_o` (what we drive), `<n>_oe` (whether we drive — **releasing is a first-class choice**)
+  and `<n>` (the **RESOLVED** line, sampled; never what we drove).
+- The interface emits a `wire` (resolved from both sides) + the drive/enable pair.
+  `open_drain` means **driving a 1 IS releasing** — the line can never be driven high, which
+  is exactly why two devices may pull low at the same instant with no contention.
+- **`pullup` is mandatory with `open_drain`, and that is not a style preference:** with no
+  pullup the line floats to **X** the moment everyone releases and every downstream sample is
+  silently poisoned. Emitted as `assign (weak1, weak0) <n> = '1;` — **not** a `pullup`
+  primitive, which is *illegal inside an interface* (`*E,INFINS`).
+- The driver **releases every shared line at time 0** (a TB that drives before it has anything
+  to say fights the DUT and both ends read X). The monitor samples the line **with the DUT
+  outputs** — a shared line and both drivers' states must be observed at the SAME INSTANT.
+- Coverage may target the synthesised fields: `<n>_oe` ("who is holding the line?") is usually
+  the most interesting coverpoint on a shared bus.
+- Fail-closed: `open_drain` requires `pullup` and width 1; a name may not appear in both
+  `inouts` and `inputs`/`outputs`; a declared port may not collide with a synthesised
+  `<n>_o`/`<n>_oe`. Opt-in + byte-identical (the 31-example gate is unmoved).
+- Validated on `examples/odbus/`: **62/62 on Xcelium**, self-checking against the **wired-AND
+  contract**, and mutation-proved both ways a tri-state contract can break — a DUT that drives
+  HIGH instead of releasing (contention) fails 10/62, and removing the pullup (floating X)
+  fails 37/62.
+- **The first version silently passed both mutations**: it predicted the resolved line and then
+  never compared it. Four bugs were hiding behind that green bar — `do_compare` skipped the
+  line, the DUT was never connected in `tb_top` (TB and DUT on *different wires*), the line was
+  sampled a cycle out of step with the DUT's drive state, and `do_copy` dropped the drive state
+  so the predictor modelled a bus nobody was driving. Each now has a regression test.
+- *Deferred:* per-bit open-drain on a vector (declare one port per line); `inouts` on a
+  responder agent; bus-keeper / weak-pull-down variants.
 
 ### Sampled clock — a clock the TB observes but does not generate  *(new)*
 Every QuickUVM clock comes from a generated `clkgen`. But a device agent's clock is a **DUT

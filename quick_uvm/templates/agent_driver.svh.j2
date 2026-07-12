@@ -72,6 +72,12 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
   virtual task initialize (); // @0 - Does not use clocking block
     `uvm_info("INIT", "{{ agent.name }}_driver: Initialize (time @0)", UVM_HIGH)
 {% if agent.active %}
+{% for port in agent.inout_ports %}
+    // Release every shared line at time 0 — a TB that drives an inout before it has
+    // anything to say fights the DUT and both ends read X.
+    vif.{{ port.name }}_oe <= 1'b0;
+    vif.{{ port.name }}_o  <= '0;
+{% endfor %}
 {% for port in agent.input_ports %}
 {% if port.name in agent.idle %}
     vif.{{ port.name }} <= {{ port.bit_width }}'d{{ agent.idle[port.name] }};
@@ -103,6 +109,10 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
 {% if agent.active %}
 {% for port in agent.input_ports %}
     vif.cb1.{{ port.name }} <= tr.{{ port.name }};
+{% endfor %}
+{% for port in agent.inout_ports %}
+    vif.cb1.{{ port.name }}_o  <= tr.{{ port.name }}_o;
+    vif.cb1.{{ port.name }}_oe <= tr.{{ port.name }}_oe;   // 0 = release the line
 {% endfor %}
 {% endif %}
     @vif.cb1;
