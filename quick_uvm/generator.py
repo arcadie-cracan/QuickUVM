@@ -176,6 +176,13 @@ class Generator:
             "probe_clock": cfg.probe_clock,
             "probe_reset": cfg.probe_reset,
             "cover_probes": any(p.coverage for p in cfg.probes),
+            # Reactive agent — a responder's sequencer is owned by its forever responder
+            # sequence, so the test must not start stimulus there. `responder_only`
+            # means no TB-initiated stimulus at all (the DUT initiates).
+            "responder_only": cfg.responder_only,
+            "primary_agent": cfg.primary_agent if cfg.agents else None,
+            "stimulus_primary": cfg.stimulus_primary,
+            "any_responder": any(a.is_responder for a in cfg.agents),
             # R1 — regression runner (None => no Makefile emitted, byte-identical).
             # NB `tests: []` is a legal config, so never index regress_jobs blindly —
             # that would crash EVERY bench with no tests, including ones not using R1.
@@ -350,6 +357,16 @@ class Generator:
             specs.append(
                 FileSpec("agent_sequence.svh.j2", f"{agent.default_seq_name}.svh", ctx)
             )
+            # Reactive agent — the forever responder sequence. Opt-in: an initiator
+            # emits nothing (byte-identical).
+            if agent.is_responder:
+                specs.append(
+                    FileSpec(
+                        "agent_responder_seq.svh.j2",
+                        f"{agent.responder_seq_name}.svh",
+                        ctx,
+                    )
+                )
             # S2 — the per-agent sequence library (one class per declared sequence)
             for seq in agent.sequences:
                 seq_ctx = {

@@ -595,7 +595,53 @@ driver timing as a function of a *register value* rather than a clock edge. Harv
 `uart` target, which was otherwise rejected as uninformative (its driver is initiator-only, so
 it would merely re-prove `rv_timer` with a serial wire bolted on).
 
-### Reactive / responder (device) agent — INVESTIGATED, not scheduled
+### Reactive / responder (device) agent — DONE
+A per-agent **reactive** mode: the DUT initiates and the agent RESPONDS (an SPI device, a
+memory slave, an I2C target). Closes the architectural gap the OpenTitan comparison flagged,
+and is the long pole for campaign target **T2** (`spi_host`).
+**Accept:** a `mode: responder` agent answers a DUT master and is checked by a scoreboard. ✅
+
+**Status — landed (both responder shapes):**
+- `mode: initiator | responder` + `request_valid` (the sampled port meaning "the DUT issued a
+  request"). **The port-direction model is UNCHANGED**: a device agent still drives the DUT's
+  `inputs` (now the RESPONSE) and samples its `outputs` (now the REQUEST). Only the timing and
+  the sequence change.
+- **Two shapes, and the difference is forced by the protocol, not taste** (verified at source in
+  `uvma_obi_memory_drv.sv`, not from a survey summary):
+  - **blocking** (no `idle:`) — `get_next_item` → drive → `item_done`. **The driver loop is the
+    initiator's, unchanged** — the load-bearing simplification. (OpenTitan `dv_reactive_agent`,
+    Verilab SNUG-2016.)
+  - **continuous** (`idle:` present) — the DUT samples our outputs *every* cycle, so parking
+    would leave them stale or X. Non-blocking `try_next_item` + `drive_idle()` on a miss.
+    (OpenHW OBI, CESNET OFM.) **The knob is the DATA**: declaring `idle:` *is* the statement
+    "this bus has a per-cycle obligation", and it carries exactly what that shape needs. A
+    separate `driver_style:` flag would be redundant — and redundant knobs are how a schema
+    starts lying.
+- Reactivity lives in the **monitor** (a second `request_ap`, published on `request_valid`), the
+  **sequencer** (a `uvm_tlm_analysis_fifo` giving a blocking rendezvous), and a **forever
+  responder sequence** — *not* in the driver. The monitor already decodes the protocol for
+  passive mode, so nothing is duplicated. The tempting driver-decodes design is rejected.
+- **The agent OWNS its responder** and forks it in `run_phase`. It is *not* a phase
+  `default_sequence`: a phase sequence is **killed when its phase ends**, and a responder raises
+  no objection (it is a service, not stimulus), so it would be torn down instantly unless
+  something else kept that phase alive. Verilab's guidance assumes the test's vseq keeps
+  `main_phase` alive (true in OpenTitan's cip_lib, **false** for a generated bench using
+  `run_phase`). *This was gotten wrong first, and the bench "passed" while the device never
+  answered — which is why the example ships a scoreboard rather than trusting a green bar.*
+- **The test never starts stimulus on a responder's sequencer** — its forever sequence owns it,
+  and a second sequence there would clobber the computed responses with random items (again:
+  observed, not theorised).
+- The per-cycle protocol thread (a combinational grant, say) is a **pragma seam**
+  (`driver_threads`), never generated — *no generator emits protocol logic*.
+- Fail-closed: responder ⇒ `active: true` (reactive is **not** passive), ≥1 driven port,
+  `request_valid` names a 1-bit SAMPLED port; `idle` keys name DRIVEN ports and fit their widths;
+  both rejected on an initiator. Opt-in + byte-identical (the 30-example gate is unmoved).
+- Validated on `examples/memslave/` (a DUT that fetches from a TB-side memory): **34/34 on
+  Xcelium**, self-checking, mutation-proved (breaking the DUT's capture fails 31/34).
+- *Deferred:* the `mem_model` primitive; pipelined/out-of-order responders (`put_response` /
+  `set_id_info`); an `if_mode`-style host/device driver swap within one agent.
+
+### Reactive / responder agent — the original investigation
 A per-agent **reactive** mode: the driver responds to DUT-initiated transfers (a
 device/slave/target) instead of proactively initiating. Surfaced as an architectural
 gap by the OpenTitan comparison + [`maturity_assessment_rv_timer.md`](maturity_assessment_rv_timer.md)
