@@ -1,0 +1,9 @@
+//
+// File created by:  xrun
+// Do not modify this file
+//
+-compile
+-f
+/tmp/vend.f
+-l
+/tmp/vend.log

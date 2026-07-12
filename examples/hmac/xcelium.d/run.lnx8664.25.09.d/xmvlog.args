@@ -1,0 +1,37 @@
+//
+// File created by:  xrun
+// Do not modify this file
+//
+-XLMODE
+./xcelium.d/run.lnx8664.25.09.d
+-RUNMODE
+-sv
+-INCDIR
+rtl/vendor
+rtl/vendor/prim_util_pkg.sv
+rtl/vendor/prim_mubi_pkg.sv
+rtl/vendor/prim_count_pkg.sv
+rtl/vendor/prim_sha2_pkg.sv
+rtl/vendor/prim_count.sv
+rtl/vendor/prim_fifo_sync_cnt.sv
+rtl/vendor/prim_fifo_sync.sv
+rtl/vendor/prim_packer.sv
+rtl/vendor/prim_sha2_pad.sv
+rtl/vendor/prim_sha2.sv
+rtl/vendor/prim_sha2_32.sv
+rtl/vendor/hmac_reg_pkg.sv
+rtl/vendor/hmac_core.sv
+rtl/hmac_reg_generic.sv
+rtl/hmac.sv
+sim/tb_smoke.sv
+-CDSLIB
+./xcelium.d/run.lnx8664.25.09.d/cdsrun.lib
+-HDLVAR
+./xcelium.d/run.lnx8664.25.09.d/hdlrun.var
+-no_analogsolver
+-MESSAGES
+-UPDATE
+-XLLIBSTORE
+./xcelium.d/run.lnx8664.25.09.d/xllibs
+-ALLOWUNBOUND
+-hastop
