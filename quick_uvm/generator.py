@@ -360,7 +360,7 @@ class Generator:
             )
             # Reactive agent — the forever responder sequence. Opt-in: an initiator
             # emits nothing (byte-identical).
-            if agent.is_responder:
+            if agent.has_request_fifo:
                 specs.append(
                     FileSpec(
                         "agent_responder_seq.svh.j2",

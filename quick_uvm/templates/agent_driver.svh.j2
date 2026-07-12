@@ -31,7 +31,71 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
     super.new(name, parent);
   endfunction
 
-{% if agent.is_continuous %}
+{% if agent.is_zero_slack %}
+  // ZERO-SLACK responder. The DUT samples our response on the very NEXT edge after it
+  // raises its request, so there is no time for the sequencer round-trip the `on_request`
+  // shape uses (monitor -> analysis fifo -> responder sequence -> sequencer -> driver:
+  // at least one cycle, and no pragma runs inside it). The response is therefore computed
+  // HERE, from the RAW request signals.
+  //
+  // Raw, not `cb1`: a clocking-block output is scheduled with an output skew, i.e. AFTER
+  // the edge the DUT samples on — it would always be exactly one cycle late. `#1step`
+  // puts us after the DUT's non-blocking updates for this edge, so we read the request it
+  // just issued and answer it before the next one.
+  task run_phase(uvm_phase phase);
+    initialize();
+    forever begin
+      @(posedge vif.{{ dut.clock }});
+      #1step;   // after the DUT's NBA updates: its request for THIS edge is now visible
+{% if agent_reset %}
+      if (vif.{{ agent_reset.name }} !== 1'b{% if agent_reset.active_low %}1{% else %}0{% endif %}) drive_idle();
+      else if (vif.{{ agent.request_valid }}) begin
+{% else %}
+      if (vif.{{ agent.request_valid }}) begin
+{% endif %}
+        m_responses++;
+        // THE USER SEAM. Compute the response from the RAW request signals and drive it
+        // with BLOCKING assignments (vif.<port> = ...). It must be on the wires before
+        // the next edge. Nothing here is generatable: no generator emits protocol logic.
+        // pragma quickuvm custom response_logic begin
+        // pragma quickuvm custom response_logic end
+        if (!driving_idle()) m_active_drives++;
+      end
+      else drive_idle();
+    end
+  endtask
+
+  // What to drive when the DUT is not asking — the `idle:` block in the config. Raw, for
+  // the same reason the response is raw.
+  virtual task drive_idle ();
+{% for port in agent.input_ports %}
+{% if port.name in agent.idle %}
+    vif.{{ port.name }} = {{ port.bit_width }}'d{{ agent.idle[port.name] }};
+{% endif %}
+{% endfor %}
+{% for port in agent.inout_ports %}
+{% if port.name ~ '_o' in agent.idle %}
+    vif.{{ port.name }}_o  = {{ port.bit_width }}'d{{ agent.idle[port.name ~ '_o'] }};
+{% endif %}
+{% if port.name ~ '_oe' in agent.idle %}
+    vif.{{ port.name }}_oe = {{ port.bit_width }}'d{{ agent.idle[port.name ~ '_oe'] }};
+{% endif %}
+{% endfor %}
+    // pragma quickuvm custom drive_idle_additional begin
+    // pragma quickuvm custom drive_idle_additional end
+  endtask
+
+  // Is the response seam still parked on idle? If it never leaves idle, it never answered.
+  virtual function bit driving_idle ();
+    return 1'b1
+{% for port in agent.input_ports %}
+{% if port.name in agent.idle %}
+      && (vif.{{ port.name }} == {{ port.bit_width }}'d{{ agent.idle[port.name] }})
+{% endif %}
+{% endfor %}
+    ;
+  endfunction
+{% elif agent.is_continuous %}
   // CONTINUOUS responder. The DUT samples our outputs EVERY cycle (a grant/ready/valid
   // obligation), so parking on a blocking get_next_item would leave them stale or X.
   // Hence: NON-BLOCKING try_next_item, drive a defined idle value on a miss, and advance
@@ -112,6 +176,16 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
 {% endif %}
 {% endfor %}
 {% endif %}
+{% if agent.is_zero_slack %}
+    // A zero-slack responder does NOT wait for reset here, and burns no clock. It must be
+    // ANSWERING from the very first cycle out of reset: the DUT issues its first request
+    // on that edge and will not wait. Waiting here means the `wait` returns as reset
+    // deasserts, by which time that edge has already fired — so the loop catches only the
+    // NEXT one and the first request is missed (the DUT records exactly one `missed`).
+    // Its run loop is live from time 0 and drives `idle` while reset is asserted, which is
+    // the same thing the initiator's hold-off achieves. (An initiator can afford the
+    // 2-cycle synchronizer settle: it chooses when to start driving. A responder cannot.)
+{% else %}
 {% if agent_reset %}
     // Reset is driven externally: hold off BEFORE advancing a clock so the parked
     // idle values are all the DUT sees during reset; wait for deassertion, then let
@@ -122,10 +196,12 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
 {% if agent_reset %}
     repeat (2) @vif.cb1;
 {% endif %}
+{% endif %}
     // pragma quickuvm custom initialize_additional begin
     // pragma quickuvm custom initialize_additional end
   endtask
 
+{% if not agent.is_zero_slack %}
   virtual task drive_item ({{ agent.sequence_item }}{{ agent.param_args }} tr);
     `uvm_info("drive_item", tr.input2string(), UVM_FULL)
 {% if agent.is_responder %}
@@ -147,8 +223,9 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
     // pragma quickuvm custom drive_item_additional begin
     // pragma quickuvm custom drive_item_additional end
   endtask
+{% endif %}
 {% if agent.is_responder %}
-{% if agent.idle %}
+{% if agent.idle and not agent.is_zero_slack %}
 
   // Did this response actually SAY anything, or is it the idle value the driver would
   // have parked on anyway? A seam left empty drives idle forever and looks alive.

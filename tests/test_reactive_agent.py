@@ -16,7 +16,8 @@ from pydantic import ValidationError
 from quick_uvm.generator import Generator
 from quick_uvm.models import ProjectConfig
 
-# A device agent: the DUT drives req/addr (we SAMPLE), we drive gnt/rdata (the RESPONSE).
+# A device agent: the DUT drives req/addr (we SAMPLE), we drive gnt/rdata (the
+# RESPONSE).
 # NB the port-direction model is unchanged — `inputs` are still what the agent drives.
 _BASE = {
     "project": {"name": "d_tb", "author": "a@b.c"},
@@ -411,3 +412,69 @@ def test_initiator_gets_no_liveness_check(tmp_path):
     assert "DEAD_RESPONDER" not in drv
     assert "m_responses" not in drv
     assert "check_phase" not in drv
+
+
+# --- F1: the response-timing contract (`respond:`) ---
+
+
+def _zero_slack():
+    a = {
+        **_BASE["agents"][0],
+        "idle": {"gnt": 0, "rdata": 0},
+        "respond": "combinational",
+    }
+    return [a]
+
+
+def test_respond_defaults_to_todays_contract(tmp_path):
+    """Opt-in: absent `respond:` must reproduce the existing shape exactly."""
+    cfg = _gen(tmp_path, agents=_continuous())
+    a = cfg.agents[0]
+    assert a.respond == "on_request"
+    assert a.is_continuous and a.has_request_fifo and not a.is_zero_slack
+
+
+def test_zero_slack_bypasses_the_sequencer_round_trip(tmp_path):
+    """The DUT gives ONE cycle. The monitor -> fifo -> sequence -> sequencer -> driver
+    chain costs at least one, so a zero-slack responder must not use it.
+
+    Mutation-proved on examples/memslave_zs: `respond: combinational` passes 34/34;
+    flip that ONE line to `on_request` and the same bench reports NO_PROGRESS with the
+    DUT completing zero transfers. The responder is alive — it grants every request —
+    it is just a cycle too late.
+    """
+    cfg = _gen(tmp_path, agents=_zero_slack())
+    a = cfg.agents[0]
+    assert a.is_zero_slack
+    assert not a.has_request_fifo, (
+        "a zero-slack responder cannot afford the fifo round-trip"
+    )
+    assert not a.is_continuous
+
+    # no responder sequence at all — the driver IS the responder
+    assert not (tmp_path / f"{a.responder_seq_name}.svh").exists()
+
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    # raw signals, not the clocking block: cb1's output skew lands AFTER the edge the
+    # DUT samples on, so a cb1 drive is always exactly one cycle late.
+    assert "@(posedge vif.clk);" in drv
+    assert "#1step;" in drv
+    assert "vif.cb1.gnt" not in drv
+    assert "seq_item_port.get_next_item" not in drv
+    # ...and it must be live from time 0, or it misses the DUT's first request
+    assert "wait (vif.rst_n" not in drv
+
+
+def test_zero_slack_monitor_samples_request_and_response_together(tmp_path):
+    """The request and the response happen in the SAME cycle, so they must land in the
+    same snapshot. The default two-phase sample (inputs now, outputs one edge later)
+    encodes the opposite assumption and pairs the grant with the wrong address."""
+    _gen(tmp_path, agents=_zero_slack())
+    assert "clocking mon_cb" in (tmp_path / "mem_if.sv").read_text()
+    assert "@vif.mon_cb;" in (tmp_path / "mem_monitor.svh").read_text()
+
+
+def test_zero_slack_still_gets_the_liveness_check(tmp_path):
+    _gen(tmp_path, agents=_zero_slack())
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    assert "DEAD_RESPONDER" in drv and "SILENT_RESPONDER" in drv

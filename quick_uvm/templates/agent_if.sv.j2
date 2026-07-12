@@ -84,7 +84,7 @@ interface {{ agent.interface }}{{ agent.param_decl }} (input clk{% if agent_rese
     // pragma quickuvm custom clocking_block_additional begin
     // pragma quickuvm custom clocking_block_additional end
   endclocking
-{% if dut.combinational %}
+{% if dut.combinational or agent.is_zero_slack %}
 
   // Monitor clocking block: sample ALL observed signals (driven inputs AND DUT
   // outputs) race-free at #1step before posedge — one consistent snapshot/cycle.

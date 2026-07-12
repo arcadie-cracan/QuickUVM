@@ -725,14 +725,51 @@ class AgentConfig(BaseModel):
     # See docs/reactive_agent_investigation.md.
     idle: dict[str, int] = Field(default_factory=dict)
 
+    # F1 — THE RESPONSE-TIMING CONTRACT. Responder-only; opt-in; default = today's
+    # shape.
+    #
+    # on_request (default): the DUT HOLDS its request until it is answered. The response
+    #       lands the cycle AFTER the request is sampled — STRUCTURALLY, because it
+    #       round-trips monitor -> analysis fifo -> responder sequence -> sequencer ->
+    # driver -> cb1. That round-trip costs at least one cycle and no pragma can run
+    # inside it. `memslave` is correct under this contract only because its FSM sits
+    #       in REQ forever, waiting.
+    # combinational: ZERO SLACK. The DUT samples our response on the very next edge, so
+    # there is no time for a sequencer round-trip. The response is therefore a pure
+    #       FUNCTION, evaluated in the driver on the RAW request signals — no clocking
+    #       block (cb1's output skew lands after the edge the DUT samples on), no
+    #       sequencer, no request fifo. It MAY depend on the current request.
+    #
+    # A serial device (SPI, full-duplex) needs a THIRD contract — prefetch, where the
+    # item
+    # is in the driver's hands before the transfer starts, because MISO bit k cannot
+    # depend
+    # on MOSI bit k. That needs a clock the TB does not generate, so it lands with the
+    # sampled clock, where a bench can actually prove it.
+    respond: Literal["on_request", "combinational"] = "on_request"
+
     @property
     def is_responder(self) -> bool:
         return self.mode == "responder"
 
     @property
+    def is_zero_slack(self) -> bool:
+        """The DUT gives us ONE cycle. No sequencer round-trip is fast enough."""
+        return self.is_responder and self.respond == "combinational"
+
+    @property
+    def has_request_fifo(self) -> bool:
+        """Whether the response path runs through the monitor -> fifo -> sequence chain.
+
+        A zero-slack responder cannot: that chain costs a cycle it does not have. Its
+        driver reads the raw request signals itself.
+        """
+        return self.is_responder and self.respond == "on_request"
+
+    @property
     def is_continuous(self) -> bool:
         """The CONTINUOUS responder shape — non-blocking driver + drive-idle-on-miss."""
-        return self.is_responder and bool(self.idle)
+        return self.is_responder and bool(self.idle) and self.respond == "on_request"
 
     @property
     def responder_seq_name(self) -> str:
