@@ -838,10 +838,18 @@ generators. Needed for CDC and most real SoC blocks.
   agent-driven resets combined with M1 multi-clock domains; a dedicated assert-then-
   deassert reset sequence-kind body.
 
-### R1 — Regression & coverage infrastructure — DONE  *(the last v1.0 item)*
+### R1 — Regression & coverage infrastructure — DONE  *(the last item on the v1.0 list)*
 Per-simulator makefiles, a testlist/regression runner, seed management, and a
 coverage-merge flow (coverage closure needs all of these).
 **Accept:** `make regress` runs N tests × M seeds and merges coverage. ✅
+
+> **This does NOT declare v1.0.** The roadmap list is complete; the *release* is not.
+> The version stays **0.9.x** pending intensive testing — and R1 exists precisely to make
+> that testing possible (tests × seeds, merged coverage, reproducible failures). Every
+> feature here has been validated on its own example; what has *not* happened yet is
+> sustained multi-seed regression across the whole example suite, which is exactly the
+> kind of exercise that turns up single-seed artefacts. Bump to v1.0 only on the far side
+> of that.
 
 **Status — landed (opt-in `regress:` → a generated Makefile):**
 - `regress: {simulator, filelist, seeds, coverage}` → QuickUVM emits a
