@@ -67,8 +67,8 @@ Legend: ✓ full · ◑ partial / skeleton-only · ✗ none · — n/a
 | Multi-clock / multi-reset / CDC | ✓ (M1: multi-clock/reset, mixed-unit; CDC *checking* out of scope) | ✓ | ◑ | ◑ | ✗ |
 | Mixed-language (VHDL) / BFM / emulation | ✗ (SV interface only) | ✓ (SV+VHDL BFMs) | ✗ | ✗ | ◑ |
 | **Infrastructure** |
-| Run infra | ◑ `.f` filelists (R1: makefiles/testlists planned) | ✓ per-sim makefiles + testlists | ✓ | ✓ | ✓ |
-| Regression runner / coverage-merge | ✗ (R1 planned) | ✓ | ◑ | ◑ | ◑ |
+| Run infra | ✓ (R1: `.f` filelists + a generated Makefile) | ✓ per-sim makefiles + testlists | ✓ | ✓ | ✓ |
+| Regression runner / coverage-merge | ✓ (R1: `make regress` = tests × seeds + `imc` merge; Xcelium) | ✓ | ◑ | ◑ | ◑ |
 | UVM version selector (1.1d / 1.2) | ✓ | ◑ | ✗ | ✗ | ✗ |
 | Ecosystem (examples, docs, support) | ◑ ~29 examples (Xcelium-validated), MIT, single-author | ✓ vendor-backed | ✓ | ◑ | ◑ |
 
@@ -102,12 +102,22 @@ Xcelium, guarded by a byte-identity gate.
   (rw / bit_bash / hw_reset / mem_walk — C5). The `uvm_reg_block` itself is consumed from an
   external tool (reggen/SystemRDL) **by design** — QuickUVM does not generate it.
 
-**Still open (roadmap):** register functional coverage (V2); regression & coverage-closure
-infrastructure — `make regress`, seed management, coverage merge (R1, the sole remaining
-v1.0 item). And, from the empirical OpenTitan comparison
-([`comparison_opentitan.md`](comparison_opentitan.md) / the maturity assessment), two
-architectural gaps: no reusable/shared VIP (a fresh agent is regenerated per bench) and no
-reactive/responder (device) agent.
+**Still open (roadmap):** register functional coverage (V2). And, from the empirical
+OpenTitan comparison ([`comparison_opentitan.md`](comparison_opentitan.md) / the maturity
+assessment), two architectural gaps: no reusable/shared VIP (a fresh agent is regenerated
+per bench) and no reactive/responder (device) agent — the latter now has a worked design
+([`reactive_agent_investigation.md`](reactive_agent_investigation.md)), not an
+implementation.
+
+**Closure infrastructure (R1) — done, with an honest edge.** `regress:` generates a
+Makefile that elaborates once and runs the derived testlist (tests + RAL + CSR) × seeds
+against the snapshot, verdicts each run from the UVM severity block (`xrun` exits **0**
+even on UVM_ERROR — the exit code is not a verdict), prints a reproduce command per
+failure, and merges + reports coverage via `imc`. It is **Xcelium-only** by choice.
+Related: verible cannot see elaboration-class defects and no free simulator closes that
+gap (Verilator is blind to it; Icarus rejects clean code), so the simulator gate is split
+into an enforced static check in CI plus a licence-needing `scripts/xrun_gate.sh` the
+maintainer runs — see `parity_roadmap.md` § R1.
 
 **Headline strength (generator-agnostic):** fail-closed pragma preservation with rolling
 backups (matches UVMF, beats uvmgen/gen_uvm); a byte-identity gate; Pydantic-validated
@@ -124,7 +134,7 @@ production single-block / subsystem benches.
 | Parameterized / reusable VIP / block→subsystem reuse | **Good** — packaged VIP (F2), parameterization + multi-instance (C3), hierarchy (H1) |
 | Multi-clock / multi-reset | **Good** — multiple domains, mixed-unit, clocked-subenv (M1) |
 | Whitebox coverage/checking of internal state | **Good** — opt-in probes (K2) |
-| Coverage-driven closure (regression + merge) | **Partial** — field coverage yes (V1); no regression runner / coverage merge (R1) |
+| Coverage-driven closure (regression + merge) | **Good** — field coverage (V1) + `make regress`: tests × seeds, merged coverage, reproducible seeds (R1, Xcelium) |
 | Register functional coverage | **Not yet** — V2 planned |
 | CDC checking / mixed-language (VHDL) / emulation | **Not supported** — out of scope |
 

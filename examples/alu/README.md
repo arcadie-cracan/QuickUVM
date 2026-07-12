@@ -50,6 +50,17 @@ cd sim && xrun -f xrun.f +UVM_TESTNAME=rand_test -coverage functional
 ```
 
 ## Run
+
+R1: this bench carries a `regress:` block, so `gen/` ships a Makefile that elaborates
+once and runs the testlist × seeds against that snapshot, then merges coverage:
+
+```bash
+make -C gen regress          # rand_test x 3 seeds -> 3/3, coverage merged across them
+```
+
+Merging is what closure needs: seed 1 alone reaches **43/88** covergroup bins; the three
+seeds **merged** reach **47/88**.
+
 ```bash
 quick-uvm generate -c alu.yaml -o gen
 cd sim && xrun -f xrun.f +UVM_TESTNAME=rand_test     # -> TEST PASSED, 1001/1001

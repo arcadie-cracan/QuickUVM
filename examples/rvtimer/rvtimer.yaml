@@ -54,7 +54,7 @@ agents:
         - {name: intr, width: 1, randomize: false}
 
 tests:
-  - {name: rand_test, num_items: 60}   # random register traffic (data-path scoreboard)
+  - {name: rand_test, num_items: 60, seeds: 5}   # random register traffic (data-path scoreboard)
 
 register_model:
   package: rvtimer_ral_pkg
@@ -93,3 +93,10 @@ coverage_models:
           - {name: wr, value: 1}
     crosses:
       - {name: reg_x_dir, fields: [addr, wr]}
+
+# R1 — regression + coverage closure. The testlist is derived: the declared tests[]
+# plus the RAL reg_test and one test per C5 csr_tests kind — 5 tests here. rand_test
+# gets 5 seeds (random register traffic); the RAL/CSR sequences are deterministic, so
+# one seed each is enough.
+regress:
+  seeds: 1

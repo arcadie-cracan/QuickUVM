@@ -37,6 +37,25 @@ consumes the RAL by name and delegates its *generation* to reggen/SystemRDL.
 
 ## Run (Xcelium)
 
+### The whole regression — R1
+
+This bench carries a `regress:` block, so `gen/` ships a Makefile. It elaborates once
+and runs the **derived** testlist (the declared `tests[]` **+** the RAL `reg_test` **+**
+one test per `csr_tests` kind) at its seeds, against that one snapshot:
+
+```bash
+make -C gen regress      # 9 runs: rand_test x5 seeds + reg_test + 3 CSR tests -> 9/9
+make -C gen regress SEEDS=10 SEED_BASE=$(date +%s)   # a fresh, wider sweep
+make -C gen run TEST=rand_test SEED=3                # one run (what a failure prints)
+```
+
+Seeds are explicit and recorded, so any failure replays verbatim. The verdict comes from
+the UVM severity block, **not** the exit code — `xrun` exits 0 even with UVM_ERRORs.
+Coverage is merged across all runs with `imc` and reported (`host_cov` closes at 100%,
+17/17).
+
+### One test at a time
+
 From `sim/` (all pass with 0 UVM_WARNING/ERROR/FATAL on Xcelium 25.09):
 
 ```
