@@ -1,0 +1,97 @@
+# T1 — OpenTitan HMAC (docs/reproduce_campaign.md).
+#
+# THE QUESTION THIS BENCH EXISTS TO ANSWER:
+#   K0's predictor seam is `predict(item) -> exp` — one transaction in, one expected
+#   transaction out. HMAC's golden model is a STATEFUL STREAM: N message-FIFO writes
+#   accumulate, a CMD.hash_process write TRIGGERS the hash, and the digest appears many
+#   cycles later across a register ARRAY (DIGEST_0..7).
+#
+#   Does the GENERATED scoreboard survive, with that streaming model confined to pragma
+#   regions (K0 EXTENDED), or must it be thrown away and hand-written (K0 BYPASSED)?
+#
+#   Note every HMAC event IS a transaction on this one register bus: message words are
+#   FIFO writes, the trigger is a CSR write, and the digest is delivered by DIGEST reads.
+#   So a *stateful* predictor should be able to reconstruct the stream. That is the
+#   prediction; the bench is the test.
+#
+# The golden model is OpenTitan's vendored `cryptoc` C library (Apache-2.0), called over
+# DPI. Its signature (`svOpenArrayHandle` byte streams in, an 8-word array out) is NOT
+# expressible in K0's generated DPI-C bridge, which marshals <=64-bit scalars by value —
+# so the bench declares the imports itself and stays on `language: sv`. That mismatch is
+# the real, narrow finding; see the README.
+
+project:
+  name: hmac_tb
+  author: qa@example.com
+  imports: [cryptoc_dpi_pkg]     # the vendored C golden model's DPI package
+
+dut:
+  name: hmac
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: host
+    interface: host_if
+    sequence_item: host_seq_item
+    seq_item_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: addr,  width: 12, randomize: true}
+        - {name: wr,    width: 1,  randomize: true}
+        - {name: req,   width: 1,  randomize: true}
+        - {name: wdata, width: 32, randomize: true}
+      outputs:
+        - {name: rdata,     width: 32}
+        - {name: hmac_done, width: 1}
+        - {name: hmac_idle, width: 1}
+    # Publish only real bus transactions — idle cycles must never enter the scoreboard.
+    emit_when: req
+    sequences:
+      # Pure random traffic never produces a valid HMAC flow (CFG -> KEY -> start ->
+      # message -> process -> read digest), so the digest path needs a directed sequence.
+      - {name: hmac_vector_seq, kind: directed}
+
+analysis:
+  coverage: [host]
+  scoreboards:
+    # Single-stream: predict(host_item) -> the expected host_item (i.e. expected rdata).
+    # The predictor must be STATEFUL — that is the whole experiment.
+    - {name: sb, source: host}
+
+# V1 — is every register touched, read and written? (The digest array is the interesting
+# one: rv_timer's five scalar registers never exercised a register ARRAY.)
+coverage_models:
+  - agent: host
+    goal: 80
+    coverpoints:
+      - field: wr
+        bins:
+          - {name: rd, value: 0}
+          - {name: wr, value: 1}
+      - field: addr
+        bins:
+          - {name: cfg,     value: 0}
+          - {name: cmd,     value: 4}
+          - {name: status,  value: 8}
+          - {name: key,     range: [32, 156]}    # KEY_0..31
+          - {name: digest,  range: [160, 220]}   # DIGEST_0..15
+          - {name: msg_fifo, range: [256, 511]}  # the FIFO write window
+    crosses:
+      - {name: reg_x_dir, fields: [addr, wr]}
+
+tests:
+  # Random register traffic — checks the CFG/KEY/MSG_LEN readback path.
+  - {name: rand_test, num_items: 200}
+  # The real experiment: a NIST/RFC vector driven end to end, with the digest checked by
+  # the GENERATED scoreboard against the C golden model.
+  - {name: hmac_test, sequence: {agent: host, name: hmac_vector_seq}}
+
+regress:
+  seeds: 3

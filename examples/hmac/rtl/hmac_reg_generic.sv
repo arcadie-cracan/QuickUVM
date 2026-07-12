@@ -112,22 +112,33 @@ module hmac_reg_generic
   end
 
   // ---- reads ---------------------------------------------------------------
+  // REGISTERED read data: a read issued at cycle N returns its data at N+1. This is the
+  // ordinary register-block contract, and it is what a generated UVM monitor assumes
+  // (sample the request at posedge N, the response at N+1) — so the bench needs no
+  // combinational-read workaround.
+  logic [31:0] rdata_d;
+
   always_comb begin
-    rdata_o = 32'h0;
+    rdata_d = 32'h0;
     if (req_i && !wr_i) begin
       case (addr_i)
-        AddrCfg:      rdata_o = cfg_q;
-        AddrStatus:   rdata_o = {23'h0, hw2reg.status.fifo_depth.d,
+        AddrCfg:      rdata_d = cfg_q;
+        AddrStatus:   rdata_d = {23'h0, hw2reg.status.fifo_depth.d,
                                  hw2reg.status.fifo_full.d,
                                  hw2reg.status.fifo_empty.d,
                                  hw2reg.status.hmac_idle.d};
-        AddrMsgLenLo: rdata_o = msglen_lo_q;
-        AddrMsgLenHi: rdata_o = msglen_hi_q;
+        AddrMsgLenLo: rdata_d = msglen_lo_q;
+        AddrMsgLenHi: rdata_d = msglen_hi_q;
         default: ;
       endcase
-      if (in_key) rdata_o = key_q[key_idx];
-      if (in_dig) rdata_o = dig_q[dig_idx];
+      if (in_key) rdata_d = key_q[key_idx];
+      if (in_dig) rdata_d = dig_q[dig_idx];
     end
+  end
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) rdata_o <= 32'h0;
+    else         rdata_o <= rdata_d;
   end
 
   // ---- reg2hw --------------------------------------------------------------
