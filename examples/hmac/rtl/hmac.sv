@@ -1,3 +1,11 @@
+// Copyright lowRISC contributors (OpenTitan project).
+// Licensed under the Apache License, Version 2.0, see rtl/vendor/LICENSE for details.
+// SPDX-License-Identifier: Apache-2.0
+//
+// DERIVATIVE WORK. Adapted from OpenTitan hw/ip/hmac/rtl/hmac.sv. Changes are stated below
+// (Apache-2.0 s4(b)) and are confined to replacing the TL-UL bus interface; the crypto is
+// unmodified vendor RTL.
+//
 // HMAC — a generic-register-bus wrapper around OpenTitan's UNMODIFIED crypto core.
 //
 // Scope: SHA-256 and HMAC-SHA-256 (docs/reproduce_campaign.md T1). SHA-384/512 and the
