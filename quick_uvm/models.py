@@ -1071,6 +1071,9 @@ class TestConfig(BaseModel):
     sequence: TestSeqSel | None = None
     # C2 — run a virtual sequence on the env's vsqr (coordinates >=2 agents).
     vseq: str | None = None
+    # R1 — how many seeds `make regress` runs this test at. None ⇒ regress.seeds.
+    # Only read when a `regress:` block is present; renders nothing otherwise.
+    seeds: int | None = None
 
     @field_validator("name")
     @classmethod
@@ -1085,6 +1088,10 @@ class TestConfig(BaseModel):
             raise ValueError(
                 f"test '{self.name}': set either 'sequence' (single-agent) or 'vseq' "
                 f"(virtual sequence), not both."
+            )
+        if self.seeds is not None and self.seeds < 1:
+            raise ValueError(
+                f"test '{self.name}': seeds must be >= 1 (got {self.seeds})."
             )
         return self
 
@@ -1912,6 +1919,45 @@ class ProbeConfig(BaseModel):
         return [] if self.real else self._as_port.struct_typedefs
 
 
+class RegressConfig(BaseModel):
+    """R1 — regression + coverage-closure infrastructure (opt-in).
+
+    Emits a ``Makefile`` next to the generated sources: elaborate once, then run
+    the (test x seed) matrix, verdict each run, and merge + report coverage.
+    Absent ⇒ nothing emitted (byte-identical).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Xcelium only, deliberately. It is the simulator every QuickUVM example is
+    # validated on, and the coverage merge/report recipe (imc) is tool-specific.
+    # Another tool is a new branch that must be validated end-to-end, not guessed.
+    simulator: Literal["xcelium"] = "xcelium"
+    # The bench's REAL-RTL filelist, relative to the generated output dir. The
+    # generated `run.f` compiles the DUT *stub*, so a regression that drove it
+    # would verify nothing — it must point at the bench's own filelist (the
+    # hand-written `sim/xrun.f` every example ships).
+    filelist: str = "../sim/xrun.f"
+    # Default number of seeds per test. A test may override it (TestConfig.seeds).
+    seeds: int = 1
+    # Emit the coverage collect/merge/report wiring (xrun -coverage + imc).
+    coverage: bool = True
+
+    # NB no `goal:` (fail-the-regression-below-N%) yet. It needs a defensible single
+    # number to gate on, and imc's text summary is a per-instance table of several
+    # metrics — "the first percentage in the report" is not a coverage target. The
+    # covergroup-level closure target already exists as V1's `coverage_models[].goal`
+    # (option.goal). A real regression-level gate is a follow-up.
+
+    @model_validator(mode="after")
+    def _check_regress(self) -> RegressConfig:
+        if self.seeds < 1:
+            raise ValueError(f"regress.seeds must be >= 1 (got {self.seeds}).")
+        if not self.filelist.strip():
+            raise ValueError("regress.filelist must be a non-empty path.")
+        return self
+
+
 class ProjectConfig(BaseModel):
     project: ProjectMeta
     dut: DutConfig
@@ -1932,6 +1978,9 @@ class ProjectConfig(BaseModel):
     # K2 — whitebox probes: OBSERVE-only internal DUT signals (opt-in, byte-identical
     # when empty). See ProbeConfig.
     probes: list[ProbeConfig] = Field(default_factory=list)
+    # R1 — regression + coverage-closure runner (opt-in, byte-identical when None).
+    # See RegressConfig.
+    regress: RegressConfig | None = None
     virtual_sequences: list[VseqConfig] = Field(default_factory=list)  # C2
     reference_model: ReferenceModelConfig = Field(default_factory=ReferenceModelConfig)
     # Sane default for multi-agent subsystems: with >=2 active agents and no explicit
@@ -2539,6 +2588,37 @@ class ProjectConfig(BaseModel):
         return v
 
     @model_validator(mode="after")
+    def validate_regress(self) -> ProjectConfig:
+        if self.regress is None:
+            return self
+        # H1 deferred: a subsystem's leaf RTL is listed by hand inside the
+        # `subenv_dut_sources` pragma, so the generator cannot know the bench's real
+        # filelist — and `make regress` must drive real RTL, not the DUT stub.
+        if self.subenvs:
+            raise ValueError(
+                "`regress` is not yet supported on a subsystem bench (`subenvs`): the "
+                "leaf RTL sources live in a `subenv_dut_sources` pragma region, so "
+                "the generator cannot derive the real-RTL filelist a regression must "
+                "drive. Run the leaf blocks' own regressions, or drive it by hand."
+            )
+        names = [j["name"] for j in self.regress_jobs]
+        if not names:
+            raise ValueError(
+                "`regress` needs at least one runnable test, but the testlist is empty "
+                "(no `tests:`, no RAL `reg_test`, no `csr_tests`). A regression that "
+                "runs nothing would report success."
+            )
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        if dupes:
+            raise ValueError(
+                f"`regress` testlist has duplicate +UVM_TESTNAME entries: {dupes}. Two "
+                f"`tests:` share a name, or a declared test collides with a generated "
+                f"RAL/CSR test (the RAL basic test's class is the bare `reg_test`). "
+                f"Rename it."
+            )
+        return self
+
+    @model_validator(mode="after")
     def validate_probes(self) -> ProjectConfig:
         if not self.probes:
             return self
@@ -3104,6 +3184,34 @@ class ProjectConfig(BaseModel):
     def coverage_model_for(self, agent_name: str) -> CoverageModel | None:
         """The coverage model targeting `agent_name`, if any (V1)."""
         return next((c for c in self.coverage_models if c.agent == agent_name), None)
+
+    @property
+    def regress_jobs(self) -> list[dict]:
+        """R1 — every runnable ``+UVM_TESTNAME`` in this bench, with its seed count.
+
+        The union of the declared ``tests:``, the RAL ``reg_test``, and one test per
+        C5 ``csr_tests`` kind. Each entry is ``{name, seeds}``; ``seeds`` falls back
+        to ``regress.seeds`` when the test does not override it.
+
+        NB the RAL basic register test's CLASS is the bare ``reg_test`` — only its
+        FILE is ``<dut>_reg_test.svh`` (see templates/reg_test.svh.j2). A testlist
+        that assumes the ``<dut>_`` prefix here emits an unregistered test name and
+        the run dies with a UVM factory error.
+        """
+        default_seeds = self.regress.seeds if self.regress else 1
+        jobs = [{"name": t.name, "seeds": t.seeds or default_seeds} for t in self.tests]
+        rm = self.register_model
+        if rm is not None:
+            if rm.reg_test:
+                jobs.append({"name": "reg_test", "seeds": default_seeds})
+            for csr in rm.csr_test_specs:
+                jobs.append(
+                    {
+                        "name": f"{self.dut.name}_csr_{csr['kind']}_test",
+                        "seeds": default_seeds,
+                    }
+                )
+        return jobs
 
     @property
     def reg_bus_agent(self) -> AgentConfig | None:

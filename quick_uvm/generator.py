@@ -176,6 +176,15 @@ class Generator:
             "probe_clock": cfg.probe_clock,
             "probe_reset": cfg.probe_reset,
             "cover_probes": any(p.coverage for p in cfg.probes),
+            # R1 — regression runner (None => no Makefile emitted, byte-identical).
+            # NB `tests: []` is a legal config, so never index regress_jobs blindly —
+            # that would crash EVERY bench with no tests, including ones not using R1.
+            # A `regress:` block with no runnable test is rejected in validate_regress.
+            "regress": cfg.regress,
+            "regress_jobs": cfg.regress_jobs,
+            "regress_default_test": (
+                cfg.regress_jobs[0]["name"] if cfg.regress_jobs else ""
+            ),
             # C3 — multi-instantiation: per-instance views for the env/top/scoreboard.
             # Empty for a bench without `instances` → the legacy per-agent wiring
             # runs unchanged (byte-identical).
@@ -475,6 +484,9 @@ class Generator:
             specs.append(FileSpec("tb_pkg.sv.j2", f"{dut}_tb_pkg.sv", base_ctx))
             specs.append(FileSpec("pkg.f.j2", "pkg.f", base_ctx))
         specs.append(FileSpec("run.f.j2", "run.f", base_ctx))
+        # R1 — the regression runner. Opt-in: no `regress:` block => no Makefile.
+        if cfg.regress is not None:
+            specs.append(FileSpec("Makefile.j2", "Makefile", base_ctx))
 
         return specs
 
