@@ -51,6 +51,34 @@ that bug, and the bench "passed" while the device never answered.
 cd sim && xrun -f xrun.f +UVM_TESTNAME=rand_test   # -> TEST PASSED, 34/34
 ```
 
-The scoreboard checks the real property: **whatever the reactive agent granted is exactly
-what the DUT captured**. Breaking the DUT's capture (`last_data <= rdata + 1`) fails 31/34 —
-the check is real.
+## The self-check, and why the first one was worthless
+
+The scoreboard predicts `last_data` from the **request address**, using its own memory model —
+**not** from the `rdata` it observed on the bus. That distinction is the whole point.
+
+The first version derived the expected value from the observed `gnt`/`rdata`, which made it a
+tautology with respect to the responder: it could only ever prove "the DUT registered whatever
+appeared on the pins". An adversarial review demonstrated on Xcelium that with that check,
+
+* a responder mutated to `gnt = 0` — **the device never answers, the DUT wedges, zero transfers
+  complete** — still reported **TEST PASSED 34/34**, and
+* a responder answering `rdata = DEADBEEF` (ignoring the address entirely) also **passed**.
+
+Which is exactly the failure mode this whole feature exists to prevent. The mutation proof at
+the time only broke the DUT's *capture register* — the one thing that check did cover.
+
+It now catches all three:
+
+| mutation | result |
+|---|---|
+| DUT captures wrongly (`last_data <= rdata + 1`) | **FAIL** 31/34 |
+| responder answers wrong data (`rdata = DEADBEEF`) | **FAIL** 31/34 |
+| responder never answers (`gnt = 0`) | **FAIL** — `DEAD_RESPONDER` + `NO_PROGRESS`, `make regress` exits nonzero |
+
+The dead-responder case needs an **end-of-test** assertion, not a per-transaction compare: with
+no grant the DUT never captures, so expected and actual are both zero and every comparison
+agrees. `check_phase` asserts that grants happened and the DUT made progress.
+
+Note the comparator still prints `TEST PASSED` in that case — it only counts its own vector
+compares. The UVM severity block (`UVM_ERROR : 2`) is the truth, and that is what R1's
+`make regress` parses. Never trust the banner.

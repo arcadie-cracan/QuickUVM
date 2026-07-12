@@ -73,7 +73,9 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
     `uvm_info("INIT", "{{ agent.name }}_driver: Initialize (time @0)", UVM_HIGH)
 {% if agent.active %}
 {% for port in agent.input_ports %}
-{% if agent_driven_reset and port.name == agent_driven_reset.name %}
+{% if port.name in agent.idle %}
+    vif.{{ port.name }} <= {{ port.bit_width }}'d{{ agent.idle[port.name] }};
+{% elif agent_driven_reset and port.name == agent_driven_reset.name %}
     vif.{{ port.name }} <= '{% if agent_driven_reset.active_low %}0{% else %}1{% endif %};
 {% elif port.bit_width > 1 %}
     vif.{{ port.name }} <= '1;

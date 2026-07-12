@@ -95,7 +95,11 @@ def test_responder_emits_the_reactive_machinery(tmp_path):
     # monitor publishes the REQUEST on a second port, qualified by request_valid
     mon = (tmp_path / "mem_monitor.svh").read_text()
     assert "request_ap" in mon
-    assert "if (tr.req) request_ap.write(tr);" in mon
+    # published on the RISING EDGE of the qualifier, not its level: a request line is
+    # held until granted, so a level publish would queue one copy per cycle and the
+    # responder would answer the same request many times.
+    assert "if (tr.req && !m_req_seen) request_ap.write(tr);" in mon
+    assert "m_req_seen = tr.req;" in mon
     # sequencer gains the blocking rendezvous
     sqr = (tmp_path / "mem_sequencer.svh").read_text()
     assert "uvm_tlm_analysis_fifo" in sqr
@@ -299,3 +303,65 @@ def test_rejects_an_explicit_vseq_step_on_a_responder():
     }
     with pytest.raises(ValidationError, match="targets RESPONDER agent"):
         ProjectConfig.model_validate(cfg)
+
+
+# --- holes found by the pre-merge adversarial review -------------------------
+# Every one of these let random stimulus reach a responder's sequencer, or let a dead
+# responder report PASS. They are the same failure mode this feature keeps producing, so
+# each gets a test rather than a comment.
+
+
+def test_rejects_a_test_sequence_targeting_a_responder():
+    """The vseq guard covered only VIRTUAL sequences. A single-agent `test.sequence` on a
+    responder was still accepted — and it would clobber the computed responses.
+
+    The sequence must be a DECLARED library sequence of that agent, or an earlier
+    validator rejects it first for an unrelated reason and this hole stays open.
+    """
+    import copy
+
+    cfg = copy.deepcopy(_MIXED)
+    cfg["agents"][0]["sequences"] = [{"name": "dev_err_seq", "kind": "directed"}]
+    cfg["tests"] = [{"name": "t", "sequence": {"agent": "dev", "name": "dev_err_seq"}}]
+    with pytest.raises(ValidationError, match="targets RESPONDER agent"):
+        ProjectConfig.model_validate(cfg)
+
+
+def test_rejects_responder_with_c3_instances():
+    """The generated test's `has_instances` branch starts per-instance RANDOM stimulus on
+    every instance's sequencer — a responder's included."""
+    a = {
+        **_BASE["agents"][0],
+        "parameters": [{"name": "W", "default": 32}],
+        "instances": [{"name": "i0", "values": {"W": 8}}],
+    }
+    with pytest.raises(ValidationError, match="not yet supported with C3 `instances`"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_monitor_publishes_the_request_once_not_every_cycle(tmp_path):
+    """A request line is HELD until granted. A level-triggered publish queues one copy per
+    cycle and the responder answers the same request many times."""
+    _gen(tmp_path)
+    mon = (tmp_path / "mem_monitor.svh").read_text()
+    assert "if (tr.req && !m_req_seen) request_ap.write(tr);" in mon
+    assert "m_req_seen = tr.req;" in mon
+
+
+def test_continuous_driver_parks_at_the_declared_idle_values(tmp_path):
+    """initialize() used to park at hardcoded '1/'0, so the bus carried the WRONG idle
+    level (often inverted) until the first item arrived."""
+    _gen(tmp_path, agents=_continuous())
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    init = drv.split("task initialize")[1].split("endtask")[0]
+    assert "vif.gnt <= 1'd0;" in init
+    assert "vif.rdata <= 32'd0;" in init
+    assert "'1;" not in init  # never the hardcoded park
+
+
+def test_responder_is_created_with_factory_context(tmp_path):
+    """Without context, a per-instance factory override silently no-ops — so the
+    'swap in an error-injecting responder' story would be a lie."""
+    _gen(tmp_path)
+    agt = (tmp_path / "mem_agent.svh").read_text()
+    assert 'type_id::create(\n          "responder", null, get_full_name())' in agt

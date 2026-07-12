@@ -54,8 +54,8 @@ class mem_driver extends uvm_driver #(mem_seq_item);
 
   virtual task initialize (); // @0 - Does not use clocking block
     `uvm_info("INIT", "mem_driver: Initialize (time @0)", UVM_HIGH)
-    vif.gnt <= '0;
-    vif.rdata <= '1;
+    vif.gnt <= 1'd0;
+    vif.rdata <= 32'd0;
     // Reset is driven externally: hold off BEFORE advancing a clock so the parked
     // idle values are all the DUT sees during reset; wait for deassertion, then let
     // the input synchronizers settle (2 = a typical 2-stage sync; raise for deeper).

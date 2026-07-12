@@ -828,6 +828,13 @@ class AgentConfig(BaseModel):
                 f"agent '{self.name}': `mode: responder` needs an input port — "
                 f"there is nothing to drive as a response."
             )
+        if self.instances:
+            raise ValueError(
+                f"agent '{self.name}': `mode: responder` is not yet supported with C3 "
+                f"`instances` — each instance would need its own responder, and the "
+                f"generated test starts per-instance stimulus on every instance's "
+                f"sequencer (which a responder's forever sequence owns)."
+            )
         if self.request_valid is None:
             raise ValueError(
                 f"agent '{self.name}': `mode: responder` requires `request_valid`: the "
@@ -3256,6 +3263,20 @@ class ProjectConfig(BaseModel):
                         f"not a library sequence of agent '{step.agent}' (nor its "
                         f"default '{ag_obj.name}_sequence')."
                     )
+        # A test's single-agent `sequence:` must not target a RESPONDER either — the
+        # vseq guard above covered only virtual sequences.
+        for t_ in self.tests:
+            if t_.sequence is None:
+                continue
+            resp_ag = agents_by_name.get(t_.sequence.agent)
+            if resp_ag is not None and resp_ag.is_responder:
+                raise ValueError(
+                    f"test '{t_.name}': `sequence` targets RESPONDER agent "
+                    f"'{t_.sequence.agent}'. Its sequencer is owned by its forever "
+                    f"responder sequence — a second sequence there would clobber the "
+                    f"computed responses, and the device would answer garbage while "
+                    f"the bench reported PASS."
+                )
         # A test may name an explicit vsequence or the auto-default (<project>_vseq).
         valid_vseqs = vseq_names | ({self.auto_vseq_name} - {None})
         for t in self.tests:

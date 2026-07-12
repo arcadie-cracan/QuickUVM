@@ -22,7 +22,9 @@ class {{ dut.name }}_vseq extends {{ dut.name }}_base_vseq;
 {% if sv.is_subsystem %}
     {{ sv.vseq_type }} {{ sv.name }}_seq;
 {% else %}
-{% for agent in sv.agents if agent.active %}
+{# a RESPONDER's sequencer is owned by its forever responder sequence — never
+   fire a stimulus sequence there, or the device answers garbage. #}
+{% for agent in sv.agents if agent.active and not agent.is_responder %}
     {{ agent.default_seq_name }}{{ agent.param_args_values }} {{ sv.name }}_{{ agent.name }}_seq;
 {% endfor %}
 {% endif %}
@@ -32,7 +34,9 @@ class {{ dut.name }}_vseq extends {{ dut.name }}_base_vseq;
 {% if sv.is_subsystem %}
     {{ sv.name }}_seq = {{ sv.vseq_type }}::type_id::create("{{ sv.name }}_seq");
 {% else %}
-{% for agent in sv.agents if agent.active %}
+{# a RESPONDER's sequencer is owned by its forever responder sequence — never
+   fire a stimulus sequence there, or the device answers garbage. #}
+{% for agent in sv.agents if agent.active and not agent.is_responder %}
     {{ sv.name }}_{{ agent.name }}_seq = {{ agent.default_seq_name }}{{ agent.param_args_values }}::type_id::create("{{ sv.name }}_{{ agent.name }}_seq");
 {% endfor %}
 {% endif %}
@@ -45,7 +49,9 @@ class {{ dut.name }}_vseq extends {{ dut.name }}_base_vseq;
 {% if sv.is_subsystem %}
       {{ sv.name }}_seq.start(p_sequencer.{{ sv.name }}_vsqr);
 {% else %}
-{% for agent in sv.agents if agent.active %}
+{# a RESPONDER's sequencer is owned by its forever responder sequence — never
+   fire a stimulus sequence there, or the device answers garbage. #}
+{% for agent in sv.agents if agent.active and not agent.is_responder %}
       {{ sv.name }}_{{ agent.name }}_seq.start(p_sequencer.{{ sv.name }}_{{ agent.name }}_sqr);
 {% endfor %}
 {% endif %}

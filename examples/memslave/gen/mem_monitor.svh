@@ -17,6 +17,8 @@ class mem_monitor extends uvm_monitor;
   // computes the response. The monitor already decodes the protocol for passive mode,
   // so this duplicates nothing — which is exactly why the driver does NOT decode it.
   uvm_analysis_port #(mem_seq_item) request_ap;
+  // Edge-detect state for the request qualifier (see run_phase).
+  bit m_req_seen;
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -40,7 +42,13 @@ class mem_monitor extends uvm_monitor;
     forever begin
       sample_dut(tr);
       // The DUT issued a request -> hand it to the responder sequence.
-      if (tr.req) request_ap.write(tr);
+      //
+      // On the RISING EDGE of the qualifier, not its level. A request line is normally HELD
+      // until it is granted, so a level-triggered publish would queue one copy per cycle and
+      // the responder would answer the same request many times (over-granting, and the
+      // response held for extra cycles).
+      if (tr.req && !m_req_seen) request_ap.write(tr);
+      m_req_seen = tr.req;
       ap.write(tr);
     end
   endtask
