@@ -228,3 +228,41 @@ def test_rejects_duplicate_test_name_colliding_with_reg_test():
                 },
             }
         )
+
+
+def test_snapshot_depends_on_included_class_files(tmp_path):
+    """The rebuild trigger must cover `.svh` class files, not just the filelist.
+
+    The filelist names only COMPILATION UNITS (packages, interfaces, modules). Every
+    UVM class — driver, monitor, predictor, reference model, scoreboard, sequences,
+    tests — is a `.svh` `include`d by the tb package, so none of them appear in it.
+    Deriving the snapshot's prerequisites from the filelist alone therefore leaves
+    them untracked, and `make regress` re-runs a STALE snapshot and verdicts PASS on
+    code it never compiled. Caught for real on the spi bench: a mutated reference
+    model reported 8/8 PASS with a warm snapshot, 7/8 (correctly red) when forced to
+    rebuild. The `.svh` files live in the `+incdir` dirs by construction.
+    """
+    _gen(tmp_path, regress={})
+    mk = (tmp_path / "Makefile").read_text()
+
+    assert "INCDIRS" in mk, "the include dirs are not extracted from the filelist"
+    # NB the grep pattern bracket-escapes the plus: `[+]incdir[+]`, not `+incdir+`.
+    assert "incdir" in mk, "INCDIRS must be derived from the filelist's +incdir entries"
+    assert "*.svh" in mk, (
+        "the .svh class files are not tracked as snapshot prerequisites"
+    )
+    assert "SRCS += $(wildcard $(addsuffix /*.svh,$(INCDIRS)))" in mk
+
+    # ...and they must actually reach the snapshot rule, not just be computed.
+    assert "$(ELAB_OK): $(FILELIST) $(SRCS)" in mk
+
+
+def test_srcs_drops_whole_option_lines_not_words(tmp_path):
+    """`-top tb_top` must not leave `tb_top` looking like a source file.
+
+    The filter is line-based for exactly this reason: an option's ARGUMENT is not a
+    source, and a bogus prerequisite with no rule to build it aborts make.
+    """
+    mk = (_gen(tmp_path, regress={}), (tmp_path / "Makefile").read_text())[1]
+    # the source list drops any line STARTING with - or + (the option's args go with it)
+    assert "grep -vE '^[[:space:]]*[-+]'" in mk
