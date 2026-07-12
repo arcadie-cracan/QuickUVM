@@ -214,3 +214,88 @@ def test_rejects_multibit_request_valid():
     a = {**_BASE["agents"][0], "request_valid": "addr"}
     with pytest.raises(ValidationError, match="must be 1 bit"):
         ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+# --- the MIXED bench (the real case: spi_host = host agent + device agent) ---
+
+_MIXED = {
+    "project": {"name": "mx_tb", "author": "a@b.c"},
+    "dut": {"name": "mx", "clock": "clk", "reset": "rst_n", "external_reset": True},
+    "agents": [
+        # agents[0] is deliberately the RESPONDER — the trap.
+        {
+            "name": "dev",
+            "interface": "dev_if",
+            "sequence_item": "dev_item",
+            "mode": "responder",
+            "request_valid": "req",
+            "ports": {
+                "inputs": [{"name": "gnt", "width": 1, "randomize": True}],
+                "outputs": [{"name": "req", "width": 1}],
+            },
+        },
+        {
+            "name": "host",
+            "interface": "host_if",
+            "sequence_item": "host_item",
+            "ports": {
+                "inputs": [{"name": "cmd", "width": 8, "randomize": True}],
+                "outputs": [{"name": "stat", "width": 8}],
+            },
+        },
+    ],
+    "tests": [{"name": "rand_test"}],
+}
+
+
+def test_mixed_bench_never_starts_stimulus_on_the_responder(tmp_path):
+    """THE REAL CASE (spi_host: a host agent + a device agent), and the trap: agents[0] is
+    the responder. The test must start stimulus on the INITIATOR. Starting it on the
+    responder's sequencer would clobber the computed responses with random items — the
+    device would answer garbage while the bench reported PASS.
+    """
+    cfg = ProjectConfig.model_validate(_MIXED)
+    assert cfg.primary_agent.name == "dev"  # agents[0] IS the responder
+    assert cfg.stimulus_primary.name == "host"  # ...but stimulus goes to the initiator
+    assert not cfg.responder_only
+
+    Generator(cfg).generate_all(tmp_path, backup=False)
+    test = (tmp_path / "rand_test.svh").read_text()
+    assert "seq.start(e.host_agnt.sqr);" in test
+    assert "dev_agnt.sqr" not in test
+
+
+def test_auto_vseq_excludes_responders(tmp_path):
+    """The auto-vseq fires every active agent's default sequence. A responder must never
+    be among them."""
+    agents = _MIXED["agents"] + [
+        {
+            "name": "host2",
+            "interface": "host2_if",
+            "sequence_item": "host2_item",
+            "ports": {
+                "inputs": [{"name": "c2", "width": 8, "randomize": True}],
+                "outputs": [{"name": "s2", "width": 8}],
+            },
+        }
+    ]
+    cfg = ProjectConfig.model_validate({**_MIXED, "agents": agents})
+    # two STIMULUS agents -> an auto-vseq exists...
+    assert cfg.auto_vseq_name == "mx_vseq"
+    steps = [s.agent for s in cfg.effective_virtual_sequences[0].body]
+    # ...and it coordinates only them, never the responder.
+    assert steps == ["host", "host2"]
+    Generator(cfg).generate_all(tmp_path, backup=False)
+    vseq = (tmp_path / "mx_vseq.svh").read_text()
+    assert "dev_seq" not in vseq
+
+
+def test_rejects_an_explicit_vseq_step_on_a_responder():
+    cfg = {
+        **_MIXED,
+        "virtual_sequences": [
+            {"name": "mx_v", "body": [{"agent": "dev", "sequence": "dev_seq"}]}
+        ],
+    }
+    with pytest.raises(ValidationError, match="targets RESPONDER agent"):
+        ProjectConfig.model_validate(cfg)

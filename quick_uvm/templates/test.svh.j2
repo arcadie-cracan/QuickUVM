@@ -5,7 +5,10 @@
 // Author:   {{ project.author }}
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
-{% set pa = agents[0] %}
+{# NOT agents[0] — that may be a RESPONDER, whose sequencer is owned by its
+   forever responder sequence. Starting stimulus there would clobber the
+   computed responses with random items. #}
+{% set pa = stimulus_primary or agents[0] %}
 {% if test.vseq %}
 {% set seq_type = test.vseq %}
 {% set seq_start = 'e.vsqr' %}

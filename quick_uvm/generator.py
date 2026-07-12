@@ -181,6 +181,7 @@ class Generator:
             # means no TB-initiated stimulus at all (the DUT initiates).
             "responder_only": cfg.responder_only,
             "primary_agent": cfg.primary_agent if cfg.agents else None,
+            "stimulus_primary": cfg.stimulus_primary,
             "any_responder": any(a.is_responder for a in cfg.agents),
             # R1 — regression runner (None => no Makefile emitted, byte-identical).
             # NB `tests: []` is a legal config, so never index regress_jobs blindly —

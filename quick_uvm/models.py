@@ -3239,6 +3239,14 @@ class ProjectConfig(BaseModel):
                         f"vsequence '{vs.name}': step targets passive agent "
                         f"'{step.agent}' — no sequencer is built for it."
                     )
+                if ag_obj.is_responder:
+                    raise ValueError(
+                        f"vsequence '{vs.name}': step targets RESPONDER agent "
+                        f"'{step.agent}'. Its sequencer is owned by its forever "
+                        f"responder sequence — a second sequence there would clobber "
+                        f"the computed responses with this one's items, and the device "
+                        f"would answer garbage while the bench reported PASS."
+                    )
                 valid_seqs = {s.name for s in ag_obj.sequences} | {
                     ag_obj.default_seq_name
                 }
@@ -3394,6 +3402,14 @@ class ProjectConfig(BaseModel):
         return [a for a in self.active_agents if not a.is_responder]
 
     @property
+    def stimulus_primary(self) -> AgentConfig | None:
+        """The agent a single-agent test starts its sequence on. NOT `agents[0]` — that
+        may be a responder, and starting stimulus there would clobber the computed
+        responses with random items (the device would answer garbage while the bench
+        reported PASS)."""
+        return self.stimulus_agents[0] if self.stimulus_agents else None
+
+    @property
     def responder_only(self) -> bool:
         """No TB-initiated stimulus at all: the DUT is the initiator and the reactive
         agent(s) merely serve it (a CPU fetching from a memory model, say)."""
@@ -3411,7 +3427,9 @@ class ProjectConfig(BaseModel):
         synthesized for >=2 active agents when `auto_virtual_sequences` is on."""
         if self.virtual_sequences or not self.auto_virtual_sequences:
             return None
-        if len(self.active_agents) < 2:
+        # STIMULUS agents, not active agents: a responder's sequencer is owned by its
+        # forever responder sequence, so a vseq must never fire a sequence there.
+        if len(self.stimulus_agents) < 2:
             return None
         return f"{self.dut.name}_vseq"
 
@@ -3443,7 +3461,7 @@ class ProjectConfig(BaseModel):
                 mode=self.auto_vseq_mode,
                 body=[
                     VseqStep(agent=a.name, sequence=a.default_seq_name)
-                    for a in self.active_agents
+                    for a in self.stimulus_agents
                 ],
             )
         ]
