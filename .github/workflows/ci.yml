@@ -63,6 +63,19 @@ jobs:
   # baseline and (as of v0.0-4053) corrupts `uvm_*` macro calls lacking a trailing
   # ';' (drops their arguments and emits unparseable output). Formatting style is
   # enforced via the lint rules + docs/style_systemverilog.md instead.
+  #
+  # WHAT THIS JOB CANNOT DO: verible is a style/syntax linter, not a compiler. It
+  # accepts generated SV that a real simulator rejects — a coverage-handle bug
+  # (`<agent>_cov <agent>_cov;`, a member shadowing its own type, then used as
+  # `<agent>_cov::type_id::create()`) shipped straight through it and only died at
+  # Xcelium compile (*E,NOPBIND). Verilator --lint-only is blind to it too, and
+  # Icarus rejects the CLEAN code, so no free simulator closes the gap here. Two
+  # things do, and neither is this job:
+  #   * tests/test_no_type_shadowing.py — targeted static check for that bug class,
+  #     runs in the `python` job above (free, no licence). ENFORCED.
+  #   * scripts/xrun_gate.sh — the real compiler over all 28 examples. Needs a
+  #     Cadence licence, so hosted CI cannot run it; run it before pushing.
+  # See docs/parity_roadmap.md § R1.
   generated-sv:
     runs-on: ubuntu-latest
     env:
