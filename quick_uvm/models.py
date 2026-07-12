@@ -1693,11 +1693,28 @@ class RegisterModelConfig(BaseModel):
 class ReferenceModelConfig(BaseModel):
     """Configures the scoreboard's reference model / predictor (K0).
 
-    `language: sv` (default) keeps the SV `predict()` body in
-    `<dut>_reference_model.svh` (byte-identical). `language: c` generates a DPI-C
-    seam instead: a fully-generated SV marshaling bridge + a `<dut>_reference_model.c`
-    stub (the only file the user edits) whose `<dut>_predict` signature is derived
-    from the primary agent's transaction fields.
+    `language: sv` (default) keeps the `predict()` body in
+    `<dut>_reference_model.svh`. `language: c` also generates a DPI-C **bridge**: an
+    SV marshaling layer + a `<dut>_reference_model.c` stub whose signature is derived
+    from the primary agent's fields.
+
+    WHAT `language: c` IS FOR -- and what it is not.
+    The bridge models a golden model as a **pure scalar function**: scalars in, scalar
+    pointers out, <=64 bits each, one call per transaction. That fits a small
+    combinational model (see `examples/sat_adder/`).
+
+    It does NOT fit a real golden model, because real golden models are LIBRARIES:
+    OpenTitan `cryptoc` takes open-array byte streams and returns an 8-word digest;
+    Spike is a `chandle` you STEP; Caliptra's predictor shells out to Python. None of
+    those is a pure scalar function -- and none of them needs the bridge.
+
+    The seam already has the escape hatch: keep `language: sv`, declare the library's
+    own `import "DPI-C"` (via `project.imports` or the tb_pkg `imports` pragma), and
+    call it from the `prediction_logic` pragma. The predictor is a CLASS, so it can
+    hold state across transactions -- accumulate a stream, trigger on a control event,
+    serve a result back later. `examples/hmac/` does exactly that.
+
+    See docs/reference_model_seam.md.
     """
 
     language: Literal["sv", "c"] = "sv"
@@ -3373,15 +3390,31 @@ class ProjectConfig(BaseModel):
                 raise ValueError(
                     f"test '{t.name}': vseq '{t.vseq}' is not a declared vsequence."
                 )
-        # K0 — the DPI-C reference model marshals each primary-agent field as a
-        # scalar DPI arg (≤64-bit). Wider fields need svBitVecVal (a follow-up).
+        # K0 — the GENERATED DPI-C bridge marshals each primary-agent field as a scalar
+        # DPI arg (≤64-bit). That bridge is a convenience for a simple, pure,
+        # per-transaction model; a real golden model is usually a LIBRARY and takes the
+        # escape hatch instead (see the error text and docs/reference_model_seam.md).
         if self.reference_model.language == "c":
             for _, p in self.agents[0].all_ports:
                 if p.bit_width > 64:
                     raise ValueError(
                         f"reference_model.language='c': field '{p.name}' is "
-                        f"{p.bit_width} bits; DPI-C scalar marshaling supports ≤64-bit "
-                        f"fields (wider fields are not yet supported)."
+                        f"{p.bit_width} bits, but the GENERATED DPI-C bridge marshals "
+                        f"<=64-bit SCALARS by value.\n\n"
+                        f"That bridge exists for a SIMPLE, PURE, PER-TRANSACTION model "
+                        f"-- one `{self.dut.name}_predict(scalar, scalar, scalar*)`. A "
+                        f"REAL golden model is usually a LIBRARY (byte streams, "
+                        f"arrays, a handle you step), which does not fit it -- and "
+                        f"does not need it.\n\n"
+                        f"DO THIS INSTEAD (it works today): keep "
+                        f"`reference_model.language: sv`, declare your library's own "
+                        f'`import "DPI-C"` (add its package to `project.imports`, or '
+                        f"use the tb_pkg `imports` pragma region), and call it from "
+                        f"the `prediction_logic` pragma. The predictor is a CLASS, "
+                        f"so it can hold state across transactions.\n\n"
+                        f"Worked example: examples/hmac/ calls OpenTitan's `cryptoc` C "
+                        f"library (open-array byte streams in, an 8-word digest out) "
+                        f"exactly that way. See docs/reference_model_seam.md."
                     )
         # All TB-owned typedefs — port enums (`<port>_e`), packed structs
         # (`<port>_<path>_t`) and struct enum members (`<port>_<path>_e`) — share the

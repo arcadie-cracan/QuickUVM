@@ -353,6 +353,33 @@ This is the lever HDL Verifier exploits, minus the MATLAB/Simulink front-end (ou
 - *Remaining:* C++/SystemC bodies, >64-bit (packed) marshaling, per-scoreboard language
   once A2 (multi-stream) lands.
 
+**⚠ REPOSITIONED after T1 — `language: c` is a convenience, not the general mechanism.**
+The generated bridge models a golden model as a **pure scalar function** (scalars in, scalar
+pointers out, ≤64 bits, one call per transaction). That fits `sat_adder`. It does **not** fit a
+real golden model, because real golden models are **libraries**:
+
+| golden model | its actual signature |
+|---|---|
+| OpenTitan `cryptoc` (T1) | `svOpenArrayHandle` byte streams in, an 8-word array out |
+| Spike / an ISS (T5) | a `chandle` you **step**, errors pulled from a queue |
+| Caliptra's predictor (T4) | shells out to **Python** and `$fscanf`s a file back |
+
+**None fits the bridge — and none needs it.** The seam already has the escape hatch: keep
+`language: sv`, declare the library's own `import "DPI-C"` (via `project.imports` or the tb_pkg
+`imports` pragma), and call it from `prediction_logic`. **The predictor is a CLASS**, so it can
+hold state across transactions.
+
+`examples/hmac/` (T1) does exactly that with a stateful, streaming crypto model, and
+regenerating it is a **no-op** — every hand-written line is pragma-contained. So the gap
+is **positioning, not architecture**: the docs implied `language: c` was *the* way to bring a C
+golden model, and that framing sent users at a bridge their model cannot cross. See
+[`reference_model_seam.md`](reference_model_seam.md) and
+[`t1_hmac_assessment.md`](t1_hmac_assessment.md).
+
+Extending the bridge to array/stream marshaling stays a follow-up — **not urgent**, since the
+escape hatch works today and is arguably the more honest interface for a library (its signature
+is the library's, not something a generator should guess).
+
 With K0, the **General-DV MVP is complete** (X0 + S1 + V1 + S2 + C2 + K0): stimulus,
 field-derived coverage, multi-agent coordination, and a bring-your-own golden model
 (SV or C) checking seam.

@@ -5,10 +5,22 @@
 // Author:   qa@example.com
 // SPDX-License-Identifier: MIT
 //----------------------------------------------------------------------
-// K0 — the DUT's golden / reference model, in C (called per transaction via
-// DPI-C from sat_adder_reference_model.svh). Inputs are passed by value;
-// write the EXPECTED DUT outputs through the output pointers. This is the only
-// reference-model file you edit — the SV bridge + signature are generated.
+// K0 — a golden model in C, called PER TRANSACTION over DPI-C from
+// sat_adder_reference_model.svh. Inputs are passed by value; write the EXPECTED DUT
+// outputs through the output pointers. This is the only reference-model file you edit —
+// the SV bridge + this signature are generated.
+//
+// WHAT THIS IS FOR. This bridge models a golden model as a PURE SCALAR FUNCTION: scalars
+// in, scalars out, <=64 bits each, one call per transaction. That fits a small
+// combinational model. It does NOT fit a real golden-model LIBRARY — a crypto library
+// taking byte streams, an ISS you step, a model you hand a buffer — and you do not need
+// it to.
+//
+// FOR A REAL C LIBRARY: do not use this bridge. Set `reference_model.language: sv`,
+// declare the library's own `import "DPI-C"` (via `project.imports` or the tb_pkg
+// `imports` pragma region), and call it from the `prediction_logic` pragma. The predictor
+// is a CLASS, so it can hold state across transactions. `examples/hmac/` calls OpenTitan's
+// `cryptoc` that way. See docs/reference_model_seam.md.
 //----------------------------------------------------------------------
 #include "svdpi.h"
 

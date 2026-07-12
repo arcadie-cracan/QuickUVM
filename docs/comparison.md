@@ -49,7 +49,7 @@ Legend: ✓ full · ◑ partial / skeleton-only · ✗ none · — n/a
 | Virtual sequencer / virtual sequences | ✓ (C2: auto vsqr+vseq for ≥2 agents) | ✓ | ◑ | ✗ | ✗ |
 | **Pillar 2 — Checking** |
 | Scoreboard | ✓ (A2: +out-of-order, latency, multi-transaction-type) | ✓ (+strategies) | ◑ | ◑ | ◑ |
-| Out-of-order / multi-stream / predictor framework | ✓ (A2 + K0 predictor seam, SV or DPI-C) | ✓ | ✗ | ✗ | ✗ |
+| Out-of-order / multi-stream / predictor framework | ✓ (A2 + K0 predictor seam; SV, or bring your own DPI library) | ✓ | ✗ | ✗ | ✗ |
 | SVA / interface assertions | ◑ (K1: in-interface SVA scaffold + pragma hook) | ✓ | ◑ | ✗ | ✗ |
 | Whitebox internal-signal observation (spy/probe) | ✓ (K2: opt-in XMR probe interface + monitor) | ◑ (bind conventions) | ◑ | ✗ | ✗ |
 | **Pillar 3 — Coverage** |
@@ -88,7 +88,9 @@ Xcelium, guarded by a byte-identity gate.
   ≥2 agents (C2).
 - **Checking (✓; ◑ SVA):** two-stream scoreboards with in-order / out-of-order / latency-
   windowed / multi-transaction-type strategies (A2) over a swappable reference-model seam
-  (SV or DPI-C — K0); in-interface SVA scaffolding + a user pragma hook (K1 — a skeleton,
+  (K0 — SV, or a C/C++ **library** you import yourself; the generated `language: c` bridge
+  is a convenience for simple scalar models, see `reference_model_seam.md`); in-interface SVA
+  scaffolding + a user pragma hook (K1 — a skeleton,
   not a full assertion library); whitebox probe observation of internal signals (K2).
 - **Coverage (◑):** config-driven functional coverage from fields — coverpoints, named
   bins, crosses, illegal/ignore/transition bins, a goal (V1). Register functional coverage
