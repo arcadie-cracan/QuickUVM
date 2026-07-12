@@ -25,19 +25,20 @@ function mem_seq_item memslave_predictor::predict(mem_seq_item t);
   extr.copy(t);
 
   // pragma quickuvm custom prediction_logic begin
-  // THE CHECK: whatever our reactive agent granted must be exactly what the DUT captures.
-  // That is the whole claim — the device answered, and answered correctly.
-  //
-  // The monitor pairs inputs sampled at cycle N with outputs sampled at N+1 (a registered
-  // DUT), so a grant driven at N is observable as `last_data` at N+1 in the SAME item.
-  if (extr.gnt) m_last = extr.rdata;
+  // THE CHECK: the DUT must capture exactly what the memory model says lives at the
+  // address it asked for. Expected is derived from `addr` — INDEPENDENTLY of the `rdata`
+  // we observed — so a responder that answers the WRONG data fails, not just a DUT that
+  // captures wrongly.
+  if (extr.gnt) begin
+    m_grants++;
+    m_last = mem_model(extr.addr);
+  end
   extr.last_data = m_last;
 
-  // NOT modelled (echoed, not checked):
-  //   req/addr  — the DUT's own program counter; it drives these.
-  //   fetched   — DUT bookkeeping. `req` is a LEVEL held until granted, so the monitor
-  //               republishes the same request while it is high; counting grants here
-  //               would overcount. Checking last_data is the meaningful property.
+  if (extr.fetched > m_fetched) m_fetched = extr.fetched;
+
+  // NOT modelled (echoed): req/addr (the DUT's own program counter) and `fetched` (DUT
+  // bookkeeping — liveness is asserted in check_phase instead).
   // pragma quickuvm custom prediction_logic end
 
   `uvm_info("CALC #2", extr.convert2string(), UVM_FULL)

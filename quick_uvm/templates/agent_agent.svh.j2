@@ -52,9 +52,12 @@ class {{ agent.name }}_agent{{ agent.param_decl }} extends uvm_agent;
   // Created through the factory, so an error-injecting or delaying responder can still be
   // swapped in with a type override.
   task run_phase(uvm_phase phase);
-    {{ agent.responder_seq_name }}{{ agent.param_args_values }} responder;
+    {{ agent.responder_seq_name }}{{ agent.param_args }} responder;
     if (is_active == UVM_ACTIVE) begin
-      responder = {{ agent.responder_seq_name }}{{ agent.param_args_values }}::type_id::create("responder");
+      // Created WITH CONTEXT (get_full_name()), or a per-instance factory override would
+      // silently no-op and the swap-in-an-error-injector story would be a lie.
+      responder = {{ agent.responder_seq_name }}{{ agent.param_args }}::type_id::create(
+          "responder", null, get_full_name());
       responder.start(sqr);
     end
   endtask

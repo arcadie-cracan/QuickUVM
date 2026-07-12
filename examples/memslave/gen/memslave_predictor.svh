@@ -18,9 +18,31 @@ class memslave_predictor extends uvm_subscriber #(mem_seq_item);
   uvm_analysis_port #(mem_seq_item) results_ap;
 
   // pragma quickuvm custom class_item_additional begin
-  // The data we granted on the previous cycle — the DUT registers it into last_data.
+  // The expected data is computed from the REQUEST ADDRESS by our own memory model —
+  // NOT from the rdata we observed on the bus. Deriving it from the observed value would
+  // make the check a tautology: it could never fail for a responder that answers WRONG.
   bit [31:0] m_last;
-  bit [7:0]  m_fetched;
+  int        m_grants;      // how many requests the reactive agent actually granted
+  int        m_fetched;     // the DUT's completed-transfer count (liveness)
+
+  function bit [31:0] mem_model(bit [7:0] a);
+    return {24'h0, a} ^ 32'hA5A5_A5A5;
+  endfunction
+
+  // LIVENESS. A dead responder (never grants) leaves the DUT wedged with last_data at 0 —
+  // and the predictor would also predict 0, so the compare passes. Nothing in a
+  // per-transaction check can catch "the device never answered": it needs an end-of-test
+  // assertion that progress actually happened. This is the detector the first version of
+  // this bench was missing, which is why a completely dead reactive agent reported PASS.
+  function void check_phase(uvm_phase phase);
+    super.check_phase(phase);
+    if (m_grants == 0)
+      `uvm_error("DEAD_RESPONDER",
+                 "the reactive agent never granted a single request — the device is dead")
+    if (m_fetched == 0)
+      `uvm_error("NO_PROGRESS",
+                 "the DUT completed ZERO transfers — it was never answered")
+  endfunction
   // pragma quickuvm custom class_item_additional end
 
   function new(string name, uvm_component parent);

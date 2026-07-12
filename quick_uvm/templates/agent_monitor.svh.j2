@@ -18,6 +18,8 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
   // computes the response. The monitor already decodes the protocol for passive mode,
   // so this duplicates nothing — which is exactly why the driver does NOT decode it.
   uvm_analysis_port #({{ agent.sequence_item }}{{ agent.param_args }}) request_ap;
+  // Edge-detect state for the request qualifier (see run_phase).
+  bit m_req_seen;
 {% endif %}
 
   // pragma quickuvm custom class_item_additional begin
@@ -47,7 +49,13 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
       sample_dut(tr);
 {% if agent.is_responder %}
       // The DUT issued a request -> hand it to the responder sequence.
-      if (tr.{{ agent.request_valid }}) request_ap.write(tr);
+      //
+      // On the RISING EDGE of the qualifier, not its level. A request line is normally HELD
+      // until it is granted, so a level-triggered publish would queue one copy per cycle and
+      // the responder would answer the same request many times (over-granting, and the
+      // response held for extra cycles).
+      if (tr.{{ agent.request_valid }} && !m_req_seen) request_ap.write(tr);
+      m_req_seen = tr.{{ agent.request_valid }};
 {% endif %}
 {% if agent.emit_when %}
       // Publish only valid/qualified transactions (emit_when: {{ agent.emit_when }}).

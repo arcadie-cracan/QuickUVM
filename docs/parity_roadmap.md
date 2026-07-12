@@ -637,7 +637,20 @@ and is the long pole for campaign target **T2** (`spi_host`).
   `request_valid` names a 1-bit SAMPLED port; `idle` keys name DRIVEN ports and fit their widths;
   both rejected on an initiator. Opt-in + byte-identical (the 30-example gate is unmoved).
 - Validated on `examples/memslave/` (a DUT that fetches from a TB-side memory): **34/34 on
-  Xcelium**, self-checking, mutation-proved (breaking the DUT's capture fails 31/34).
+  Xcelium**, self-checking, and mutation-proved **against the responder itself** — a device that
+  answers wrong data fails 31/34, and a device that never answers at all fails with
+  `DEAD_RESPONDER`/`NO_PROGRESS`.
+- **A pre-merge adversarial review found the first self-check was a tautology**: it derived the
+  expected value from the `rdata` observed on the bus, so a responder mutated to never grant left
+  the DUT wedged with zero transfers and the bench still reported **PASS 34/34**. The scoreboard
+  now predicts from the request ADDRESS via its own memory model, and a `check_phase` asserts
+  liveness (a dead responder cannot be caught per-transaction: with no grant, expected and actual
+  are both zero and every compare agrees). The review also closed four more paths that let random
+  stimulus reach a responder's sequencer (`test.sequence`, C3 `instances`, H1 subenv vseqs, and
+  the test's branch order), fixed a level-vs-edge request publish that made the responder answer
+  the same request every cycle it was held, made `initialize()` park at the declared `idle:`
+  values, and gave the responder factory context (without which the advertised
+  swap-in-an-error-injector override silently no-opped).
 - *Deferred:* the `mem_model` primitive; pipelined/out-of-order responders (`put_response` /
   `set_id_info`); an `if_mode`-style host/device driver swap within one agent.
 

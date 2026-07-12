@@ -53,7 +53,10 @@ class mem_agent extends uvm_agent;
   task run_phase(uvm_phase phase);
     mem_responder_seq responder;
     if (is_active == UVM_ACTIVE) begin
-      responder = mem_responder_seq::type_id::create("responder");
+      // Created WITH CONTEXT (get_full_name()), or a per-instance factory override would
+      // silently no-op and the swap-in-an-error-injector story would be a lie.
+      responder = mem_responder_seq::type_id::create(
+          "responder", null, get_full_name());
       responder.start(sqr);
     end
   endtask

@@ -56,3 +56,7 @@ analysis:
 
 tests:
   - {name: rand_test, num_items: 40}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f
