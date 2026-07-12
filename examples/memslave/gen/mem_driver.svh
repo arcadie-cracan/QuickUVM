@@ -11,6 +11,15 @@ class mem_driver extends uvm_driver #(mem_seq_item);
 
   virtual mem_if vif;
 
+  // --- LIVENESS. Generated, and deliberately NOT inside a pragma. ---------------------
+  // A dead responder is UNPROVABLE PER-TRANSACTION: with no response the DUT never
+  // captures anything, so expected and actual are both zero and EVERY compare agrees.
+  // It has reported TEST PASSED 34/34 while the device was stone dead. The only thing
+  // that catches it is an end-of-test check — so a responder without one must be
+  // impossible to GENERATE, not merely discouraged in a doc.
+  protected int unsigned m_responses;      // responses actually driven
+  protected int unsigned m_active_drives;  // ...that said anything other than `idle`
+
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
 
@@ -68,11 +77,36 @@ class mem_driver extends uvm_driver #(mem_seq_item);
 
   virtual task drive_item (mem_seq_item tr);
     `uvm_info("drive_item", tr.input2string(), UVM_FULL)
+    m_responses++;
+    if (!is_idle_response(tr)) m_active_drives++;
     vif.cb1.gnt <= tr.gnt;
     vif.cb1.rdata <= tr.rdata;
     @vif.cb1;
     // pragma quickuvm custom drive_item_additional begin
     // pragma quickuvm custom drive_item_additional end
   endtask
+
+  // Did this response actually SAY anything, or is it the idle value the driver would
+  // have parked on anyway? A seam left empty drives idle forever and looks alive.
+  virtual function bit is_idle_response (mem_seq_item tr);
+    return 1'b1
+      && (tr.gnt == 1'd0)
+      && (tr.rdata == 32'd0)
+    ;
+  endfunction
+
+  function void check_phase (uvm_phase phase);
+    super.check_phase(phase);
+    if (m_responses == 0)
+      `uvm_error("DEAD_RESPONDER", "this responder drove ZERO responses — the DUT never \
+got an answer. Every per-transaction compare 'passed' because there was nothing to \
+compare: with no response the DUT captures nothing, so expected and actual are both \
+zero and they agree. Check that the DUT actually requests, and that request_valid \
+names the right port.")
+    else if (m_active_drives == 0)
+      `uvm_error("SILENT_RESPONDER", $sformatf("this responder drove %0d response(s), \
+but EVERY ONE of them was the idle value — so it never actually answered. The \
+`response_logic` seam is almost certainly empty.", m_responses))
+  endfunction
 
 endclass

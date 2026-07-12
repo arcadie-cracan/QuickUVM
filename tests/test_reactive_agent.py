@@ -365,3 +365,49 @@ def test_responder_is_created_with_factory_context(tmp_path):
     _gen(tmp_path)
     agt = (tmp_path / "mem_agent.svh").read_text()
     assert 'type_id::create(\n          "responder", null, get_full_name())' in agt
+
+
+# --- liveness: a responder without an end-of-test check must be UNGENERATABLE ---
+
+
+def test_responder_driver_always_has_a_liveness_check(tmp_path):
+    """A dead responder is UNPROVABLE PER-TRANSACTION, so it must be proved at end-of-test.
+
+    With no response the DUT never captures anything, so expected and actual are both zero
+    and EVERY per-transaction compare agrees. This trap has reported TEST PASSED 34/34
+    while the device was stone dead. The check is therefore GENERATED, outside any pragma
+    — it must not depend on a human remembering to write it.
+
+    Mutation-proved: memslave with a DUT that never asserts `req`, and its hand-written
+    predictor check REMOVED, yields exactly 1 UVM_ERROR — DEAD_RESPONDER, from the
+    generated driver. Before this, the same bench passed clean.
+    """
+    _gen(tmp_path)  # _BASE is a responder
+    drv = (tmp_path / "mem_driver.svh").read_text()
+
+    assert "function void check_phase" in drv
+    assert "DEAD_RESPONDER" in drv
+    assert "m_responses" in drv
+    # ...and it must NOT be inside a pragma region, or a regeneration could drop it.
+    body = drv.split("check_phase")[1]
+    assert "pragma" not in body, "the liveness check must not live in a pragma region"
+
+
+def test_continuous_responder_also_detects_a_silent_seam(tmp_path):
+    """`m_responses > 0` is not enough: a responder whose response seam is EMPTY drives
+    the idle value forever and looks perfectly alive."""
+    _gen(tmp_path, agents=_continuous())
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    assert "SILENT_RESPONDER" in drv
+    assert "is_idle_response" in drv
+    # the idle comparison must name every declared idle port
+    assert "tr.gnt == 1'd0" in drv and "tr.rdata == 32'd0" in drv
+
+
+def test_initiator_gets_no_liveness_check(tmp_path):
+    """Opt-in: an initiator's driver must be byte-identical to before."""
+    _gen(tmp_path, agents=_initiator())
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    assert "DEAD_RESPONDER" not in drv
+    assert "m_responses" not in drv
+    assert "check_phase" not in drv

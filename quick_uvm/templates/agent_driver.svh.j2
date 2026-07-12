@@ -11,6 +11,19 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
 
   virtual {{ agent.interface }}{{ agent.param_args }} vif;
 
+{% if agent.is_responder %}
+  // --- LIVENESS. Generated, and deliberately NOT inside a pragma. ---------------------
+  // A dead responder is UNPROVABLE PER-TRANSACTION: with no response the DUT never
+  // captures anything, so expected and actual are both zero and EVERY compare agrees.
+  // It has reported TEST PASSED 34/34 while the device was stone dead. The only thing
+  // that catches it is an end-of-test check — so a responder without one must be
+  // impossible to GENERATE, not merely discouraged in a doc.
+  protected int unsigned m_responses;      // responses actually driven
+{% if agent.idle %}
+  protected int unsigned m_active_drives;  // ...that said anything other than `idle`
+{% endif %}
+
+{% endif %}
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
 
@@ -50,6 +63,15 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
 {% for port in agent.input_ports %}
 {% if port.name in agent.idle %}
     vif.cb1.{{ port.name }} <= {{ port.bit_width }}'d{{ agent.idle[port.name] }};
+{% endif %}
+{% endfor %}
+{% for port in agent.inout_ports %}
+{% if port.name ~ '_o' in agent.idle %}
+    vif.cb1.{{ port.name }}_o  <= {{ port.bit_width }}'d{{ agent.idle[port.name ~ '_o'] }};
+{% endif %}
+{% if port.name ~ '_oe' in agent.idle %}
+    // A tri-state device's idle IS releasing the bus.
+    vif.cb1.{{ port.name }}_oe <= {{ port.bit_width }}'d{{ agent.idle[port.name ~ '_oe'] }};
 {% endif %}
 {% endfor %}
     // pragma quickuvm custom drive_idle_additional begin
@@ -106,6 +128,12 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
 
   virtual task drive_item ({{ agent.sequence_item }}{{ agent.param_args }} tr);
     `uvm_info("drive_item", tr.input2string(), UVM_FULL)
+{% if agent.is_responder %}
+    m_responses++;
+{% if agent.idle %}
+    if (!is_idle_response(tr)) m_active_drives++;
+{% endif %}
+{% endif %}
 {% if agent.active %}
 {% for port in agent.input_ports %}
     vif.cb1.{{ port.name }} <= tr.{{ port.name }};
@@ -119,5 +147,45 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
     // pragma quickuvm custom drive_item_additional begin
     // pragma quickuvm custom drive_item_additional end
   endtask
+{% if agent.is_responder %}
+{% if agent.idle %}
+
+  // Did this response actually SAY anything, or is it the idle value the driver would
+  // have parked on anyway? A seam left empty drives idle forever and looks alive.
+  virtual function bit is_idle_response ({{ agent.sequence_item }}{{ agent.param_args }} tr);
+    return 1'b1
+{% for port in agent.input_ports %}
+{% if port.name in agent.idle %}
+      && (tr.{{ port.name }} == {{ port.bit_width }}'d{{ agent.idle[port.name] }})
+{% endif %}
+{% endfor %}
+{% for port in agent.inout_ports %}
+{% if port.name ~ '_o' in agent.idle %}
+      && (tr.{{ port.name }}_o == {{ port.bit_width }}'d{{ agent.idle[port.name ~ '_o'] }})
+{% endif %}
+{% if port.name ~ '_oe' in agent.idle %}
+      && (tr.{{ port.name }}_oe == {{ port.bit_width }}'d{{ agent.idle[port.name ~ '_oe'] }})
+{% endif %}
+{% endfor %}
+    ;
+  endfunction
+{% endif %}
+
+  function void check_phase (uvm_phase phase);
+    super.check_phase(phase);
+    if (m_responses == 0)
+      `uvm_error("DEAD_RESPONDER", "this responder drove ZERO responses — the DUT never \
+got an answer. Every per-transaction compare 'passed' because there was nothing to \
+compare: with no response the DUT captures nothing, so expected and actual are both \
+zero and they agree. Check that the DUT actually requests, and that request_valid \
+names the right port.")
+{% if agent.idle %}
+    else if (m_active_drives == 0)
+      `uvm_error("SILENT_RESPONDER", $sformatf("this responder drove %0d response(s), \
+but EVERY ONE of them was the idle value — so it never actually answered. The \
+`response_logic` seam is almost certainly empty.", m_responses))
+{% endif %}
+  endfunction
+{% endif %}
 
 endclass
