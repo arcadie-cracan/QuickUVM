@@ -57,3 +57,9 @@ dvt_build.log
 **/gen/*.history
 **/gen/*.shm/
 **/gen/.simvision/
+**/gen/*.key
+
+# R1 — `make regress` output: the snapshot, per-(test,seed) run dirs + logs, and the
+# coverage DBs/reports. All reproducible; keep the generated Makefile itself.
+**/gen/out/
+**/sim/.xrun_gate.log

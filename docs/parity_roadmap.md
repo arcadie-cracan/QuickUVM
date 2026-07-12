@@ -838,15 +838,114 @@ generators. Needed for CDC and most real SoC blocks.
   agent-driven resets combined with M1 multi-clock domains; a dedicated assert-then-
   deassert reset sequence-kind body.
 
-### R1 — Regression & coverage infrastructure
+### R1 — Regression & coverage infrastructure — DONE  *(the last item on the v1.0 list)*
 Per-simulator makefiles, a testlist/regression runner, seed management, and a
 coverage-merge flow (coverage closure needs all of these).
-**Accept:** `make regress` runs N tests × M seeds and merges coverage.
-- **Pair with Xcelium-in-CI.** The empirical assessment (below) found a latent
-  generator bug — the explicit `analysis.coverage:` path emitted `<agent>_cov
-  <agent>_cov;` (member == type), which verible accepts but Xcelium rejects at
-  elaboration — that verible-only CI missed. A minimal Xcelium smoke in CI (or an
-  example that exercises each opt-in path) would have caught it.
+**Accept:** `make regress` runs N tests × M seeds and merges coverage. ✅
+
+> **This does NOT declare v1.0.** The roadmap list is complete; the *release* is not.
+> The version stays **0.9.x** pending intensive testing — and R1 exists precisely to make
+> that testing possible (tests × seeds, merged coverage, reproducible failures). Every
+> feature here has been validated on its own example; what has *not* happened yet is
+> sustained multi-seed regression across the whole example suite, which is exactly the
+> kind of exercise that turns up single-seed artefacts. Bump to v1.0 only on the far side
+> of that.
+
+**Status — landed (opt-in `regress:` → a generated Makefile):**
+- `regress: {simulator, filelist, seeds, coverage}` → QuickUVM emits a
+  **`Makefile`** next to the generated sources: `help` / `build` / `run` / `regress` /
+  `cov` / `clean`. It **elaborates once** (`xrun -elaborate` → a snapshot) and runs the
+  whole matrix against it with `xrun -R`, so N×M runs cost one elaboration.
+- **The testlist is derived, not restated**: `tests[]` + the RAL `reg_test` + one test
+  per C5 `csr_tests` kind (`ProjectConfig.regress_jobs`). Per-test `seeds:` overrides
+  `regress.seeds` (the one idea worth stealing from OpenTitan's dvsim `reseed`).
+  *Trap encoded in the model:* the RAL basic test's **class** is the bare `reg_test` —
+  only its *file* is `<dut>_reg_test.svh`. A testlist that assumed the `<dut>_` prefix
+  would hand `+UVM_TESTNAME` an unregistered name.
+- **Seeds are explicit and recorded** (`SEED_BASE..SEED_BASE+n-1`, written to
+  `seed.txt`, passed as `-svseed`), never `-svseed random`: a regression you cannot
+  replay is not a regression. Every failure prints `reproduce: make run TEST=<t> SEED=<s>`.
+- **The verdict does not trust the exit code.** `xrun` exits **0 even with UVM_ERRORs**,
+  and `Number of caught UVM_ERROR reports` is the report-*catcher* count (always 0) —
+  parsing either marks failing runs PASS, silently turning a red regression green. The
+  runner parses the `** Report counts by severity` block **and** requires `Simulation
+  complete via $finish` (a crash never prints the block at all).
+- Coverage: `-coverage all` at elaborate (instrumentation), `-covtest <test>.<seed>` per
+  run (bookkeeping — a `-coverage` flag on a `-R` run is *silently ignored*), then `imc`
+  merge + text report. `imc`'s `-batch`/`-exec`/`-execcmd` are mutually exclusive
+  (`-batch -exec f` silently does nothing), so the recipe writes a command file and
+  passes it to `-exec` alone; `report_metrics` is HTML-only, so the text summary uses the
+  legacy `report -summary -text`. `regress` drops the previous run's per-test coverage
+  DBs first, so the merged number can never fold in an older regression's runs.
+- **The snapshot is rebuilt when its sources change** (the stamp depends on the filelist
+  and the files it lists). Without that, an RTL edit would silently re-run the *old*
+  snapshot and report PASS — the same false-green class as trusting the exit code.
+- Opt-in + byte-identical when absent (no `regress:` ⇒ no Makefile ⇒ the 28-example
+  byte-identity gate is unmoved). Fail-closed: seeds ≥ 1, goal 1..100, goal requires
+  coverage, non-empty filelist, no duplicate `+UVM_TESTNAME`, and `subenvs` rejected (a
+  subsystem's leaf RTL lives in a pragma region, so the real filelist can't be derived).
+- **Xcelium-only, deliberately.** It is the simulator every example is validated on and
+  the merge recipe (`imc`) is tool-specific; a Questa/VCS branch that ships untested is
+  worse than none. Site flags go in the `extra_make_vars` / `extra_make_targets` pragma
+  regions (the merger already accepts `#` markers — no merger change needed).
+- Validated on **`examples/rvtimer/`** (5 tests × seeds = **9 runs, 9/9 on Xcelium**,
+  coverage merged: `host_cov` 100% (17/17), DUT block 100%) and **`examples/alu/`** (3
+  seeds, **3/3**). **Coverage merge proven to accumulate**: 43/88 bins from seed 1 alone
+  → **47/88 merged across 3 seeds**. **Mutation proof**: a one-line error injected into
+  the golden model turns 5/9 runs **FAIL** with reproduce commands and a **nonzero exit**
+  — while `xrun` itself exited 0 on every one of them.
+- *Deferred:* a **coverage `goal:` gate** (fail the regression below N%) — it needs a
+  defensible single number to gate on, and imc's text summary is a per-instance table of
+  several metrics; "the first percentage in the report" is not a coverage target, and a
+  gate that silently doesn't apply is worse than none. The covergroup-level target already
+  exists (V1 `coverage_models[].goal` → `option.goal`). Also deferred: subsystem (H1)
+  regressions; Questa/VCS branches; a `regressions:` grouping (`make regress JOBS="a:1 b:2"`
+  covers it); parallel runs default to `JOBS_N=1`.
+- *Adversarially reviewed* (30 agents, 22 confirmed findings — all fixed or cut). The ones
+  that mattered were all the same species: **a regression that cannot go red.** Stale
+  snapshot after an RTL edit; a stale `sim.log` verdicted when `xrun` fails to *launch*;
+  merged coverage folding in a previous regression's DBs; `xargs` without `-r` turning an
+  empty testlist into "1/1 passed"; a `0/0 passed` exiting 0; the coverage goal failing
+  *open*. Each now has a regression test.
+
+### The Xcelium-in-CI gate — what it actually turned out to be
+The empirical assessment found a latent generator bug — the `analysis.coverage:` path
+emitted `<agent>_cov <agent>_cov;` (member == type) and then `<agent>_cov::type_id::
+create()`, which verible accepts but Xcelium **rejects at compile** (`*E,NOPBIND: Package
+<agent>_cov could not be bound`). The roadmap called for "a minimal Xcelium smoke in CI."
+**That is not available to us**: CI runs on GitHub-hosted runners, which have no Cadence
+licence. Measured against the actual bug:
+
+| gate | buggy code | clean code | verdict |
+|---|---|---|---|
+| `xrun -compile` | exit 1 | exit 0 | the only discriminator (seconds) |
+| verible-verilog-lint (CI today) | exit 0 | exit 0 | **blind** |
+| verilator `--lint-only` | exit 0 | exit 0 | **also blind** |
+| iverilog `-g2012` | errors | **errors** | false-positive machine |
+
+So a free-simulator lane cannot substitute. What shipped instead, both mutation-proved:
+1. **`tests/test_no_type_shadowing.py`** (+ `quick_uvm/svcheck.py`) — a targeted static
+   check, free on hosted CI, **ENFORCED**. The invariant is deliberately **narrow**: a
+   member shadowing its type is only fatal when a bare `<type>::` also appears *in the
+   same class scope*. A shadowing declaration alone is legal, and QuickUVM ships ~43 of
+   them (`<agent>_cfg <agent>_cfg;` in every `*_env_cfg.svh`) — the naive "member != type"
+   rule the roadmap literally asked for would fire on all 43, forcing a mass rename that
+   breaks byte-identity for **zero** safety.
+2. **`scripts/xrun_gate.sh`** — the real compiler (`xrun -compile`) over all 28 examples,
+   catching bug classes we haven't thought of. Needs a licence, so CI **cannot enforce
+   it**; it is a pre-push discipline. Currently **28/28 clean**. Be honest that this half
+   is an honour system — a single-maintainer project can carry that; a hard gate it is not.
+
+*Not done: a self-hosted runner.* GitHub explicitly recommends against self-hosted runners
+on **public** repos — a fork PR can execute arbitrary code on the runner, and here the
+runner would be the box holding the Cadence licence. Given (1) and (2) already cover the
+known bug class, that exposure isn't worth it unless QuickUVM goes private.
+
+*Live landmine (separate PR):* those ~43 benign `<agent>_cfg <agent>_cfg;` declarations
+compile only by luck. The day a template edit writes `<agent>_cfg::` inside `<dut>_env_cfg`,
+every bench breaks exactly as `_cov` did. Renaming them at the source is the real fix — but
+it rewrites every `gen/` tree, so it must be its own blessed one-time regeneration commit,
+kept out of R1 so the byte-identity gate stays meaningful.
 
 ### Empirical validation — `rvtimer` reproduce-and-compare
 [`maturity_assessment_rv_timer.md`](maturity_assessment_rv_timer.md) upgrades the

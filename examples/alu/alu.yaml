@@ -83,3 +83,10 @@ coverage_models:
           - name: add_at_corner
             select: "binsof(op_cp) intersect {ADD} && !binsof(a_cp.mid)"
           - {name: skip_mid, kind: ignore_bins, select: "binsof(a_cp.mid)"}
+
+# R1 — regression + coverage closure. `make -C gen regress` elaborates the bench
+# once, runs the testlist x seeds against that snapshot, verdicts each run from the
+# UVM severity block (xrun exits 0 even on UVM_ERROR), then merges + reports
+# coverage. Seeds are explicit and recorded, so any failure replays verbatim.
+regress:
+  seeds: 3
