@@ -30,12 +30,24 @@ SNAPSHOT := $(ABS_OUT)/xcelium.d
 ELAB_OK  := $(ABS_OUT)/.elaborated
 
 # The snapshot must be rebuilt when any source it was built from changes — otherwise
-# `make regress` silently re-runs a STALE snapshot and reports PASS for RTL you just
+# `make regress` silently re-runs a STALE snapshot and reports PASS for code you just
 # edited. Derive the sources from the filelist: drop comments, then drop option lines
 # (-uvm, -access, -top, +incdir...), leaving the .sv/.svh/.c paths, which are relative
-# to the filelist's own directory. Nested `-f` files are not followed.
+# to the filelist's own directory. Nested `-f` files are not followed. NB whole LINES
+# are dropped, not words: `-top tb_top` carries an argument that is not a source.
 SRCS := $(addprefix $(SIM_DIR),$(shell sed -e 's|//.*||' $(FILELIST) 2>/dev/null \
           | grep -vE '^[[:space:]]*[-+]' | grep -vE '^[[:space:]]*$$'))
+
+# ...but the filelist only names COMPILATION UNITS. Every UVM class — driver, monitor,
+# predictor, reference model, scoreboard, sequences, tests — is a .svh pulled in by an
+# `include inside the tb package, so NONE of them appear in the filelist. Track those
+# too, or editing the very files a verification engineer edits most often would leave
+# the snapshot stale and `make regress` would verdict PASS on code it never compiled.
+# By construction the .svh files sit in the +incdir directories — that is what an
+# include path is FOR — so that is where we look.
+INCDIRS := $(addprefix $(SIM_DIR),$(shell sed -e 's|//.*||' $(FILELIST) 2>/dev/null \
+             | grep -oE '[+]incdir[+][^[:space:]]+' | sed -e 's|^[+]incdir[+]||'))
+SRCS += $(wildcard $(addsuffix /*.svh,$(INCDIRS)))
 
 # test:seeds — the declared tests[], plus the RAL reg_test and one test per C5
 # csr_tests kind. NB the basic register test's CLASS is the bare `reg_test`; only
