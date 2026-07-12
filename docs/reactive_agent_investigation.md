@@ -53,9 +53,85 @@ of small, opt-in additions.
 > **Consequence for the design below.** The proposed `mode: initiator | responder` schema is
 > **under-specified**: it must distinguish the *blocking* responder (OpenTitan/Verilab — the
 > shape this doc describes) from the *non-blocking, idle-driving* responder (OBI/CESNET). The
-> §"Recommended design shape" section is correct **only for the blocking shape**. Settle this
-> before implementing. Everything else below (the monitor request port, the sequencer TLM
-> FIFO, the forever responder sequence, the response-logic pragma seam, byte-identity) stands.
+> §"Recommended design shape" section is correct **only for the blocking shape**. Everything
+> else below (the monitor request port, the sequencer TLM FIFO, the forever responder
+> sequence, the response-logic pragma seam, byte-identity) stands.
+>
+> **RESOLVED — see §"The two responder shapes" immediately below.**
+
+## The two responder shapes (the resolved schema)
+
+Verified at source, not from a summary — `uvma_obi_memory_drv.sv` (OpenHW core-v-verif),
+the slave branch of `drv_post_reset()`:
+
+```systemverilog
+UVMA_OBI_MEMORY_MODE_SLV: begin
+   seq_item_port.try_next_item(req);     // NON-BLOCKING
+   if (req != null) begin
+      drv_slv_req(slv_req);              // drive the response
+      seq_item_port.item_done();
+   end
+   else begin
+      drv_slv_idle();                    // NO ITEM -> drive a defined IDLE value
+      @(slv_mp.drv_slv_cb);              // ...and advance a cycle anyway
+   end
+end
+```
+(plus a separately forked `drv_slv_gnt()` forever-thread for the per-cycle grant obligation).
+
+Compare the blocking shape, which drives **only** when it holds an item and is otherwise
+parked. The difference is not stylistic — it is forced by whether the protocol gives the
+slave a **per-cycle obligation**:
+
+| | **blocking** responder | **continuous** responder |
+|---|---|---|
+| driver loop | `get_next_item` → drive → `item_done` (unchanged from the initiator) | `try_next_item` → drive-or-**idle** → advance a cycle, **every cycle** |
+| when it has no item | parks; outputs hold | **drives a defined idle value** |
+| why | the slave's outputs are only meaningful during a transfer | the DUT samples the slave's outputs (gnt/ready/valid) **every cycle**; parking leaves them stale or X |
+| seen in | OpenTitan `dv_reactive_agent`, Verilab SNUG-2016 | OpenHW OBI, CESNET OFM |
+
+### The schema
+
+The knob is the **data**, not a redundant boolean — so it cannot get out of sync with itself:
+
+```yaml
+agents:
+  - name: dev
+    mode: responder          # initiator (default) | responder
+    request_valid: req       # which sampled input means "a request arrived"
+
+    # OPTIONAL. Its PRESENCE selects the continuous shape, and it carries exactly the
+    # information that shape needs: what to drive when there is no item.
+    idle:
+      gnt:    0
+      rvalid: 0
+```
+
+- `mode: responder` **alone** → the **blocking** shape (OpenTitan/Verilab). The simple,
+  common case; the driver loop is the initiator's, unchanged.
+- `mode: responder` **+ `idle:`** → the **continuous** shape. The driver becomes
+  `try_next_item` + `drive_idle()` on a miss, and advances a cycle either way.
+
+Declaring `idle:` *is* the statement "this bus has a per-cycle obligation." Adding a
+separate `driver_style:` flag alongside it would be redundant — and redundant knobs are how
+a schema starts lying.
+
+**What stays OUT of the schema:** the per-cycle protocol thread (OBI's forked
+`drv_slv_gnt()`, which drives `gnt` combinationally from the DUT's `req`, independent of any
+response item). That is **protocol logic**, and the campaign's fairness rule is explicit that
+*no generator on earth generates protocol logic* — OpenTitan's own `uvmdvgen` emits
+`device_driver.sv.tpl` with a **completely empty** `get_and_drive()`. It gets a **pragma
+region** in the driver (a `driver_threads` seam forked alongside the main loop), not a config
+key.
+
+**Fail-closed:** `idle:` only with `mode: responder`; its keys must be ports the agent
+*drives*; its values must fit each port's width; `mode: responder` requires `active: true`,
+at least one driven port, and a `request_valid` naming a 1-bit sampled input.
+
+**What is NOT needed:** CESNET's `uvm_driver #(RSP, REQ)` type-swap is an *alternative* to
+the monitor-request-port for getting the observed request back up to the sequence — not a
+third driver shape. We already publish the request from the monitor, so we do not replicate
+it. Two shapes cover the field.
 
 ## Terminology
 
