@@ -1,0 +1,67 @@
+# Bidirectional (`inouts`) ports — an open-drain, wired-AND bus (the shape of I2C SDA/SCL).
+#
+# Neither `inputs` (TB-driven) nor `outputs` (DUT-driven) can express this: the net is a
+# shared `wire`, and the TB must be able to RELEASE it. So `inouts` is a third category —
+# the direction keyword, completing inputs/outputs/inouts <-> input/output/inout.
+#
+# Each inout port yields THREE transaction fields:
+#   <n>_o   what we drive       (rand)
+#   <n>_oe  whether we drive    (rand) — releasing is a first-class choice
+#   <n>     the RESOLVED line   (sampled; never what we drove)
+
+project:
+  name: odbus_tb
+  author: qa@example.com
+
+dut:
+  name: odbus
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: bus
+    interface: bus_if
+    sequence_item: bus_seq_item
+    seq_item_style: manual
+    active: true
+    ports:
+      outputs:
+        - {name: dut_low, width: 1}      # observable: the DUT is pulling low
+      inouts:
+        # open_drain: a driver may only pull LOW or release — driving a 1 IS releasing.
+        # pullup is MANDATORY here: with nobody driving, an undriven net floats to X and
+        # silently poisons every downstream sample.
+        - {name: sda, width: 1, open_drain: true, pullup: true}
+
+analysis:
+  coverage: [bus]
+  scoreboards:
+    # Checks the WIRED-AND contract itself: the resolved line is low iff SOMEBODY pulls it
+    # low, and reads 1 (never X) when everyone releases.
+    - {name: sb, source: bus}
+
+coverage_models:
+  - agent: bus
+    coverpoints:
+      - field: sda_oe
+        bins:
+          - {name: released, value: 0}
+          - {name: driving,  value: 1}
+      - field: dut_low
+        bins:
+          - {name: dut_released, value: 0}
+          - {name: dut_low,      value: 1}
+    crosses:
+      # the interesting cell: BOTH pulling low at once — legal, and must not produce X
+      - {name: contention, fields: [sda_oe, dut_low]}
+
+tests:
+  - {name: rand_test, num_items: 60}
+
+regress:
+  seeds: 3

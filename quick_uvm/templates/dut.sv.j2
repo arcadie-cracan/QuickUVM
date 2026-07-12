@@ -12,7 +12,11 @@
 module {{ dut.name }}{{ primary.param_decl }} (
 {% if dut.combinational %}
 {% for kind, port in dut_ports_all %}
+{% if kind == 'inout' %}
+  inout  wire  {{ port.sv_span }}{{ port.name }}{{ "," if not loop.last else "" }}
+{% else %}
   {{ 'output logic ' if kind == 'output' else 'input  ' }}{{ port.sv_span }}{{ port.name }}{{ "," if not loop.last else "" }}
+{% endif %}
 {% endfor %}
   );
 {% else %}
@@ -21,6 +25,9 @@ module {{ dut.name }}{{ primary.param_decl }} (
 {% endfor %}
 {% for port in dut_ports_in %}
   input  {{ port.sv_span }}{{ port.name }},
+{% endfor %}
+{% for port in dut_ports_inout %}
+  inout  wire  {{ port.sv_span }}{{ port.name }},
 {% endfor %}
   input               {{ dut.clock }}{% if dut_stub_reset %},
   input               {{ dut.reset }}{% endif %});
