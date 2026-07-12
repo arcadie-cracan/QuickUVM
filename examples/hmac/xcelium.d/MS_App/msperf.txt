@@ -1,0 +1,2 @@
+DMSPFEB, Logic or RNM blocks only
+SVMSEB, option -sv
