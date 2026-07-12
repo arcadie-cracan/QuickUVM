@@ -27,13 +27,27 @@ interface {{ agent.interface }}{{ agent.param_decl }} (input clk{% if agent_rese
 {% for port in agent.inout_ports %}
   wire  {{ port.sv_span }}{{ port.name }};        // the RESOLVED line (what everyone sees)
   logic {{ port.sv_span }}{{ port.name }}_o;      // what WE drive
-  logic {{ port.name }}_oe;     // ...and whether we drive at all
+  logic {{ port.sv_span }}{{ port.name }}_oe;     // ...and whether we drive at all
+{% if port.bit_width == 1 %}
 {% if port.open_drain %}
   // OPEN-DRAIN: a driver may only pull LOW or release — it can never drive high. So
   // driving a 1 IS releasing, which is why the wired-AND works.
   assign {{ port.name }} = ({{ port.name }}_oe && !{{ port.name }}_o) ? 1'b0 : 1'bz;
 {% else %}
   assign {{ port.name }} = {{ port.name }}_oe ? {{ port.name }}_o : {{ port.bit_width }}'bz;
+{% endif %}
+{% else %}
+  // ONE ENABLE PER LANE, resolved independently. A single enable for the whole vector
+  // would make a shared bus unusable: on standard SPI the host drives sd[0] while the
+  // device drives sd[1] AT THE SAME INSTANT, so the two lanes must be released and
+  // driven separately. A scalar enable can only say "all" or "none".
+  for (genvar i = 0; i < {{ port.bit_width }}; i++) begin : g_{{ port.name }}_lane
+{% if port.open_drain %}
+    assign {{ port.name }}[i] = ({{ port.name }}_oe[i] && !{{ port.name }}_o[i]) ? 1'b0 : 1'bz;
+{% else %}
+    assign {{ port.name }}[i] = {{ port.name }}_oe[i] ? {{ port.name }}_o[i] : 1'bz;
+{% endif %}
+  end
 {% endif %}
 {% if port.pullup %}
   // The pullup. NOT a `pullup` primitive: primitives are illegal inside an interface

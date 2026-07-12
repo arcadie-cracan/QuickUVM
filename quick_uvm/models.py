@@ -807,6 +807,23 @@ class AgentConfig(BaseModel):
         return bool(self.inout_ports)
 
     @property
+    def driven_fields(self) -> dict[str, PortConfig]:
+        """Every transaction field this agent DRIVES at the DUT, by name.
+
+        The `inputs`, plus the two fields each `inouts` port synthesises: `<n>_o` (the
+        value) and `<n>_oe` (whether we drive it at all). A SERIAL DEVICE drives ONLY
+        inouts — an SPI device owns nothing but the shared `sd` lines — so a responder
+        whose driven set ignored them would have "nothing to drive as a response" and be
+        rejected outright. `<n>_oe` is per-LANE (it has the port's width), because the
+        host may own sd[0] while the device owns sd[1] at the same instant.
+        """
+        out: dict[str, PortConfig] = {p.name: p for p in self.input_ports}
+        for p in self.inout_ports:
+            out[f"{p.name}_o"] = p.model_copy(update={"name": f"{p.name}_o"})
+            out[f"{p.name}_oe"] = p.model_copy(update={"name": f"{p.name}_oe"})
+        return out
+
+    @property
     def coverable_fields(self) -> dict[str, PortConfig]:
         """Every transaction field a coverpoint/scoreboard may name.
 
@@ -816,11 +833,7 @@ class AgentConfig(BaseModel):
         refusing to cover it would make the feature half-useless.
         """
         out: dict[str, PortConfig] = {p.name: p for _, p in self.all_ports}
-        for p in self.inout_ports:
-            out[f"{p.name}_o"] = p.model_copy(update={"name": f"{p.name}_o"})
-            out[f"{p.name}_oe"] = p.model_copy(
-                update={"name": f"{p.name}_oe", "width": 1, "width_param": None}
-            )
+        out.update(self.driven_fields)
         return out
 
     @property
@@ -890,7 +903,7 @@ class AgentConfig(BaseModel):
         `inputs` (its response) and SAMPLES the DUT's `outputs` (the DUT's request). So
         `request_valid` names a SAMPLED port and `idle` keys name DRIVEN ports.
         """
-        driven = {p.name: p for p in self.input_ports}
+        driven = self.driven_fields
         sampled = {p.name: p for p in self.output_ports}
 
         if not self.is_responder:
@@ -914,8 +927,8 @@ class AgentConfig(BaseModel):
             )
         if not driven:
             raise ValueError(
-                f"agent '{self.name}': `mode: responder` needs an input port — "
-                f"there is nothing to drive as a response."
+                f"agent '{self.name}': `mode: responder` needs an `inputs` or `inouts` "
+                f"port — there is nothing to drive as a response."
             )
         if self.instances:
             raise ValueError(
