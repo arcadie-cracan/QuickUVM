@@ -1,0 +1,58 @@
+# Reactive / responder (device) agent — the DUT is the bus MASTER and the TESTBENCH is the
+# memory device. Nothing in the TB initiates: the agent WAITS for the DUT's request and
+# drives a computed response.
+#
+# This is the CONTINUOUS responder shape. `gnt` is a per-cycle obligation — the DUT samples
+# it every cycle — so a driver that parked between items would leave gnt stale and the DUT
+# would hang. Declaring `idle:` is what selects that shape.
+# See docs/reactive_agent_investigation.md.
+
+project:
+  name: memslave_tb
+  author: qa@example.com
+
+dut:
+  name: memslave
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: mem
+    interface: mem_if
+    sequence_item: mem_seq_item
+    seq_item_style: manual
+    active: true
+
+    mode: responder      # the DUT initiates; we answer
+    request_valid: req   # a SAMPLED port (a DUT output): "the DUT issued a request"
+    idle:                # PRESENCE => the continuous shape. What to drive with no item.
+      gnt: 0
+      rdata: 0
+
+    ports:
+      # inputs = what the agent DRIVES = the RESPONSE (they are the DUT's inputs)
+      inputs:
+        - {name: gnt,   width: 1,  randomize: true}
+        - {name: rdata, width: 32, randomize: true}
+      # outputs = what the agent SAMPLES = the REQUEST (they are the DUT's outputs)
+      outputs:
+        - {name: req,       width: 1}
+        - {name: addr,      width: 8}
+        - {name: last_data, width: 32}
+        - {name: fetched,   width: 8}
+
+# Self-check: the DUT must capture EXACTLY the data our responder computed. A stateful
+# predictor (the T1 lesson: predict() is a method on a class) tracks the granted response
+# and predicts `last_data` on the following cycle.
+analysis:
+  coverage: [mem]
+  scoreboards:
+    - {name: sb, source: mem}
+
+tests:
+  - {name: rand_test, num_items: 40}

@@ -12,6 +12,13 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
   virtual {{ agent.interface }}{{ agent.param_args }} vif;
 
   uvm_analysis_port #({{ agent.sequence_item }}{{ agent.param_args }}) ap;
+{% if agent.is_responder %}
+  // Reactive agent: publish the DUT's REQUEST as soon as it is decoded, on a SECOND
+  // port. The responder sequence blocks on this (via the sequencer's TLM FIFO) and
+  // computes the response. The monitor already decodes the protocol for passive mode,
+  // so this duplicates nothing — which is exactly why the driver does NOT decode it.
+  uvm_analysis_port #({{ agent.sequence_item }}{{ agent.param_args }}) request_ap;
+{% endif %}
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -23,6 +30,9 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
     ap = new("ap", this);
+{% if agent.is_responder %}
+    request_ap = new("request_ap", this);
+{% endif %}
   endfunction
 
   task run_phase(uvm_phase phase);
@@ -35,6 +45,10 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
 {% endif %}
     forever begin
       sample_dut(tr);
+{% if agent.is_responder %}
+      // The DUT issued a request -> hand it to the responder sequence.
+      if (tr.{{ agent.request_valid }}) request_ap.write(tr);
+{% endif %}
 {% if agent.emit_when %}
       // Publish only valid/qualified transactions (emit_when: {{ agent.emit_when }}).
       if (tr.{{ agent.emit_when }}) ap.write(tr);

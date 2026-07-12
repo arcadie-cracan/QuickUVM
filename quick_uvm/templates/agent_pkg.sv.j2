@@ -29,6 +29,9 @@ package {{ agent.name }}_pkg;
   `include "{{ agent.name }}_driver.svh"
   `include "{{ agent.name }}_sequencer.svh"
   `include "{{ agent.name }}_monitor.svh"
+{% if agent.is_responder %}
+  `include "{{ agent.responder_seq_name }}.svh"
+{% endif %}
   `include "{{ agent.name }}_agent.svh"
   `include "{{ agent.default_seq_name }}.svh"
 {% for seq in agent.sequences %}

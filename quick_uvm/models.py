@@ -684,6 +684,47 @@ class AgentConfig(BaseModel):
     # own clk/reset domain and is correct across multi-clock / C3 / H1 for free.
     assertions: bool = False
 
+    # --- Reactive / responder (device) agent -------------------------------------
+    # `responder`: the DUT initiates and this agent RESPONDS (an SPI device, a memory
+    # slave, an I2C target). The port-direction model is UNCHANGED — the agent still
+    # drives the DUT's inputs (which are now the RESPONSE) and samples the DUT's outputs
+    # (which are now the REQUEST). Only the driver's timing and the sequence change.
+    # Opt-in: `initiator` (default) is byte-identical.
+    mode: Literal["initiator", "responder"] = "initiator"
+    # Responder only: which SAMPLED port (a DUT output) means "a request arrived". The
+    # monitor publishes the request on this qualifier.
+    request_valid: str | None = None
+    # Responder only, OPTIONAL — and its PRESENCE selects the driver shape:
+    #
+    #   absent  -> the BLOCKING responder (OpenTitan dv_reactive_agent / Verilab). The
+    #              driver parks on get_next_item when it has no item. Correct when the
+    #              slave's outputs are only meaningful during a transfer.
+    #   present -> the CONTINUOUS responder (OpenHW OBI, CESNET OFM). The DUT samples
+    #              our outputs (gnt/ready/valid) EVERY cycle, so parking leaves them
+    #              stale or X. The driver becomes non-blocking (`try_next_item`) and
+    #              drives these values on a miss, advancing a cycle either way.
+    #
+    # Declaring `idle:` IS the statement "this bus has a per-cycle obligation", and it
+    # carries exactly what that shape needs. A separate `driver_style:` flag would be
+    # redundant — and redundant knobs are how a schema starts lying.
+    # Keys are DRIVEN ports (the agent's `inputs`).
+    # See docs/reactive_agent_investigation.md.
+    idle: dict[str, int] = Field(default_factory=dict)
+
+    @property
+    def is_responder(self) -> bool:
+        return self.mode == "responder"
+
+    @property
+    def is_continuous(self) -> bool:
+        """The CONTINUOUS responder shape — non-blocking driver + drive-idle-on-miss."""
+        return self.is_responder and bool(self.idle)
+
+    @property
+    def responder_seq_name(self) -> str:
+        """The forever responder sequence (`<agent>_responder_seq`)."""
+        return f"{self.name}_responder_seq"
+
     @property
     def default_seq_name(self) -> str:
         """Class name / file stem of the generated default per-agent sequence
@@ -751,6 +792,73 @@ class AgentConfig(BaseModel):
         if " " in v:
             raise ValueError(f"Name '{v}' must not contain spaces.")
         return v
+
+    @model_validator(mode="after")
+    def _check_responder(self) -> AgentConfig:
+        """Fail-closed rules for the reactive/responder agent.
+
+        NB the port-direction model is UNCHANGED: a responder still DRIVES the DUT's
+        `inputs` (its response) and SAMPLES the DUT's `outputs` (the DUT's request). So
+        `request_valid` names a SAMPLED port and `idle` keys name DRIVEN ports.
+        """
+        driven = {p.name: p for p in self.input_ports}
+        sampled = {p.name: p for p in self.output_ports}
+
+        if not self.is_responder:
+            if self.request_valid is not None:
+                raise ValueError(
+                    f"agent '{self.name}': `request_valid` is only valid with "
+                    f"`mode: responder` (an initiator has no DUT request to wait for)."
+                )
+            if self.idle:
+                raise ValueError(
+                    f"agent '{self.name}': `idle` is only valid with `mode: responder` "
+                    f"(it selects the continuous, non-blocking responder driver)."
+                )
+            return self
+
+        if not self.active:
+            raise ValueError(
+                f"agent '{self.name}': `mode: responder` requires `active: true`. A "
+                f"responder DRIVES its response — reactive and passive are orthogonal "
+                f"(a reactive slave is an ACTIVE component)."
+            )
+        if not driven:
+            raise ValueError(
+                f"agent '{self.name}': `mode: responder` needs an input port — "
+                f"there is nothing to drive as a response."
+            )
+        if self.request_valid is None:
+            raise ValueError(
+                f"agent '{self.name}': `mode: responder` requires `request_valid`: the "
+                f"sampled port that means 'the DUT issued a request'."
+            )
+        rv = sampled.get(self.request_valid)
+        if rv is None:
+            raise ValueError(
+                f"agent '{self.name}': request_valid='{self.request_valid}' must name "
+                f"one of this agent's SAMPLED ports (its `outputs` — the DUT drives "
+                f"the request). Sampled ports: {sorted(sampled)}."
+            )
+        if rv.bit_width != 1:
+            raise ValueError(
+                f"agent '{self.name}': request_valid='{self.request_valid}' must be "
+                f"1 bit (it is a qualifier), got {rv.bit_width}."
+            )
+        for name, val in self.idle.items():
+            p = driven.get(name)
+            if p is None:
+                raise ValueError(
+                    f"agent '{self.name}': idle port '{name}' must be one of this "
+                    f"agent's DRIVEN ports (its `inputs` — what it drives at the DUT). "
+                    f"Driven ports: {sorted(driven)}."
+                )
+            if not 0 <= val < (1 << p.bit_width):
+                raise ValueError(
+                    f"agent '{self.name}': idle value {val} for port '{name}' does not "
+                    f"fit its {p.bit_width}-bit width."
+                )
+        return self
 
     @model_validator(mode="after")
     def _check_constraints(self) -> AgentConfig:
@@ -3273,6 +3381,23 @@ class ProjectConfig(BaseModel):
     def primary_agent(self) -> AgentConfig:
         """The first agent — used as default for scoreboard/coverage wiring."""
         return self.agents[0]
+
+    @property
+    def stimulus_agents(self) -> list[AgentConfig]:
+        """Active agents the TEST may start a sequence on.
+
+        A responder's sequencer is OWNED by its forever responder sequence. If the test
+        also started a stimulus sequence there, both would feed the same driver and the
+        random items would clobber the computed responses — a bench that looks like it
+        passes while the device answers garbage. So responders are excluded.
+        """
+        return [a for a in self.active_agents if not a.is_responder]
+
+    @property
+    def responder_only(self) -> bool:
+        """No TB-initiated stimulus at all: the DUT is the initiator and the reactive
+        agent(s) merely serve it (a CPU fetching from a memory model, say)."""
+        return bool(self.active_agents) and not self.stimulus_agents
 
     @property
     def active_agents(self) -> list[AgentConfig]:
