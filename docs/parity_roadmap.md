@@ -573,6 +573,28 @@ parameter propagation, cross-block scoreboards, same-block reuse, nested subsyst
 parameterized/reused nested subsystems, cross-level connections/scoreboards, and
 cross-level into a reused subtree.
 
+### P0 — `inout` / tri-state / open-drain ports — NOT SUPPORTED  *(new; blocks I2C)*
+`PortConfig.direction` is `Literal["input", "output"]`; there is **zero** tristate, pull-up
+or open-drain support anywhere in the generator or templates. QuickUVM therefore cannot even
+*declare* an I2C interface (SDA/SCL are `inout`, open-drain, weak-pullup-resolved), nor any
+bidirectional bus. Surfaced by the target survey
+([`reproduce_campaign.md`](reproduce_campaign.md) §1.2) — found by `grep`, so **prove it with
+a small bidirectional example, not with a 15-day I2C bench**. SPI's 4-wire modes are not
+bidirectional, so the reactive-agent work is unaffected.
+**Accept:** a bidirectional open-drain bus (two drivers + a pullup) generates, and a
+multi-master collision is caught.
+
+### Sampled clock — a clock the TB observes but does not generate  *(new)*
+Every QuickUVM clock comes from a generated `clkgen`. But a device agent's clock is a **DUT
+output** (SPI `SCK`, I2C `SCL`) — the TB samples it and must never drive it. M1 has no concept
+of this. Small, and it rides on the reactive-agent work for free.
+
+### UART baud-divisor driver timing  *(new, small)*
+Driver bit-timing derived from a **CSR-programmed** baud divisor + 16× oversampling — i.e.
+driver timing as a function of a *register value* rather than a clock edge. Harvested from the
+`uart` target, which was otherwise rejected as uninformative (its driver is initiator-only, so
+it would merely re-prove `rv_timer` with a serial wire bolted on).
+
 ### Reactive / responder (device) agent — INVESTIGATED, not scheduled
 A per-agent **reactive** mode: the driver responds to DUT-initiated transfers (a
 device/slave/target) instead of proactively initiating. Surfaced as an architectural
@@ -580,13 +602,22 @@ gap by the OpenTitan comparison + [`maturity_assessment_rv_timer.md`](maturity_a
 (the rv_timer interrupt was modeled as a *monitored* signal, not a true device agent).
 A Phase-1 industry investigation is written up in
 [`reactive_agent_investigation.md`](reactive_agent_investigation.md): the recommended
-architecture (Verilab SNUG-2016 / OpenTitan `dv_reactive_agent`) keeps the **driver
-unchanged** and puts reactivity in a second monitor analysis port + a sequencer
-`uvm_tlm_analysis_fifo` + a *forever* responder sequence — so QuickUVM's exact driver
-loop and `input_ports`/`output_ports` split already fit. Proposed minimal schema
+architecture (Verilab SNUG-2016 / OpenTitan `dv_reactive_agent`) puts reactivity in a second
+monitor analysis port + a sequencer `uvm_tlm_analysis_fifo` + a *forever* responder sequence,
+so QuickUVM's `input_ports`/`output_ports` split already fits. Proposed minimal schema
 (`mode: initiator|responder` + `request_valid`), the response-logic pragma seam, the
-byte-identity story, and the effort/deferrals are in that doc. **Not yet scheduled** —
-implement when a device-class block (UART/SPI-device/memory-slave) forces it.
+byte-identity story, and the effort/deferrals are in that doc.
+
+> **⚠ The design doc is PARTLY WRONG — fix it before building.** Its headline claim ("the
+> driver stays unchanged") holds for OpenTitan/Verilab but is **false for OpenHW OBI and
+> CESNET OFM**, whose slave drivers are **non-blocking** (`try_next_item()` + a grant task)
+> and **idle-drive every cycle** — because a slave that drives only when it holds an item
+> leaves the bus at **X**. The `mode:` schema must express the blocking *and* the
+> non-blocking responder, or it is under-specified. Five industrial idioms are tabulated in
+> [`reproduce_campaign.md`](reproduce_campaign.md) §1.1.
+
+**Not yet scheduled** — but it is the long pole for the `spi_host` campaign target (T2), and
+worth building regardless.
 **Accept (when built):** a `mode: responder` agent responds to a DUT master and is
 checked by a two-stream (A2) scoreboard on a real bench.
 

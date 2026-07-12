@@ -28,6 +28,35 @@ the load-bearing pieces (that exact driver loop, the `input_ports`/`output_ports
 direction split, a passive monitor, flat config distribution); the gap is a handful
 of small, opt-in additions.
 
+> ## ⚠ CORRECTION (2026-07-12) — "the driver stays unchanged" is only *sometimes* true
+>
+> This document originally claimed, as its headline finding, that a reactive agent leaves
+> the **driver unchanged**. A follow-up survey of five industrial codebases
+> ([`reproduce_campaign.md`](reproduce_campaign.md)) shows that is **true for the
+> OpenTitan/Verilab school and false for at least two others**:
+>
+> | Codebase | Responder idiom | Driver unchanged? |
+> |---|---|---|
+> | OpenTitan `dv_reactive_agent` / Verilab SNUG-2016 | monitor req-port → sequencer FIFO → forever responder seq; `HOST_DRIVER_T`/`DEVICE_DRIVER_T` swapped at build | **yes** |
+> | OpenTitan `i2c_driver` | one driver, `case (cfg.if_mode)` → `drive_host_item` / `drive_device_item` | no (dispatch) |
+> | OpenHW `uvma_obi_memory_drv` | master: blocking `get_next_item()`; **slave: non-blocking `try_next_item()` + a separate grant task** | **NO** |
+> | CESNET OFM `uvm_mi` | **`uvm_driver #(RSP, REQ)` — REQ/RSP types SWAPPED**; `try_next_item`; `item_done(rsp)` returns the observed request upward | **NO** |
+> | Siemens UVMF | polarity-inverting RESPONDER role + a `respond_and_wait_for_next_transfer()` BFM task | n/a (BFM) |
+>
+> **Why the physics forces this.** A blocking `get_next_item()` driver only drives when it
+> *has* an item. For a slave, that leaves the bus **at X between transactions** — fine for a
+> master (which owns the bus and is idle by definition), fatal for a slave whose outputs are
+> continuously sampled. So a slave driver on a bus with a per-cycle grant/ready obligation
+> must be **non-blocking and idle-drive every cycle** (`try_next_item()` + drive-idle-on-miss),
+> which is a genuinely different driver loop — not the same one.
+>
+> **Consequence for the design below.** The proposed `mode: initiator | responder` schema is
+> **under-specified**: it must distinguish the *blocking* responder (OpenTitan/Verilab — the
+> shape this doc describes) from the *non-blocking, idle-driving* responder (OBI/CESNET). The
+> §"Recommended design shape" section is correct **only for the blocking shape**. Settle this
+> before implementing. Everything else below (the monitor request port, the sequencer TLM
+> FIFO, the forever responder sequence, the response-logic pragma seam, byte-identity) stands.
+
 ## Terminology
 
 Four near-synonyms across two **orthogonal** axes — pinning them down decides the
