@@ -54,7 +54,6 @@ class mem_driver extends uvm_driver #(mem_seq_item);
         // assignments: the value must be on the wires before that edge, and a clocking
         // block would schedule it after.
         vif.gnt   = 1'b1;
-        $display("[DBG %0t] req=%b addr=%h | DUT: fetched=%0d missed=%0d last=%h", $time, vif.req, vif.addr, vif.fetched, vif.missed, vif.last_data);
         vif.rdata = {24'h0, vif.addr} ^ 32'hA5A5_A5A5;
         // pragma quickuvm custom response_logic end
         if (!driving_idle()) m_active_drives++;
@@ -100,15 +99,18 @@ class mem_driver extends uvm_driver #(mem_seq_item);
   function void check_phase (uvm_phase phase);
     super.check_phase(phase);
     if (m_responses == 0)
-      `uvm_error("DEAD_RESPONDER", "this responder drove ZERO responses — the DUT never \
-got an answer. Every per-transaction compare 'passed' because there was nothing to \
-compare: with no response the DUT captures nothing, so expected and actual are both \
-zero and they agree. Check that the DUT actually requests, and that request_valid \
-names the right port.")
+      `uvm_error("DEAD_RESPONDER",
+                 {"this responder drove ZERO responses — the DUT never got an answer. ",
+                  "Every per-transaction compare 'passed' because there was nothing to ",
+                  "compare: with no response the DUT captures nothing, so expected and ",
+                  "actual are both zero and they agree. Check that the DUT actually ",
+                  "requests, and that request_valid names the right port."})
     else if (m_active_drives == 0)
-      `uvm_error("SILENT_RESPONDER", $sformatf("this responder drove %0d response(s), \
-but EVERY ONE of them was the idle value — so it never actually answered. The \
-`response_logic` seam is almost certainly empty.", m_responses))
+      `uvm_error("SILENT_RESPONDER",
+                 $sformatf({"this responder drove %0d response(s), but EVERY ONE of them ",
+                            "was the idle value — so it never actually answered. The ",
+                            "`response_logic` seam is almost certainly empty."},
+                           m_responses))
   endfunction
 
 endclass

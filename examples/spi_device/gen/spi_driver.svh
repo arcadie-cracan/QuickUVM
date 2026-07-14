@@ -81,9 +81,10 @@ class spi_driver extends uvm_driver #(spi_item);
       // and the forever loop would then spin at the current timestep and HANG the
       // simulation. A hung bench reports nothing at all, which is worse than a failing one.
       if ($time == m_t0)
-        `uvm_fatal("EMPTY_TRANSFER", "`drive_transfer` returned in ZERO TIME — the seam \
-is empty, so this responder never drove anything. A prefetch responder must drive the \
-transfer itself: no generator emits protocol logic.")
+        `uvm_fatal("EMPTY_TRANSFER",
+                   {"`drive_transfer` returned in ZERO TIME — the seam is empty, so this ",
+                    "responder never drove anything. A prefetch responder must drive the ",
+                    "transfer itself: no generator emits protocol logic."})
       seq_item_port.item_done();
     end
   endtask
@@ -114,11 +115,12 @@ transfer itself: no generator emits protocol logic.")
   function void check_phase (uvm_phase phase);
     super.check_phase(phase);
     if (m_responses == 0)
-      `uvm_error("DEAD_RESPONDER", "this responder drove ZERO responses — the DUT never \
-got an answer. Every per-transaction compare 'passed' because there was nothing to \
-compare: with no response the DUT captures nothing, so expected and actual are both \
-zero and they agree. Check that the DUT actually requests, and that request_valid \
-names the right port.")
+      `uvm_error("DEAD_RESPONDER",
+                 {"this responder drove ZERO responses — the DUT never got an answer. ",
+                  "Every per-transaction compare 'passed' because there was nothing to ",
+                  "compare: with no response the DUT captures nothing, so expected and ",
+                  "actual are both zero and they agree. Check that the DUT actually ",
+                  "requests, and that request_valid names the right port."})
   endfunction
 
 endclass
