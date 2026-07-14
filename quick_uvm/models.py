@@ -1285,6 +1285,29 @@ class ClockConfig(BaseModel):
     unit: str = "ns"
     drive_offset_pct: int = 20  # percent of period to delay drive after posedge
 
+    # F2 — WHO DRIVES THIS CLOCK.
+    #
+    #   tb  (default): the TB generates it. A `clkgen` in tb_top drives the net.
+    #   dut: the DUT OUTPUTS it and the TB only ever SAMPLES it — an SPI `sck`, an I2C
+    #        `scl`. NO clkgen is emitted: one would fight the DUT's output driver and
+    #        Xcelium rejects it (*E,MULDRN). `period` is then never used to make an
+    # edge;
+    #        it is only a hint for timeouts.
+    #
+    # This is not a cosmetic distinction. Get it wrong in the `dut` direction and the
+    # bench
+    # is keyed to a TB-invented PHANTOM CLOCK unrelated to the DUT's real one — it
+    # runs, it
+    # passes, and it measures nothing. `_check_observed_clock_is_connected` in the
+    # generator
+    # makes that unreachable rather than merely documented.
+    source: Literal["tb", "dut"] = "tb"
+
+    @property
+    def observed(self) -> bool:
+        """The DUT drives this clock; the TB samples it and must never drive it."""
+        return self.source == "dut"
+
     @field_validator("name")
     @classmethod
     def _check_name(cls, v: str) -> str:
@@ -2317,6 +2340,52 @@ class ProjectConfig(BaseModel):
         return clock.model_dump()
 
     # ---- M1 multi-clock / multi-reset — resolvers (single-domain → byte-identical) --
+
+    @model_validator(mode="after")
+    def _check_observed_clocks(self) -> ProjectConfig:
+        """Fail-closed rules for a clock the DUT drives (`source: dut`).
+
+        Getting this wrong produces a bench that RUNS, PASSES, and MEASURES NOTHING, so
+        every one of these is an error rather than a warning.
+        """
+        clocks = self.effective_clocks
+        observed = [c for c in clocks if c.observed]
+        if not observed:
+            return self
+
+        driven = [c for c in clocks if not c.observed]
+        if not driven:
+            raise ValueError(
+                "clock: every clock is `source: dut`, so the TB generates no clock at "
+                "all. A test's run length is measured in TB clock edges; with none, a "
+                "DUT that never toggles its clock would HANG rather than fail, and a "
+                "hung bench cannot report an error. Declare at least one TB-driven "
+                "clock."
+            )
+
+        for c in observed:
+            if c.name == self.dut.clock:
+                raise ValueError(
+                    f"clock '{c.name}': `source: dut` names the DUT's own CLOCK INPUT "
+                    f"(dut.clock). A DUT cannot both consume this clock and generate "
+                    f"it. "
+                    f"An observed clock is a DUT OUTPUT (an SPI sck, an I2C scl)."
+                )
+            for r in self.effective_resets:
+                if r.clock == c.name:
+                    raise ValueError(
+                        f"reset '{r.name}' is synced to '{c.name}', which is `source: "
+                        f"dut`. The TB cannot deassert a reset synchronously to a "
+                        f"clock "
+                        f"the DUT only starts driving once it is out of reset — that "
+                        f"is "
+                        f"a deadlock. Sync the reset to a TB-driven clock."
+                    )
+        return self
+
+    @property
+    def observed_clocks(self) -> list[ClockConfig]:
+        return [c for c in self.effective_clocks if c.observed]
 
     @property
     def effective_clocks(self) -> list[ClockConfig]:
