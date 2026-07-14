@@ -158,3 +158,24 @@ def test_rejects_a_reset_synced_to_an_observed_clock():
     d = {**_BASE, "resets": [{"name": "rst_n", "active_low": True, "clock": "sck"}]}
     with pytest.raises(ValidationError, match="deadlock"):
         ProjectConfig.model_validate(d)
+
+
+def test_connectivity_guard_accepts_a_real_dut_port_name(tmp_path):
+    """The guard must ask "does the clock NET reach the DUT", not "is there a port with the
+    same name". Real RTL almost never names its clock port after our net: OpenTitan uses
+    `clk_i`, others `i_clk` or `aclk`.
+
+    The first version matched on `.clk(` and therefore REFUSED to generate a perfectly
+    correct bench for every such DUT. Caught by examples/spi_host — the first bench built
+    against RTL whose ports I did not name myself.
+    """
+    cfg = ProjectConfig.model_validate(_BASE)
+    Generator(cfg).generate_all(tmp_path, backup=False)
+
+    p = tmp_path / "tb_top.sv"
+    t = p.read_text()
+    # rewrite the DUT instance the way real RTL is actually wired
+    t = t.replace(".clk(clk)", ".clk_i(clk)").replace(".sck(sck)", ".sck_o(sck)")
+    p.write_text(t)
+
+    Generator(cfg).generate_all(tmp_path, backup=False)  # must NOT raise

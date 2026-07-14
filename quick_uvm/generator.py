@@ -704,7 +704,12 @@ class Generator:
             ln for ln in text[start:end].splitlines() if not ln.strip().startswith("//")
         )
         for c in clocks:
-            if re.search(rf"\.{re.escape(c.name)}\s*\(\s*\S", live):
+            # Look for the clock NET being USED as a connection — `.<port>(<net>)`
+            # — not for a port that happens to share its name. Real RTL almost never
+            # does: OpenTitan names it `clk_i`, others `i_clk` or `aclk`. Matching on
+            # `.clk(` rejected a perfectly correct bench for every DUT that did not
+            # name its port after our net.
+            if re.search(rf"\.\w+\s*\([^)]*\b{re.escape(c.name)}\b", live):
                 continue
             if c.observed:
                 why = (
