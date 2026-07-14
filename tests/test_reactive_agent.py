@@ -16,7 +16,8 @@ from pydantic import ValidationError
 from quick_uvm.generator import Generator
 from quick_uvm.models import ProjectConfig
 
-# A device agent: the DUT drives req/addr (we SAMPLE), we drive gnt/rdata (the RESPONSE).
+# A device agent: the DUT drives req/addr (we SAMPLE), we drive gnt/rdata (the
+# RESPONSE).
 # NB the port-direction model is unchanged — `inputs` are still what the agent drives.
 _BASE = {
     "project": {"name": "d_tb", "author": "a@b.c"},
@@ -365,3 +366,193 @@ def test_responder_is_created_with_factory_context(tmp_path):
     _gen(tmp_path)
     agt = (tmp_path / "mem_agent.svh").read_text()
     assert 'type_id::create(\n          "responder", null, get_full_name())' in agt
+
+
+# --- liveness: a responder without an end-of-test check must be UNGENERATABLE ---
+
+
+def test_responder_driver_always_has_a_liveness_check(tmp_path):
+    """A dead responder is UNPROVABLE PER-TRANSACTION, so it must be proved at end-of-test.
+
+    With no response the DUT never captures anything, so expected and actual are both zero
+    and EVERY per-transaction compare agrees. This trap has reported TEST PASSED 34/34
+    while the device was stone dead. The check is therefore GENERATED, outside any pragma
+    — it must not depend on a human remembering to write it.
+
+    Mutation-proved: memslave with a DUT that never asserts `req`, and its hand-written
+    predictor check REMOVED, yields exactly 1 UVM_ERROR — DEAD_RESPONDER, from the
+    generated driver. Before this, the same bench passed clean.
+    """
+    _gen(tmp_path)  # _BASE is a responder
+    drv = (tmp_path / "mem_driver.svh").read_text()
+
+    assert "function void check_phase" in drv
+    assert "DEAD_RESPONDER" in drv
+    assert "m_responses" in drv
+    # ...and it must NOT be inside a pragma region, or a regeneration could drop it.
+    body = drv.split("check_phase")[1]
+    assert "pragma" not in body, "the liveness check must not live in a pragma region"
+
+
+def test_continuous_responder_also_detects_a_silent_seam(tmp_path):
+    """`m_responses > 0` is not enough: a responder whose response seam is EMPTY drives
+    the idle value forever and looks perfectly alive."""
+    _gen(tmp_path, agents=_continuous())
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    assert "SILENT_RESPONDER" in drv
+    assert "is_idle_response" in drv
+    # the idle comparison must name every declared idle port
+    assert "tr.gnt == 1'd0" in drv and "tr.rdata == 32'd0" in drv
+
+
+def test_initiator_gets_no_liveness_check(tmp_path):
+    """Opt-in: an initiator's driver must be byte-identical to before."""
+    _gen(tmp_path, agents=_initiator())
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    assert "DEAD_RESPONDER" not in drv
+    assert "m_responses" not in drv
+    assert "check_phase" not in drv
+
+
+# --- F1: the response-timing contract (`respond:`) ---
+
+
+def _zero_slack():
+    a = {
+        **_BASE["agents"][0],
+        "idle": {"gnt": 0, "rdata": 0},
+        "respond": "combinational",
+    }
+    return [a]
+
+
+def test_respond_defaults_to_todays_contract(tmp_path):
+    """Opt-in: absent `respond:` must reproduce the existing shape exactly."""
+    cfg = _gen(tmp_path, agents=_continuous())
+    a = cfg.agents[0]
+    assert a.respond == "on_request"
+    assert a.is_continuous and a.has_request_fifo and not a.is_zero_slack
+
+
+def test_zero_slack_bypasses_the_sequencer_round_trip(tmp_path):
+    """The DUT gives ONE cycle. The monitor -> fifo -> sequence -> sequencer -> driver
+    chain costs at least one, so a zero-slack responder must not use it.
+
+    Mutation-proved on examples/memslave_zs: `respond: combinational` passes 34/34;
+    flip that ONE line to `on_request` and the same bench reports NO_PROGRESS with the
+    DUT completing zero transfers. The responder is alive — it grants every request —
+    it is just a cycle too late.
+    """
+    cfg = _gen(tmp_path, agents=_zero_slack())
+    a = cfg.agents[0]
+    assert a.is_zero_slack
+    assert not a.has_request_fifo, (
+        "a zero-slack responder cannot afford the fifo round-trip"
+    )
+    assert not a.is_continuous
+
+    # no responder sequence at all — the driver IS the responder
+    assert not (tmp_path / f"{a.responder_seq_name}.svh").exists()
+
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    # raw signals, not the clocking block: cb1's output skew lands AFTER the edge the
+    # DUT samples on, so a cb1 drive is always exactly one cycle late.
+    assert "@(posedge vif.clk);" in drv
+    assert "#1step;" in drv
+    assert "vif.cb1.gnt" not in drv
+    assert "seq_item_port.get_next_item" not in drv
+    # ...and it must be live from time 0, or it misses the DUT's first request
+    assert "wait (vif.rst_n" not in drv
+
+
+def test_zero_slack_monitor_samples_request_and_response_together(tmp_path):
+    """The request and the response happen in the SAME cycle, so they must land in the
+    same snapshot. The default two-phase sample (inputs now, outputs one edge later)
+    encodes the opposite assumption and pairs the grant with the wrong address."""
+    _gen(tmp_path, agents=_zero_slack())
+    assert "clocking mon_cb" in (tmp_path / "mem_if.sv").read_text()
+    assert "@vif.mon_cb;" in (tmp_path / "mem_monitor.svh").read_text()
+
+
+def test_zero_slack_still_gets_the_liveness_check(tmp_path):
+    _gen(tmp_path, agents=_zero_slack())
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    assert "DEAD_RESPONDER" in drv and "SILENT_RESPONDER" in drv
+
+
+# --- F1c: `respond: prefetch` — the full-duplex shape ---
+
+
+def _prefetch():
+    a = {**_BASE["agents"][0], "respond": "prefetch"}
+    return [a]
+
+
+def test_prefetch_takes_its_item_before_the_transfer(tmp_path):
+    """A full-duplex device drives its response on the SAME edge it samples the request,
+    so the response cannot depend on the request it accompanies — the item must already
+    be in hand. `get_next_item` therefore comes FIRST, before any wait.
+
+    This is OpenTitan's spi_device_driver::get_and_drive(): get_next_item(req) first, and
+    only THEN `wait (!csb)`.
+
+    Mutation-proved on examples/spi_device: `prefetch` passes 177/177; `on_request` on the
+    same bench gives 171 UVM_ERROR and DEAD_RESPONDER — the driver never gets an item in
+    time to drive a single frame.
+    """
+    cfg = _gen(tmp_path, agents=_prefetch())
+    a = cfg.agents[0]
+    assert a.is_prefetch and a.has_responder_seq
+    assert not a.has_request_fifo, "prefetch must not wait on the observed request"
+
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    body = drv.split("task run_phase")[1]
+    # the item must be fetched BEFORE the user's protocol seam runs
+    assert body.index("get_next_item") < body.index("drive_transfer")
+
+
+def test_prefetch_sequence_runs_ahead_of_the_bus(tmp_path):
+    """The sequence must NOT block on the observed request — that is what makes the item
+    available before the transfer starts."""
+    _gen(tmp_path, agents=_prefetch())
+    seq = (tmp_path / "mem_responder_seq.svh").read_text()
+    assert "request_fifo.get" not in seq
+    assert "prefetch_response" in seq
+
+
+def test_prefetch_empty_seam_is_fatal_not_a_hang(tmp_path):
+    """An unfilled protocol seam drove nothing, and the forever loop would then spin at
+    the current timestep and HANG. A hung bench reports NOTHING — worse than a failing one.
+
+    The guard must sit OUTSIDE the pragma: one placed inside the region it protects is
+    deleted along with it. (It was, at first — and the empty seam hung for 5 minutes
+    instead of failing.) A real transfer consumes time; a zero-time one drove nothing.
+    """
+    _gen(tmp_path, agents=_prefetch())
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    assert "EMPTY_TRANSFER" in drv
+    seam_start = drv.index("pragma quickuvm custom drive_transfer begin")
+    seam_end = drv.index("pragma quickuvm custom drive_transfer end")
+    assert not (seam_start < drv.index("EMPTY_TRANSFER") < seam_end), (
+        "the guard is INSIDE the seam it guards — emptying the seam would delete it"
+    )
+    assert "$time == m_t0" in drv
+
+
+def test_a_responder_on_a_dut_driven_clock_burns_no_edges_at_startup(tmp_path):
+    """A DUT-driven clock is typically GATED — an SPI sck does not tick until the DUT opens
+    a frame. The initiator's "wait 2 edges for the synchronizers to settle" would sleep
+    through the start of the FIRST transfer and miss it (spi_device lost frame 0 to exactly
+    this, and every later frame mismatched in cascade)."""
+    cfg = ProjectConfig.model_validate(
+        {
+            **_BASE,
+            "clock": [{"name": "clk"}, {"name": "sck", "source": "dut"}],
+            "resets": [{"name": "rst_n", "active_low": True, "clock": "clk"}],
+            "agents": [{**_BASE["agents"][0], "respond": "prefetch", "clock": "sck"}],
+        }
+    )
+    Generator(cfg).generate_all(tmp_path, backup=False)
+    init = (tmp_path / "mem_driver.svh").read_text().split("task initialize")[1]
+    init = init.split("endtask")[0]
+    assert "@vif.cb1" not in init, "a gated DUT clock may not have ticked yet"

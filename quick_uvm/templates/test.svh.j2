@@ -49,8 +49,17 @@ class {{ test.name }} extends {{ dut.name }}_base_test;
     //----------------------------------------------------
     phase.raise_objection(this);
     `uvm_info("{{ test.name }}", "reactive bench: letting the DUT run", UVM_FULL)
+{% if primary_clock_observed %}
+    // The DUT drives this agent's clock (`source: dut`), so we must NOT bound the test on
+    // its edges. Two ways that goes wrong: the clock is typically GATED (an SPI sck only
+    // ticks inside a frame), so N edges is not N transfers; and if the DUT never drives it
+    // at all the test HANGS — and a hung bench can never report an error. A wall-clock
+    // bound always terminates, so a dead clock comes out RED instead of never coming out.
+    #({{ test.num_items }} * {{ primary_clock_period_ts }});
+{% else %}
     // Via the virtual interface — a class in a PACKAGE may not use a hierarchical name.
     repeat ({{ test.num_items }}) @(posedge env_cfg.{{ primary_agent.name }}_cfg.vif.clk);
+{% endif %}
     // pragma quickuvm custom run_phase_additional begin
     // pragma quickuvm custom run_phase_additional end
     phase.drop_objection(this);

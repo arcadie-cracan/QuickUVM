@@ -4,13 +4,14 @@ Generator — orchestrates Jinja2 rendering and output file management.
 
 from __future__ import annotations
 
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
-from .merger import merge
+from .merger import MergeError, merge
 from .models import InstanceView, ProjectConfig, ScoreboardSpec, TestConfig
 
 # ---------------------------------------------------------------------------
@@ -146,6 +147,7 @@ class Generator:
             # M1 — every clock/reset domain (single-domain → one element that renders
             # byte-identical to the legacy scalar wiring).
             "clocks": cfg.effective_clocks,
+            "observed_clocks": cfg.observed_clocks,
             "resets": cfg.effective_resets,
             # M1 — the multi-domain tb_top/clkgen path is taken iff the user explicitly
             # declared a `clock:` LIST or a `resets:` list; a scalar `clock:` + the
@@ -181,6 +183,8 @@ class Generator:
             # means no TB-initiated stimulus at all (the DUT initiates).
             "responder_only": cfg.responder_only,
             "primary_agent": cfg.primary_agent if cfg.agents else None,
+            "primary_clock_observed": cfg.primary_clock_observed,
+            "primary_clock_period_ts": cfg.primary_clock_period_ts,
             "stimulus_primary": cfg.stimulus_primary,
             "any_responder": any(a.is_responder for a in cfg.agents),
             # R1 — regression runner (None => no Makefile emitted, byte-identical).
@@ -360,7 +364,7 @@ class Generator:
             )
             # Reactive agent — the forever responder sequence. Opt-in: an initiator
             # emits nothing (byte-identical).
-            if agent.is_responder:
+            if agent.has_responder_seq:
                 specs.append(
                     FileSpec(
                         "agent_responder_seq.svh.j2",
@@ -536,6 +540,7 @@ class Generator:
             # parameterized branch + the subenv_top clock/reset block; a fully
             # combinational subsystem stays False → byte-identical single-clock output.
             "clocks": cfg.effective_clocks,
+            "observed_clocks": cfg.observed_clocks,
             "multi_domain": any(lv.clocked for lv in cfg.leaf_views),
             "clock_periods_ts": {
                 c.name: cfg.clock_period_ts(c) for c in cfg.effective_clocks
@@ -665,6 +670,66 @@ class Generator:
     # Write (or merge) a single file
     # ------------------------------------------------------------------
 
+    def _check_clocks_are_connected(self, path: Path, text: str) -> None:
+        """Refuse to emit a tb_top whose clock the DUT is not actually on.
+
+        A bench is timed against its clock. If the DUT is not connected to it, every
+        transfer is measured against a clock the DUT never sees — the bench elaborates,
+        runs, PASSES, and measures nothing. That is the worst outcome this generator can
+        produce, so it is a REFUSAL rather than a warning.
+
+        It is reachable because the DUT connection lives inside the `dut_connections`
+        PRAGMA, which is hand-written and preserved across regeneration. The known
+        path in:
+        declare a clock the DUT actually OUTPUTS (an SPI sck) as a normal TB clock, hit
+        Xcelium's *E,MULDRN (the clkgen fights the DUT's output driver), and "fix" it by
+        deleting the port from the pragma. Elaboration then goes clean — on a phantom
+        clock.
+
+        Anchored on `.<name>(<something>)`: an empty `.sck()` is not a connection, and a
+        commented-out one is not either.
+        """
+        # A COMBINATIONAL DUT has no clock port at all — the clock exists only to pace
+        # the TB. There is nothing to connect, and nothing to be a phantom OF.
+        if self.config.dut.combinational:
+            return
+        clocks = self.config.effective_clocks
+        if not clocks or path.name != f"{self.config.top_name}.sv":
+            return
+        start = text.find("pragma quickuvm custom dut_connections begin")
+        end = text.find("pragma quickuvm custom dut_connections end")
+        if start < 0 or end < 0:
+            return
+        live = "\n".join(
+            ln for ln in text[start:end].splitlines() if not ln.strip().startswith("//")
+        )
+        for c in clocks:
+            if re.search(rf"\.{re.escape(c.name)}\s*\(\s*\S", live):
+                continue
+            if c.observed:
+                why = (
+                    f"'{c.name}' is `source: dut`, so the DUT is its ONLY driver. "
+                    f"Unconnected, nothing drives it at all."
+                )
+            else:
+                why = (
+                    f"The TB GENERATES '{c.name}', but the DUT never receives it, so "
+                    f"it "
+                    f"is a PHANTOM clock. If the DUT actually OUTPUTS this clock (an "
+                    f"SPI "
+                    f"sck, an I2C scl), declare `source: dut` — do not delete the "
+                    f"connection to silence *E,MULDRN."
+                )
+            raise MergeError(
+                f"{path.name}: clock '{c.name}' is not connected to the DUT — there is "
+                f"no `.{c.name}(...)` inside the `dut_connections` pragma.\n"
+                f"{why}\n"
+                f"Either way the bench would elaborate, run, and measure NOTHING: "
+                f"every "
+                f"transfer is timed against a clock the DUT is not on.\n"
+                f"Connect it, e.g.  .{c.name}({c.name})  inside the pragma."
+            )
+
     def _write(
         self,
         output_path: Path,
@@ -685,6 +750,8 @@ class Generator:
         """
         result = merge(output_path, content, allow_drop=allow_drop)
         merged = result.text
+
+        self._check_clocks_are_connected(output_path, merged)
 
         if dry_run:
             return ("dry-run", str(output_path))

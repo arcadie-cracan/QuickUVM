@@ -12,7 +12,7 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
   virtual {{ agent.interface }}{{ agent.param_args }} vif;
 
   uvm_analysis_port #({{ agent.sequence_item }}{{ agent.param_args }}) ap;
-{% if agent.is_responder %}
+{% if agent.has_request_fifo %}
   // Reactive agent: publish the DUT's REQUEST as soon as it is decoded, on a SECOND
   // port. The responder sequence blocks on this (via the sequencer's TLM FIFO) and
   // computes the response. The monitor already decodes the protocol for passive mode,
@@ -32,7 +32,7 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
     ap = new("ap", this);
-{% if agent.is_responder %}
+{% if agent.has_request_fifo %}
     request_ap = new("request_ap", this);
 {% endif %}
   endfunction
@@ -43,11 +43,13 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
     // Reset is driven externally: do not emit transactions until it deasserts, then
     // resync to the clock grid (sample_dut() assumes it starts at a posedge clk).
     wait (vif.{{ agent_reset.name }} === 1'b{% if agent_reset.active_low %}1{% else %}0{% endif %});
+{% if not (agent_clock and agent_clock.observed) %}
     @vif.cb1;
+{% endif %}
 {% endif %}
     forever begin
       sample_dut(tr);
-{% if agent.is_responder %}
+{% if agent.has_request_fifo %}
       // The DUT issued a request -> hand it to the responder sequence.
       //
       // On the RISING EDGE of the qualifier, not its level. A request line is normally HELD
@@ -69,10 +71,18 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
   task sample_dut (output {{ agent.sequence_item }}{{ agent.param_args }} tr);
     {{ agent.sequence_item }}{{ agent.param_args }} t;
     t = {{ agent.sequence_item }}{{ agent.param_args }}::type_id::create("t");
-{% if dut.combinational %}
+{% if dut.combinational or agent.is_zero_slack %}
     //---------------------------------------------
+{% if agent.is_zero_slack %}
+    // ZERO-SLACK responder: the request and the response happen in the SAME cycle, so
+    // they must be sampled in the SAME snapshot. The default two-phase sample (driven
+    // inputs now, DUT outputs one edge later) encodes the opposite assumption — the TB
+    // drives at edge N and the DUT reacts at N+1 — and would pair our grant with an
+    // address from a different cycle.
+{% else %}
     // Combinational DUT (0-cycle latency): one race-free snapshot of inputs AND
     // outputs taken together through the monitor clocking block.
+{% endif %}
     //---------------------------------------------
     @vif.mon_cb;
 {% for kind, port in agent.all_ports %}

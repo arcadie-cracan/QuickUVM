@@ -725,14 +725,67 @@ class AgentConfig(BaseModel):
     # See docs/reactive_agent_investigation.md.
     idle: dict[str, int] = Field(default_factory=dict)
 
+    # F1 — THE RESPONSE-TIMING CONTRACT. Responder-only; opt-in; default = today's
+    # shape.
+    #
+    # on_request (default): the DUT HOLDS its request until it is answered. The response
+    #       lands the cycle AFTER the request is sampled — STRUCTURALLY, because it
+    #       round-trips monitor -> analysis fifo -> responder sequence -> sequencer ->
+    # driver -> cb1. That round-trip costs at least one cycle and no pragma can run
+    # inside it. `memslave` is correct under this contract only because its FSM sits
+    #       in REQ forever, waiting.
+    # combinational: ZERO SLACK. The DUT samples our response on the very next edge, so
+    # there is no time for a sequencer round-trip. The response is therefore a pure
+    #       FUNCTION, evaluated in the driver on the RAW request signals — no clocking
+    #       block (cb1's output skew lands after the edge the DUT samples on), no
+    #       sequencer, no request fifo. It MAY depend on the current request.
+    #
+    # A serial device (SPI, full-duplex) needs a THIRD contract — prefetch, where the
+    # item
+    # is in the driver's hands before the transfer starts, because MISO bit k cannot
+    # depend
+    # on MOSI bit k. That needs a clock the TB does not generate, so it lands with the
+    # sampled clock, where a bench can actually prove it.
+    respond: Literal["on_request", "prefetch", "combinational"] = "on_request"
+
     @property
     def is_responder(self) -> bool:
         return self.mode == "responder"
 
     @property
+    def has_responder_seq(self) -> bool:
+        """Whether a forever responder SEQUENCE feeds the driver.
+
+        `on_request` and `prefetch` both need one — the driver takes its items from a
+        sequencer. They differ in WHEN: on_request's sequence blocks on the observed
+        request; prefetch's runs ahead of it, so the driver always has an item in hand.
+        A zero-slack responder has no sequencer at all: its driver IS the responder.
+        """
+        return self.is_responder and not self.is_zero_slack
+
+    @property
+    def is_prefetch(self) -> bool:
+        """The item must be in the driver's hands BEFORE the transfer starts."""
+        return self.is_responder and self.respond == "prefetch"
+
+    @property
+    def is_zero_slack(self) -> bool:
+        """The DUT gives us ONE cycle. No sequencer round-trip is fast enough."""
+        return self.is_responder and self.respond == "combinational"
+
+    @property
+    def has_request_fifo(self) -> bool:
+        """Whether the response path runs through the monitor -> fifo -> sequence chain.
+
+        A zero-slack responder cannot: that chain costs a cycle it does not have. Its
+        driver reads the raw request signals itself.
+        """
+        return self.is_responder and self.respond == "on_request"
+
+    @property
     def is_continuous(self) -> bool:
         """The CONTINUOUS responder shape — non-blocking driver + drive-idle-on-miss."""
-        return self.is_responder and bool(self.idle)
+        return self.is_responder and bool(self.idle) and self.respond == "on_request"
 
     @property
     def responder_seq_name(self) -> str:
@@ -807,6 +860,23 @@ class AgentConfig(BaseModel):
         return bool(self.inout_ports)
 
     @property
+    def driven_fields(self) -> dict[str, PortConfig]:
+        """Every transaction field this agent DRIVES at the DUT, by name.
+
+        The `inputs`, plus the two fields each `inouts` port synthesises: `<n>_o` (the
+        value) and `<n>_oe` (whether we drive it at all). A SERIAL DEVICE drives ONLY
+        inouts — an SPI device owns nothing but the shared `sd` lines — so a responder
+        whose driven set ignored them would have "nothing to drive as a response" and be
+        rejected outright. `<n>_oe` is per-LANE (it has the port's width), because the
+        host may own sd[0] while the device owns sd[1] at the same instant.
+        """
+        out: dict[str, PortConfig] = {p.name: p for p in self.input_ports}
+        for p in self.inout_ports:
+            out[f"{p.name}_o"] = p.model_copy(update={"name": f"{p.name}_o"})
+            out[f"{p.name}_oe"] = p.model_copy(update={"name": f"{p.name}_oe"})
+        return out
+
+    @property
     def coverable_fields(self) -> dict[str, PortConfig]:
         """Every transaction field a coverpoint/scoreboard may name.
 
@@ -816,11 +886,7 @@ class AgentConfig(BaseModel):
         refusing to cover it would make the feature half-useless.
         """
         out: dict[str, PortConfig] = {p.name: p for _, p in self.all_ports}
-        for p in self.inout_ports:
-            out[f"{p.name}_o"] = p.model_copy(update={"name": f"{p.name}_o"})
-            out[f"{p.name}_oe"] = p.model_copy(
-                update={"name": f"{p.name}_oe", "width": 1, "width_param": None}
-            )
+        out.update(self.driven_fields)
         return out
 
     @property
@@ -890,7 +956,7 @@ class AgentConfig(BaseModel):
         `inputs` (its response) and SAMPLES the DUT's `outputs` (the DUT's request). So
         `request_valid` names a SAMPLED port and `idle` keys name DRIVEN ports.
         """
-        driven = {p.name: p for p in self.input_ports}
+        driven = self.driven_fields
         sampled = {p.name: p for p in self.output_ports}
 
         if not self.is_responder:
@@ -914,8 +980,8 @@ class AgentConfig(BaseModel):
             )
         if not driven:
             raise ValueError(
-                f"agent '{self.name}': `mode: responder` needs an input port — "
-                f"there is nothing to drive as a response."
+                f"agent '{self.name}': `mode: responder` needs an `inputs` or `inouts` "
+                f"port — there is nothing to drive as a response."
             )
         if self.instances:
             raise ValueError(
@@ -1234,6 +1300,29 @@ class ClockConfig(BaseModel):
     period: int = 10
     unit: str = "ns"
     drive_offset_pct: int = 20  # percent of period to delay drive after posedge
+
+    # F2 — WHO DRIVES THIS CLOCK.
+    #
+    #   tb  (default): the TB generates it. A `clkgen` in tb_top drives the net.
+    #   dut: the DUT OUTPUTS it and the TB only ever SAMPLES it — an SPI `sck`, an I2C
+    #        `scl`. NO clkgen is emitted: one would fight the DUT's output driver and
+    #        Xcelium rejects it (*E,MULDRN). `period` is then never used to make an
+    # edge;
+    #        it is only a hint for timeouts.
+    #
+    # This is not a cosmetic distinction. Get it wrong in the `dut` direction and the
+    # bench
+    # is keyed to a TB-invented PHANTOM CLOCK unrelated to the DUT's real one — it
+    # runs, it
+    # passes, and it measures nothing. `_check_observed_clock_is_connected` in the
+    # generator
+    # makes that unreachable rather than merely documented.
+    source: Literal["tb", "dut"] = "tb"
+
+    @property
+    def observed(self) -> bool:
+        """The DUT drives this clock; the TB samples it and must never drive it."""
+        return self.source == "dut"
 
     @field_validator("name")
     @classmethod
@@ -2267,6 +2356,79 @@ class ProjectConfig(BaseModel):
         return clock.model_dump()
 
     # ---- M1 multi-clock / multi-reset — resolvers (single-domain → byte-identical) --
+
+    @model_validator(mode="after")
+    def _check_observed_clocks(self) -> ProjectConfig:
+        """Fail-closed rules for a clock the DUT drives (`source: dut`).
+
+        Getting this wrong produces a bench that RUNS, PASSES, and MEASURES NOTHING, so
+        every one of these is an error rather than a warning.
+        """
+        clocks = self.effective_clocks
+        observed = [c for c in clocks if c.observed]
+        if not observed:
+            return self
+
+        driven = [c for c in clocks if not c.observed]
+        if not driven:
+            raise ValueError(
+                "clock: every clock is `source: dut`, so the TB generates no clock at "
+                "all. A test's run length is measured in TB clock edges; with none, a "
+                "DUT that never toggles its clock would HANG rather than fail, and a "
+                "hung bench cannot report an error. Declare at least one TB-driven "
+                "clock."
+            )
+
+        for c in observed:
+            if c.name == self.dut.clock:
+                raise ValueError(
+                    f"clock '{c.name}': `source: dut` names the DUT's own CLOCK INPUT "
+                    f"(dut.clock). A DUT cannot both consume this clock and generate "
+                    f"it. "
+                    f"An observed clock is a DUT OUTPUT (an SPI sck, an I2C scl)."
+                )
+            for r in self.effective_resets:
+                if r.clock == c.name:
+                    raise ValueError(
+                        f"reset '{r.name}' is synced to '{c.name}', which is `source: "
+                        f"dut`. The TB cannot deassert a reset synchronously to a "
+                        f"clock "
+                        f"the DUT only starts driving once it is out of reset — that "
+                        f"is "
+                        f"a deadlock. Sync the reset to a TB-driven clock."
+                    )
+        return self
+
+    @property
+    def primary_clock_observed(self) -> bool:
+        """Is the clock a responder-only test would count edges on DUT-driven?
+
+        If so the test must not count its edges at all: an observed clock is usually
+        GATED (an SPI sck ticks only inside a frame), and a DUT that never drives it
+        would HANG the test rather than fail it.
+        """
+        ag = self.primary_agent
+        if ag is None:
+            return False
+        name = ag.clock or (
+            self.effective_clocks[0].name if self.effective_clocks else ""
+        )
+        return any(c.name == name and c.observed for c in self.effective_clocks)
+
+    @property
+    def primary_clock_period_ts(self) -> int:
+        """The primary agent's clock period, in timescale units."""
+        ag = self.primary_agent
+        clocks = self.effective_clocks
+        if ag is None or not clocks:
+            return 10
+        name = ag.clock or clocks[0].name
+        c = next((c for c in clocks if c.name == name), clocks[0])
+        return self.clock_period_ts(c)
+
+    @property
+    def observed_clocks(self) -> list[ClockConfig]:
+        return [c for c in self.effective_clocks if c.observed]
 
     @property
     def effective_clocks(self) -> list[ClockConfig]:

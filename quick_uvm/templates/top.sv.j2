@@ -18,15 +18,25 @@ module {{ top_name }};
 
   // M1 — multiple clock/reset domains.
 {% for c in clocks %}
+{% if c.observed %}
+  wire  {{ c.name }};   // OBSERVED: the DUT drives this clock. The TB only samples it.
+{% else %}
   logic {{ c.name }};
+{% endif %}
 {% endfor %}
 {% for r in resets %}
   logic {{ r.name }};
 {% endfor %}
 
   // One clock generator per domain (clkgen is parameterized by PERIOD)
+{% if observed_clocks %}
+  // ...except an OBSERVED clock (`source: dut`), which gets NONE: the DUT drives that net,
+  // and a clkgen on it would be a second driver (Xcelium *E,MULDRN).
+{% endif %}
 {% for c in clocks %}
+{% if not c.observed %}
   clkgen #({{ clock_periods_ts[c.name] }}) ck_{{ c.name }} ({{ c.name }});
+{% endif %}
 {% endfor %}
 {% for r in resets %}
 

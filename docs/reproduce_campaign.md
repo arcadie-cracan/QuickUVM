@@ -33,12 +33,23 @@ the bus at **X**. Five distinct industrial idioms exist; our `mode:` schema must
 least the blocking and the non-blocking shapes or it is under-specified. The doc now carries
 a correction. **Fix the schema before building the feature.**
 
-### 1.2 `inout` / tri-state / open-drain is entirely unsupported — P0
+### 1.2 `inout` / tri-state / open-drain — ✅ **SHIPPED** (PR #54, `examples/odbus/`)
 
-`PortConfig.direction` is `Literal["input", "output"]`; there is **zero** tristate,
-pull-up or open-drain support anywhere in the generator or templates. This blocks I2C and
-every bidirectional bus. Found by `grep`, not by a campaign — so **prove it on a small
-bidirectional example, not on a 15-day I2C bench**.
+~~There is **zero** tristate, pull-up or open-drain support anywhere in the generator.~~
+`inouts` is now a third port category (`inputs` / `outputs` / `inouts`), with `open_drain`
+and `pullup`.
+
+**But the follow-up mattered more than the feature.** T2 showed the shipped version could
+not express a serial **device** at all, on two counts: `mode: responder` rejected an agent
+whose only driven ports were `inouts` ("nothing to drive as a response") — and that is
+exactly what an SPI device or an I2C *target* is; and a vector `inout` got a **scalar**
+output enable, so standard SPI (host drives sd[0] while the device drives sd[1] *at the same
+instant*) was unmodelable. Both are fixed; both were listed as "deferred" on the roadmap and
+were in fact **blocking**.
+
+**The lesson for this campaign:** "feature X is supported" is not the question. *"Can the
+feature express the shape the industrial bench actually has?"* is. `odbus` (a 1-bit
+open-drain **controller**) proved the feature and hid the gap for a month.
 
 ### 1.3 A "sampled clock" — a clock the TB observes but never generates
 

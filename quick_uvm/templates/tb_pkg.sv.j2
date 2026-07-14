@@ -38,7 +38,7 @@ package {{ dut.name }}_tb_pkg;
   `include "{{ agent.name }}_driver.svh"
   `include "{{ agent.name }}_sequencer.svh"
   `include "{{ agent.name }}_monitor.svh"
-{% if agent.is_responder %}
+{% if agent.has_responder_seq %}
   `include "{{ agent.responder_seq_name }}.svh"
 {% endif %}
   `include "{{ agent.name }}_agent.svh"

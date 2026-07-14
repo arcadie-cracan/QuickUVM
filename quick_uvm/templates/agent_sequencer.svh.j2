@@ -8,7 +8,7 @@
 
 class {{ agent.name }}_sequencer{{ agent.param_decl }} extends uvm_sequencer #({{ agent.sequence_item }}{{ agent.param_args }});
   `uvm_component_{{ 'param_' if agent.parameters else '' }}utils({{ agent.name }}_sequencer{{ agent.param_args }})
-{% if agent.is_responder %}
+{% if agent.has_request_fifo %}
 
   // Reactive agent: the monitor's request port feeds this FIFO, which exists ONLY to give
   // the responder sequence a BLOCKING get. It is a rendezvous, not a backlog buffer.
@@ -18,12 +18,12 @@ class {{ agent.name }}_sequencer{{ agent.param_decl }} extends uvm_sequencer #({
 
   function new (string name, uvm_component parent);
     super.new(name, parent);
-{% if agent.is_responder %}
+{% if agent.has_request_fifo %}
     request_export = new("request_export", this);
     request_fifo   = new("request_fifo", this);
 {% endif %}
   endfunction
-{% if agent.is_responder %}
+{% if agent.has_request_fifo %}
 
   virtual function void connect_phase(uvm_phase phase);
     super.connect_phase(phase);

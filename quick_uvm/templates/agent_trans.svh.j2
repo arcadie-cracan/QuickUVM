@@ -110,7 +110,7 @@ class {{ agent.sequence_item }}{{ agent.param_decl }} extends uvm_sequence_item;
   //   <n>     the RESOLVED line    (sampled; never what we drove)
 {% for port in agent.inout_ports %}
   rand bit {{ port.sv_span }}{{ port.name }}_o;
-  rand bit {{ port.name }}_oe;
+  rand bit {{ port.sv_span }}{{ port.name }}_oe;
        logic {{ port.sv_span }}{{ port.name }};
 {% endfor %}
 {% endif %}

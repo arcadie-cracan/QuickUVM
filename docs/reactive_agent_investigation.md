@@ -397,3 +397,66 @@ slice.
 - QuickUVM templates inspected: `agent_driver.svh.j2`, `agent_monitor.svh.j2`,
   `agent_sequence.svh.j2`, `agent_if.sv.j2`, `agent_agent.svh.j2`, `models.py`
   (`AgentConfig`), `generator.py`.
+
+---
+
+# The timing contract (added after T2 — read this before using `mode: responder`)
+
+Everything above describes *how* a responder is wired. It does not say **when** the response
+lands, and that turned out to be the load-bearing question.
+
+**`mode: responder` shipped with an unwritten contract: the response is driven the cycle
+AFTER the request is sampled.** It is structural, not a setting. The response round-trips
+
+    monitor -> analysis fifo -> responder sequence -> sequencer -> driver -> cb1
+
+and *every pragma in that path runs after `get_next_item`*. No hand-written code inside the
+feature can answer sooner.
+
+`examples/memslave` never noticed, because its FSM parks in `REQ` and waits however long it
+takes. So "reactive agents work" really meant **"reactive agents work for devices that will
+wait a cycle"** — which is not what an industrial serial device is.
+
+## The three contracts
+
+| `respond:` | the DUT... | the response... |
+|---|---|---|
+| `on_request` *(default)* | **holds** its request until answered | may depend on it; lands the next cycle |
+| `combinational` | gives you **one cycle**, then moves on | may depend on it; must be driven the same cycle |
+| `prefetch` | samples your response on the **same edge** it drives its request (full duplex) | **cannot** depend on it — it must already be on the wire |
+
+`combinational` bypasses the sequencer entirely (the round-trip is a cycle it does not have):
+the response is a pure function evaluated in the driver on the **raw** request signals — no
+clocking block, because `cb1`'s output skew lands *after* the edge the DUT samples on, so a
+`cb1` drive is always exactly one cycle late.
+
+`prefetch` takes its item **before** the transfer starts, which is the only way to have bit 7
+on the wire before the first `sck` edge exists. This is precisely OpenTitan's
+`spi_device_driver::get_and_drive()`: `get_next_item(req)` first, and only *then* `wait (!csb)`.
+
+## How it was found, and why that matters
+
+Not by reading. By a **controlled spike**: take `memslave` — the only example validating
+`mode: responder`, 34/34 green — and change exactly one thing, the DUT's willingness to wait.
+Result: **33 UVM_ERROR, `fetched=0`** — the DUT captured nothing. Restore the wait, touch
+nothing else: **0 errors**.
+
+Both new contracts ship with a bench that can make them fail, because the alternative is
+shipping a feature whose only evidence is that it generates:
+
+* `examples/memslave_zs` — `combinational`. One YAML line separates 34/34 green from 35 errors.
+* `examples/spi_device` — `prefetch` + `clock[].source: dut`. 177/177 green; flip to
+  `on_request` and it is 171 errors and `DEAD_RESPONDER`.
+
+## Liveness is now GENERATED, not remembered
+
+A dead responder is **unprovable per-transaction**: with no response the DUT captures nothing,
+so expected and actual are both zero and *every compare agrees*. It has reported TEST PASSED
+34/34 with the device stone dead. So `DEAD_RESPONDER` (drove zero responses) and
+`SILENT_RESPONDER` (drove only the idle value — an empty seam) are emitted into **every**
+responder driver's `check_phase`, outside any pragma. A responder without a liveness check is
+no longer something you can generate.
+
+Note which one fires when a responder is merely **too late**: `NO_PROGRESS`, not
+`DEAD_RESPONDER`. It is perfectly alive — it grants every request — the DUT just never
+captures. A check that only asked "did it respond?" would call that healthy.
