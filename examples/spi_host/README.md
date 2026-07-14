@@ -104,9 +104,42 @@ as the drive before it.** So the driver's `req <= 1'b0` deassert silently *overw
 access, and every register beat vanished. The wire probe settled it: `req` was high on 11 clock
 edges while the driver had driven 26 items.
 
+**Slices 2 & 3 — done. All four SPI modes, across seeds.**
+
+    make -C gen regress                                        # rand_test x 3 seeds -> 3/3
+    for m in 0 1 2 3; do                                       # all four CPOL/CPHA modes
+      xrun -f xrun.f +UVM_TESTNAME=rand_test \
+           +SPI_CPOL=$((m/2)) +SPI_CPHA=$((m%2))
+    done                                                       # -> 0 UVM_ERROR in every mode
+
+| | CPHA=0 | CPHA=1 |
+|---|---|---|
+| **CPOL=0** | mode 0 ✅ | mode 1 ✅ |
+| **CPOL=1** | mode 2 ✅ | mode 3 ✅ |
+
+**Proved the modes are REAL, not aliased.** Four modes passing means nothing if `cpol`/`cpha`
+never reach the DUT — wrong `CONFIGOPTS` bit positions and every mode silently behaves as mode 0
+and all four "pass" for free. So: probe `sck`'s idle level. **CPOL=0 → idles 0; CPOL=1 → idles 1.**
+The modes are distinct.
+
+**And the check is live in EVERY mode**, not just the default: break the device's payload and all
+four go red (9 UVM_ERROR each).
+
+### A prediction that was WRONG, and why
+
+The build spec predicted CPOL=1 would expose a **monitor-prologue misalignment** on the observed
+clock — that the generated monitor's `@vif.cb1` prologue would no longer land on a frame's first
+sampling edge, losing frame 1.
+
+**It does not.** That prologue was already removed for DUT-driven clocks during the responder-timing
+slice: a gated clock may not have ticked at all when the monitor starts, so waiting on an edge there
+would sleep through the first transfer. The fix predated the prediction. Reported because a wrong
+prediction is worth as much as a right one — and because this is the second time in this campaign a
+confident prediction about the reactive agent has not survived contact.
+
 ## Next
 
-* **Slice 2** — the generated UVM bench, then immediately the mutations. A green bench that has
+* **Slice 4 (optional)** — the generated UVM bench, then immediately the mutations. A green bench that has
   not been mutation-proved does not count.
 * **The mutation that justifies T2 (M3)** — flip `respond: prefetch` → `on_request` against
   *this* RTL. If it stays green, the full-duplex argument was an artefact of my own DUT, and that
