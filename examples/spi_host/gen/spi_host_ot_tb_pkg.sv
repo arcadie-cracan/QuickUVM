@@ -79,11 +79,17 @@ package spi_host_ot_tb_pkg;
     endtask
 
     task body;
+      int unsigned cpol = 0, cpha = 0;
+      void'($value$plusargs("SPI_CPOL=%d", cpol));
+      void'($value$plusargs("SPI_CPHA=%d", cpha));
+
       // CONTROL.OUTPUT_EN (bit 29) is NOT optional. It resets to 0 and gates sck, csb and
       // every sd lane: without it the DUT drives NOTHING, the pull-ups float the bus high,
       // and the bench passes by doing nothing. That is mutation M1.
       beat(RControl,    1'b1, (32'h1 << 31) | (32'h1 << 29) | 32'h7f);
-      beat(RConfigopts, 1'b1, (32'd2 << 24) | (32'd2 << 20) | (32'd2 << 16) | 32'd4);
+      // CPOL[31], CPHA[30], csn lead/trail/idle, clkdiv
+      beat(RConfigopts, 1'b1, (32'(cpol) << 31) | (32'(cpha) << 30) |
+                              (32'd2 << 24) | (32'd2 << 20) | (32'd2 << 16) | 32'd4);
 
       for (int f = 0; f < 8; f++) begin
         beat(RTxdata,  1'b1, {24'h0, 8'h5A ^ 8'(f)}, 4'b0001);

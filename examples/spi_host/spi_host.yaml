@@ -77,5 +77,5 @@ tests:
   - {name: rand_test, num_items: 0}
 
 regress:
-  seeds: 2
+  seeds: 3
   filelist: ../sim/xrun.f

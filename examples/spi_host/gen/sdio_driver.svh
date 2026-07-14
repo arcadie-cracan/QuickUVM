@@ -21,6 +21,9 @@ class sdio_driver extends uvm_driver #(sdio_item);
   protected time         m_t0;             // guards an unfilled `drive_transfer` seam
 
   // pragma quickuvm custom class_item_additional begin
+  // The SPI mode, from plusargs — the same knobs the sequence programs into CONFIGOPTS.
+  int unsigned m_cpol = 0;
+  int unsigned m_cpha = 0;
   // pragma quickuvm custom class_item_additional end
 
   function new (string name, uvm_component parent);
@@ -54,24 +57,35 @@ class sdio_driver extends uvm_driver #(sdio_item);
       //
       m_t0 = $time;
       // pragma quickuvm custom drive_transfer begin
-      // The payload is ALREADY in `tr` — fetched before we got here, which is the whole
-      // point of `prefetch`. Now the protocol.
+      // The payload is ALREADY in `tr` — fetched before we got here. That is `prefetch`.
       //
-      // Mode 0: the host samples MISO on the RISING edge of sck, so we change it on the
-      // FALLING edge. Bit 7 must be on the wire BEFORE the first rising edge exists —
-      // there is no earlier edge to hang it on. That is the zero-slack obligation.
+      // We own LANE 1 ONLY (`sd_oe = 4'b0010`). The host owns lane 0 at the same instant.
       //
-      // We own LANE 1 ONLY. The host owns lane 0 at the same instant: `sd_oe` is 4'b0010,
-      // never 4'b1111. A scalar output enable cannot express this.
-      @(negedge vif.csb);                     // the host opened a frame
-      vif.sd_o  = {2'b00, tr.miso_byte[7], 1'b0};
-      vif.sd_oe = 4'b0010;                    // release lanes 0/2/3, drive lane 1
-      for (int i = 6; i >= 0; i--) begin
-        @(negedge vif.clk);                   // this agent's clock IS sck (the DUT drives it)
-        vif.sd_o = {2'b00, tr.miso_byte[i], 1'b0};
+      // CPOL decides which edge of sck is LEADING; CPHA decides which edge the host SAMPLES
+      // on. The device must change MISO on the edge the host does NOT sample on:
+      //
+      //   CPHA=0 : host samples on the LEADING edge  -> we change on the TRAILING edge, and
+      //            bit 7 must be on the wire at CSB fall (there is no earlier edge).
+      //   CPHA=1 : host samples on the TRAILING edge -> we change on the LEADING edge.
+      //
+      // `vif.clk` IS sck (the DUT drives it). cpol=0 => leading is posedge; cpol=1 => negedge.
+      @(negedge vif.csb);
+      if (!m_cpha) begin
+        vif.sd_o  = {2'b00, tr.miso_byte[7], 1'b0};   // before ANY sck edge exists
+        vif.sd_oe = 4'b0010;
+        for (int i = 6; i >= 0; i--) begin
+          if (m_cpol) @(posedge vif.clk); else @(negedge vif.clk);   // TRAILING
+          vif.sd_o = {2'b00, tr.miso_byte[i], 1'b0};
+        end
+      end else begin
+        vif.sd_oe = 4'b0010;
+        for (int i = 7; i >= 0; i--) begin
+          if (m_cpol) @(negedge vif.clk); else @(posedge vif.clk);   // LEADING
+          vif.sd_o = {2'b00, tr.miso_byte[i], 1'b0};
+        end
       end
-      @(posedge vif.csb);                     // frame closed
-      vif.sd_oe = 4'b0000;                    // release the shared bus between frames
+      @(posedge vif.csb);
+      vif.sd_oe = 4'b0000;                            // release the shared bus
       // pragma quickuvm custom drive_transfer end
       // An unfilled seam is caught HERE, OUTSIDE the pragma — a guard placed inside the
       // region it protects is deleted along with it. A real transfer must consume time
@@ -107,6 +121,8 @@ class sdio_driver extends uvm_driver #(sdio_item);
     // synchronizers, it answers on the DUT's own clock.
     wait (vif.rst_n === 1'b1);
     // pragma quickuvm custom initialize_additional begin
+    void'($value$plusargs("SPI_CPOL=%d", m_cpol));
+    void'($value$plusargs("SPI_CPHA=%d", m_cpha));
     // pragma quickuvm custom initialize_additional end
   endtask
 

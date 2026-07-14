@@ -52,7 +52,7 @@ SRCS += $(wildcard $(addsuffix /*.svh,$(INCDIRS)))
 # test:seeds — the declared tests[], plus the RAL reg_test and one test per C5
 # csr_tests kind. NB the basic register test's CLASS is the bare `reg_test`; only
 # its FILE carries the spi_host_ot_ prefix.
-JOBS      ?= rand_test:2 
+JOBS      ?= rand_test:3 
 # Seeds are SEED_BASE .. SEED_BASE+n-1 — explicit and recorded, never `-svseed
 # random`: a regression you cannot replay is not a regression. `make regress
 # SEED_BASE=$(date +%s)` for a fresh sweep.
@@ -91,7 +91,7 @@ help:
 	@echo "  make cov                       re-merge + re-report coverage"
 	@echo "  make clean"
 	@echo ""
-	@echo "  tests: rand_test(2)"
+	@echo "  tests: rand_test(3)"
 
 build: $(ELAB_OK)
 
