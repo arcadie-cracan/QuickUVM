@@ -634,13 +634,38 @@ can express a net that must be **released**. Unblocks I2C and every bidirectiona
   line, the DUT was never connected in `tb_top` (TB and DUT on *different wires*), the line was
   sampled a cycle out of step with the DUT's drive state, and `do_copy` dropped the drive state
   so the predictor modelled a bus nobody was driving. Each now has a regression test.
-- *Deferred:* per-bit open-drain on a vector (declare one port per line); `inouts` on a
-  responder agent; bus-keeper / weak-pull-down variants.
+- ~~*Deferred:* per-bit open-drain on a vector; `inouts` on a responder agent~~ — **both DONE.**
+  Campaign target T2 (OpenTitan `spi_host`) proved they were not "deferred" but **blocking**:
+  `mode: responder` computed its driven set from `inputs` alone, so an agent whose only driven
+  ports were `inouts` was rejected outright — and **a serial DEVICE drives nothing else.** The
+  deferred workaround ("declare one port per line") did not rescue it. A vector `inout` also
+  got a **scalar** output enable, which makes a shared bus unusable: on standard SPI the host
+  drives sd[0] while the device drives sd[1] *at the same instant*.
+  **Corollary worth stating plainly: "`inouts` unblocks I2C" was only ever true for an I2C
+  CONTROLLER. An I2C TARGET hit this identical wall.**
+- *Still deferred:* bus-keeper / weak-pull-down variants.
 
-### Sampled clock — a clock the TB observes but does not generate  *(new)*
-Every QuickUVM clock comes from a generated `clkgen`. But a device agent's clock is a **DUT
-output** (SPI `SCK`, I2C `SCL`) — the TB samples it and must never drive it. M1 has no concept
-of this. Small, and it rides on the reactive-agent work for free.
+### Sampled clock — a clock the TB observes but does not generate  ✅ **DONE**
+`clock[].source: dut`. The DUT drives the clock (an SPI `sck`, an I2C `scl`); no `clkgen` is
+emitted for it, and the net is a `wire` whose only driver is the DUT.
+
+**The old note here said it "rides on the reactive-agent work for free". That was WRONG**, and
+worth recording as a lesson in estimating from the armchair: it needed its own schema key, its
+own fail-closed rules, a generation-time refusal, and three separate fixes to code that had
+silently assumed a TB-generated, free-running clock (driver startup, monitor resync, and the
+test's run bound). Shipping the reactive agent *without* it would have been worse than not
+shipping it, because of the trap below.
+
+**The trap it closes.** Declare such a clock without saying so and `tb_top` puts a `clkgen` on
+it, which fights the DUT's output driver: Xcelium `*E,MULDRN`. The obvious fix — delete
+`.sck(sck)` from the `dut_connections` pragma — **elaborates clean**, and keys the whole bench
+to a TB-invented **phantom clock**. It runs, it passes, it measures nothing, and regeneration
+reinstates the `clkgen` every time. The generator now **REFUSES** to emit a `tb_top` whose
+clock the DUT is not connected to, in *both* directions, and the message names the fix rather
+than the fault. A combinational DUT is exempt (it has no clock port at all — without that
+exemption the check aborts 18 of the committed examples).
+
+Validated by `examples/spi_device/`.
 
 ### UART baud-divisor driver timing  *(new, small)*
 Driver bit-timing derived from a **CSR-programmed** baud divisor + 16× oversampling — i.e.
