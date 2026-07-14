@@ -1,0 +1,81 @@
+# spi_host — OpenTitan's REAL SPI controller (campaign target T2).
+#
+# Every feature exercised here was built and mutation-proved against examples/spi_device,
+# whose SPI host I wrote myself — so I also chose its timing. This bench re-runs those
+# proofs against RTL I did not write and cannot bend.
+#
+#   clock[].source: dut   sck is a DUT OUTPUT (and GATED — it only ticks inside a frame).
+#   respond: prefetch     full duplex: the host samples MISO on the very edge it drives
+#                         MOSI, so our bit k cannot depend on their bit k. The payload must
+#                         be in the driver's hands BEFORE the first edge.
+#   inouts (per-lane oe)  the sd lines are SHARED. In standard mode the host drives sd[0]
+#                         while WE drive sd[1] AT THE SAME INSTANT — a scalar enable cannot
+#                         express that, and OpenTitan's own core port (`sd_en_o[3:0]`) says
+#                         the same.
+#
+# The device agent drives NOTHING BUT INOUTS. That combination was an EMPTY SET until the
+# responder-timing slice: `mode: responder` computed its driven set from `inputs` alone.
+project: {name: spi_host_tb, author: QuickUVM, year: 2026}
+
+dut: {name: spi_host_ot, clock: clk, reset: rst_n, external_reset: true}
+
+clock:
+  - {name: clk, period: 10, unit: ns}
+  # The DUT drives this one. `period` never makes an edge — it is only a timeout hint.
+  - {name: sck, period: 100, unit: ns, source: dut}
+
+resets:
+  - {name: rst_n, active_low: true, clock: clk}
+
+agents:
+  # ---- the register bus (our declared normalisation of TL-UL) --------------------
+  - name: regbus
+    interface: regbus_if
+    sequence_item: regbus_item
+    seq_item_style: manual
+    active: true
+    clock: clk
+    reset: rst_n
+    ports:
+      inputs:
+        - {name: addr,  width: 6}
+        - {name: req,   width: 1}
+        - {name: wr,    width: 1}
+        - {name: be,    width: 4}
+        - {name: wdata, width: 32}
+      outputs:
+        - {name: rdata, width: 32}
+
+  # ---- the SPI DEVICE: a full-duplex responder on the DUT's own clock -------------
+  - name: sdio
+    interface: sdio_if
+    sequence_item: sdio_item
+    seq_item_style: manual
+    active: true
+    clock: sck          # the DUT drives this clock; we only sample it
+    reset: rst_n
+
+    mode: responder     # the host initiates every frame; we answer
+    request_valid: csb  # ...qualified by the frame envelope
+    respond: prefetch   # the payload must be on the wire BEFORE the first sck edge
+
+    ports:
+      inputs: []        # A SERIAL DEVICE DRIVES NOTHING BUT THE SHARED BUS.
+      outputs:
+        - {name: csb, width: 1}
+      inouts:
+        - {name: sd, width: 4, pullup: true}
+
+# The check: what the host RECEIVED (RXDATA, on the register bus) must equal what our device
+# SENT — derived from our own model of the device, never from anything observed on the wire.
+analysis:
+  coverage: [sdio]
+  scoreboards:
+    - {name: sb, source: regbus}
+
+tests:
+  - {name: rand_test, num_items: 0}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f

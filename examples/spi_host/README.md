@@ -65,9 +65,48 @@ testing nothing.
 `COMMAND` is `hwext`+`hwqe` upstream — it has **no storage**, and the command launches on the
 *write strobe* (`command_valid = |cmd_qes`). Drive it from a value and the DUT sits idle forever.
 
+**Slice 1 — done. The generated UVM bench, on OpenTitan's real RTL.**
+
+Two agents: a register-bus initiator on the core clock, and the SPI device as a **`prefetch`
+responder on the DUT-driven `sck`**, driving **nothing but tri-state lanes**.
+
+    make -C gen regress          # rand_test -> 2674/2674, 0 UVM_ERROR
+
+### THE MUTATION THIS TARGET EXISTS FOR (M3)
+
+`respond: prefetch` -> `on_request`, against **taped-out silicon**:
+
+    TEST FAILED — 8/8 RXDATA vectors fail, 10 UVM_ERROR, [DEAD_RESPONDER]
+
+**`prefetch` is load-bearing on real hardware.** `on_request` waits for the monitor to publish
+a request — which happens at *frame end* — so the device never drives during the frame at all.
+The full-duplex argument was **not** an artefact of RTL I wrote myself.
+
+### The other mutations
+
+| mutation | result |
+|---|---|
+| the device sends a different byte | **8/8 RXDATA vectors FAIL** — the check is real, not an echo |
+| the device never drives (releases the bus) | **8/8 FAIL** — the pull-ups do not fake a device |
+
+### What the liveness check caught
+
+The first run of this bench reported **`TEST PASSED — 2622 Ran / 2622 Passed`** *with one
+`UVM_ERROR`: `NO_RXDATA`*. Those 2,622 "passes" were **idle bus beats echoing themselves** —
+the predictor had never seen a single read come back. Without the end-of-test liveness check
+this would have been a clean green bench measuring **nothing**.
+
+The cause was a genuinely subtle SystemVerilog trap, now documented in `gen/regbus_driver.svh`:
+**a clocking-block drive issued the instant `@vif.cb1` returns lands on the SAME clocking event
+as the drive before it.** So the driver's `req <= 1'b0` deassert silently *overwrote* its own
+`req <= tr.req`, and the request pulse never reached the wire. `addr` and `wdata` changed
+(nothing deasserted them) so the bus *looked* busy — but `req` stayed low, the DUT saw no
+access, and every register beat vanished. The wire probe settled it: `req` was high on 11 clock
+edges while the driver had driven 26 items.
+
 ## Next
 
-* **Slice 1** — the generated UVM bench, then immediately the mutations. A green bench that has
+* **Slice 2** — the generated UVM bench, then immediately the mutations. A green bench that has
   not been mutation-proved does not count.
 * **The mutation that justifies T2 (M3)** — flip `respond: prefetch` → `on_request` against
   *this* RTL. If it stays green, the full-duplex argument was an artefact of my own DUT, and that
