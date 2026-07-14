@@ -1,0 +1,54 @@
+# spi_device — a FULL-DUPLEX SPI device, as a reactive agent.
+#
+# Two QuickUVM features exist because of this bench:
+#
+#   clock[].source: dut   sck is a DUT OUTPUT. The TB samples it and must NEVER drive it.
+#                         (A clkgen on that net fights the DUT: Xcelium *E,MULDRN.)
+#   respond: prefetch     The host samples MISO on the very edge it drives MOSI, so the
+#                         device's response CANNOT depend on the request it accompanies.
+#                         The driver takes its item BEFORE the transfer starts.
+project: {name: spi_device_tb, author: QuickUVM, year: 2026}
+
+dut: {name: spi_host, clock: clk, reset: rst_n, external_reset: true}
+
+clock:
+  - {name: clk, period: 10, unit: ns}
+  # The DUT drives this one. `period` is never used to make an edge.
+  - {name: sck, period: 40, unit: ns, source: dut}
+
+resets:
+  - {name: rst_n, active_low: true, clock: clk}
+
+agents:
+  - name: spi
+    interface: spi_if
+    sequence_item: spi_item
+    seq_item_style: manual
+    active: true
+    clock: sck            # the agent lives on the DUT's clock
+    reset: rst_n
+
+    mode: responder       # the host initiates every frame; we answer
+    request_valid: csb    # ...qualified by the frame envelope
+    respond: prefetch     # the payload must be in hand BEFORE the first edge
+
+    ports:
+      inputs:
+        - {name: miso, width: 1}                 # what WE drive
+      outputs:
+        - {name: csb, width: 1}
+        - {name: mosi, width: 1}
+        - {name: rx_byte, width: 8}              # what the host RECEIVED from us
+        - {name: frame_cnt, width: 8}            # completed frames (liveness)
+
+analysis:
+  coverage: [spi]
+  scoreboards:
+    - {name: sb, source: spi}
+
+tests:
+  - {name: rand_test, num_items: 200}   # a wall-clock bound: sck is DUT-driven and gated
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f

@@ -746,11 +746,27 @@ class AgentConfig(BaseModel):
     # depend
     # on MOSI bit k. That needs a clock the TB does not generate, so it lands with the
     # sampled clock, where a bench can actually prove it.
-    respond: Literal["on_request", "combinational"] = "on_request"
+    respond: Literal["on_request", "prefetch", "combinational"] = "on_request"
 
     @property
     def is_responder(self) -> bool:
         return self.mode == "responder"
+
+    @property
+    def has_responder_seq(self) -> bool:
+        """Whether a forever responder SEQUENCE feeds the driver.
+
+        `on_request` and `prefetch` both need one — the driver takes its items from a
+        sequencer. They differ in WHEN: on_request's sequence blocks on the observed
+        request; prefetch's runs ahead of it, so the driver always has an item in hand.
+        A zero-slack responder has no sequencer at all: its driver IS the responder.
+        """
+        return self.is_responder and not self.is_zero_slack
+
+    @property
+    def is_prefetch(self) -> bool:
+        """The item must be in the driver's hands BEFORE the transfer starts."""
+        return self.is_responder and self.respond == "prefetch"
 
     @property
     def is_zero_slack(self) -> bool:
@@ -2382,6 +2398,33 @@ class ProjectConfig(BaseModel):
                         f"a deadlock. Sync the reset to a TB-driven clock."
                     )
         return self
+
+    @property
+    def primary_clock_observed(self) -> bool:
+        """Is the clock a responder-only test would count edges on DUT-driven?
+
+        If so the test must not count its edges at all: an observed clock is usually
+        GATED (an SPI sck ticks only inside a frame), and a DUT that never drives it
+        would HANG the test rather than fail it.
+        """
+        ag = self.primary_agent
+        if ag is None:
+            return False
+        name = ag.clock or (
+            self.effective_clocks[0].name if self.effective_clocks else ""
+        )
+        return any(c.name == name and c.observed for c in self.effective_clocks)
+
+    @property
+    def primary_clock_period_ts(self) -> int:
+        """The primary agent's clock period, in timescale units."""
+        ag = self.primary_agent
+        clocks = self.effective_clocks
+        if ag is None or not clocks:
+            return 10
+        name = ag.clock or clocks[0].name
+        c = next((c for c in clocks if c.name == name), clocks[0])
+        return self.clock_period_ts(c)
 
     @property
     def observed_clocks(self) -> list[ClockConfig]:

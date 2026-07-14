@@ -19,6 +19,9 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
   // that catches it is an end-of-test check — so a responder without one must be
   // impossible to GENERATE, not merely discouraged in a doc.
   protected int unsigned m_responses;      // responses actually driven
+{% if agent.is_prefetch %}
+  protected time         m_t0;             // guards an unfilled `drive_transfer` seam
+{% endif %}
 {% if agent.idle %}
   protected int unsigned m_active_drives;  // ...that said anything other than `idle`
 {% endif %}
@@ -31,7 +34,49 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
     super.new(name, parent);
   endfunction
 
-{% if agent.is_zero_slack %}
+{% if agent.is_prefetch %}
+  // PREFETCH responder — a FULL-DUPLEX device (SPI, and anything else that drives its
+  // response on the same edge it samples the request).
+  //
+  // `get_next_item` comes FIRST, before we wait for the transfer to start. It has to: the
+  // DUT samples MISO bit k on the very edge that drives MOSI bit k, so the response cannot
+  // be a function of the request it accompanies — it must already be in our hands when the
+  // first edge arrives. Waiting for the request and THEN fetching an item (what
+  // `on_request` does) is structurally one transfer too late.
+  //
+  // This is exactly OpenTitan's spi_device_driver::get_and_drive(): get_next_item(req)
+  // first, and only then `wait (!csb)`.
+  //
+  // The response is computed from PREVIOUS transfers. The driver is a class — hold that
+  // state in `class_item_additional`.
+  task run_phase(uvm_phase phase);
+    {{ agent.sequence_item }}{{ agent.param_args }} tr;
+    initialize();
+    forever begin
+      // THE ITEM COMES FIRST. Do not move this below the wait.
+      seq_item_port.get_next_item(tr);
+      m_responses++;
+      // THE USER SEAM. The payload is in `tr`. Wait for the transfer to begin, then drive
+      // it out and sample the DUT's own bits back in, edge by edge, on the protocol's
+      // clock. Nothing here is generatable: no generator emits protocol logic (OpenTitan's
+      // own uvmdvgen ships an EMPTY get_and_drive()).
+      //
+      m_t0 = $time;
+      // pragma quickuvm custom drive_transfer begin
+      // pragma quickuvm custom drive_transfer end
+      // An unfilled seam is caught HERE, OUTSIDE the pragma — a guard placed inside the
+      // region it protects is deleted along with it. A real transfer must consume time
+      // (it waits for the protocol's edges); one that returns in zero time drove nothing,
+      // and the forever loop would then spin at the current timestep and HANG the
+      // simulation. A hung bench reports nothing at all, which is worse than a failing one.
+      if ($time == m_t0)
+        `uvm_fatal("EMPTY_TRANSFER", "`drive_transfer` returned in ZERO TIME — the seam \
+is empty, so this responder never drove anything. A prefetch responder must drive the \
+transfer itself: no generator emits protocol logic.")
+      seq_item_port.item_done();
+    end
+  endtask
+{% elif agent.is_zero_slack %}
   // ZERO-SLACK responder. The DUT samples our response on the very NEXT edge after it
   // raises its request, so there is no time for the sequencer round-trip the `on_request`
   // shape uses (monitor -> analysis fifo -> responder sequence -> sequencer -> driver:
@@ -176,7 +221,17 @@ class {{ agent.name }}_driver{{ agent.param_decl }} extends uvm_driver #({{ agen
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if agent.is_zero_slack %}
+{% if agent_clock and agent_clock.observed %}
+    // This agent's clock is DRIVEN BY THE DUT (`source: dut`), so we must not burn clock
+    // edges here. Such a clock is typically GATED — an SPI sck does not tick until the DUT
+    // opens a frame — so the initiator's "wait 2 edges for the synchronizers to settle"
+    // would sleep through the start of the FIRST transfer and miss it entirely. There is
+    // nothing to settle anyway: a responder does not push stimulus into the DUT's input
+    // synchronizers, it answers on the DUT's own clock.
+{% if agent_reset %}
+    wait (vif.{{ agent_reset.name }} === 1'b{% if agent_reset.active_low %}1{% else %}0{% endif %});
+{% endif %}
+{% elif agent.is_zero_slack %}
     // A zero-slack responder does NOT wait for reset here, and burns no clock. It must be
     // ANSWERING from the very first cycle out of reset: the DUT issues its first request
     // on that edge and will not wait. Waiting here means the `wait` returns as reset

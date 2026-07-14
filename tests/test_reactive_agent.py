@@ -478,3 +478,81 @@ def test_zero_slack_still_gets_the_liveness_check(tmp_path):
     _gen(tmp_path, agents=_zero_slack())
     drv = (tmp_path / "mem_driver.svh").read_text()
     assert "DEAD_RESPONDER" in drv and "SILENT_RESPONDER" in drv
+
+
+# --- F1c: `respond: prefetch` — the full-duplex shape ---
+
+
+def _prefetch():
+    a = {**_BASE["agents"][0], "respond": "prefetch"}
+    return [a]
+
+
+def test_prefetch_takes_its_item_before_the_transfer(tmp_path):
+    """A full-duplex device drives its response on the SAME edge it samples the request,
+    so the response cannot depend on the request it accompanies — the item must already
+    be in hand. `get_next_item` therefore comes FIRST, before any wait.
+
+    This is OpenTitan's spi_device_driver::get_and_drive(): get_next_item(req) first, and
+    only THEN `wait (!csb)`.
+
+    Mutation-proved on examples/spi_device: `prefetch` passes 177/177; `on_request` on the
+    same bench gives 171 UVM_ERROR and DEAD_RESPONDER — the driver never gets an item in
+    time to drive a single frame.
+    """
+    cfg = _gen(tmp_path, agents=_prefetch())
+    a = cfg.agents[0]
+    assert a.is_prefetch and a.has_responder_seq
+    assert not a.has_request_fifo, "prefetch must not wait on the observed request"
+
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    body = drv.split("task run_phase")[1]
+    # the item must be fetched BEFORE the user's protocol seam runs
+    assert body.index("get_next_item") < body.index("drive_transfer")
+
+
+def test_prefetch_sequence_runs_ahead_of_the_bus(tmp_path):
+    """The sequence must NOT block on the observed request — that is what makes the item
+    available before the transfer starts."""
+    _gen(tmp_path, agents=_prefetch())
+    seq = (tmp_path / "mem_responder_seq.svh").read_text()
+    assert "request_fifo.get" not in seq
+    assert "prefetch_response" in seq
+
+
+def test_prefetch_empty_seam_is_fatal_not_a_hang(tmp_path):
+    """An unfilled protocol seam drove nothing, and the forever loop would then spin at
+    the current timestep and HANG. A hung bench reports NOTHING — worse than a failing one.
+
+    The guard must sit OUTSIDE the pragma: one placed inside the region it protects is
+    deleted along with it. (It was, at first — and the empty seam hung for 5 minutes
+    instead of failing.) A real transfer consumes time; a zero-time one drove nothing.
+    """
+    _gen(tmp_path, agents=_prefetch())
+    drv = (tmp_path / "mem_driver.svh").read_text()
+    assert "EMPTY_TRANSFER" in drv
+    seam_start = drv.index("pragma quickuvm custom drive_transfer begin")
+    seam_end = drv.index("pragma quickuvm custom drive_transfer end")
+    assert not (seam_start < drv.index("EMPTY_TRANSFER") < seam_end), (
+        "the guard is INSIDE the seam it guards — emptying the seam would delete it"
+    )
+    assert "$time == m_t0" in drv
+
+
+def test_a_responder_on_a_dut_driven_clock_burns_no_edges_at_startup(tmp_path):
+    """A DUT-driven clock is typically GATED — an SPI sck does not tick until the DUT opens
+    a frame. The initiator's "wait 2 edges for the synchronizers to settle" would sleep
+    through the start of the FIRST transfer and miss it (spi_device lost frame 0 to exactly
+    this, and every later frame mismatched in cascade)."""
+    cfg = ProjectConfig.model_validate(
+        {
+            **_BASE,
+            "clock": [{"name": "clk"}, {"name": "sck", "source": "dut"}],
+            "resets": [{"name": "rst_n", "active_low": True, "clock": "clk"}],
+            "agents": [{**_BASE["agents"][0], "respond": "prefetch", "clock": "sck"}],
+        }
+    )
+    Generator(cfg).generate_all(tmp_path, backup=False)
+    init = (tmp_path / "mem_driver.svh").read_text().split("task initialize")[1]
+    init = init.split("endtask")[0]
+    assert "@vif.cb1" not in init, "a gated DUT clock may not have ticked yet"

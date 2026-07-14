@@ -183,6 +183,8 @@ class Generator:
             # means no TB-initiated stimulus at all (the DUT initiates).
             "responder_only": cfg.responder_only,
             "primary_agent": cfg.primary_agent if cfg.agents else None,
+            "primary_clock_observed": cfg.primary_clock_observed,
+            "primary_clock_period_ts": cfg.primary_clock_period_ts,
             "stimulus_primary": cfg.stimulus_primary,
             "any_responder": any(a.is_responder for a in cfg.agents),
             # R1 — regression runner (None => no Makefile emitted, byte-identical).
@@ -362,7 +364,7 @@ class Generator:
             )
             # Reactive agent — the forever responder sequence. Opt-in: an initiator
             # emits nothing (byte-identical).
-            if agent.has_request_fifo:
+            if agent.has_responder_seq:
                 specs.append(
                     FileSpec(
                         "agent_responder_seq.svh.j2",
