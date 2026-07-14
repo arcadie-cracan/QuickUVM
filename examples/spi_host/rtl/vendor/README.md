@@ -27,7 +27,8 @@ and `../spi_host_ot.sv` (the declared bus normalisation — see the example's RE
 
 **This is checkable, not rhetorical:**
 
-    grep -rl tlul examples/spi_host/rtl/vendor/     # -> nothing
+    grep -rl tlul examples/spi_host/rtl/vendor/*.sv examples/spi_host/rtl/vendor/*.svh
+    # -> nothing
 
 Zero hits across all 28 files. OpenTitan's SPI protocol core has **no bus dependency at all**, so
 normalising TL-UL away removes the *configuration* path and nothing else. Everything that makes

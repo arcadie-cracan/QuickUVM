@@ -1,8 +1,13 @@
 # spi_host — OpenTitan's REAL SPI controller (campaign target T2).
 #
-# Every feature exercised here was built and mutation-proved against examples/spi_device,
-# whose SPI host I wrote myself — so I also chose its timing. This bench re-runs those
-# proofs against RTL I did not write and cannot bend.
+# `respond: prefetch` and `clock[].source: dut` were built and mutation-proved against
+# examples/spi_device, whose SPI host I WROTE MYSELF — so I also chose its timing. This bench
+# re-runs those proofs against RTL I did not write and cannot bend.
+#
+# Per-lane `inouts` is different, and the difference matters: examples/spi_device declares
+# SCALAR miso/mosi and has no `inouts:` at all. **This is the first bench to use the feature,
+# and the first place it has ever been mutation-proved** (drive all four lanes — what a scalar
+# enable forces — and the device fights the host on lane 0; see MUTATIONS.md M4).
 #
 #   clock[].source: dut   sck is a DUT OUTPUT (and GATED — it only ticks inside a frame).
 #   respond: prefetch     full duplex: the host samples MISO on the very edge it drives
