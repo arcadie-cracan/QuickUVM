@@ -98,15 +98,18 @@ class mem_driver extends uvm_driver #(mem_seq_item);
   function void check_phase (uvm_phase phase);
     super.check_phase(phase);
     if (m_responses == 0)
-      `uvm_error("DEAD_RESPONDER", "this responder drove ZERO responses — the DUT never \
-got an answer. Every per-transaction compare 'passed' because there was nothing to \
-compare: with no response the DUT captures nothing, so expected and actual are both \
-zero and they agree. Check that the DUT actually requests, and that request_valid \
-names the right port.")
+      `uvm_error("DEAD_RESPONDER",
+                 {"this responder drove ZERO responses — the DUT never got an answer. ",
+                  "Every per-transaction compare 'passed' because there was nothing to ",
+                  "compare: with no response the DUT captures nothing, so expected and ",
+                  "actual are both zero and they agree. Check that the DUT actually ",
+                  "requests, and that request_valid names the right port."})
     else if (m_active_drives == 0)
-      `uvm_error("SILENT_RESPONDER", $sformatf("this responder drove %0d response(s), \
-but EVERY ONE of them was the idle value — so it never actually answered. The \
-`response_logic` seam is almost certainly empty.", m_responses))
+      `uvm_error("SILENT_RESPONDER",
+                 $sformatf({"this responder drove %0d response(s), but EVERY ONE of them ",
+                            "was the idle value — so it never actually answered. The ",
+                            "`response_logic` seam is almost certainly empty."},
+                           m_responses))
   endfunction
 
 endclass

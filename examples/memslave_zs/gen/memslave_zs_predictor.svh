@@ -40,8 +40,9 @@ class memslave_zs_predictor extends uvm_subscriber #(mem_seq_item);
                  "the responder never granted a single request — the device is dead")
     if (m_fetched == 0)
       `uvm_error("NO_PROGRESS",
-                 "the DUT completed ZERO transfers — every response arrived TOO LATE. \
-This is what a sequencer-mediated response looks like against a DUT that will not wait.")
+                 {"the DUT completed ZERO transfers — every response arrived TOO LATE. ",
+                  "This is what a sequencer-mediated response looks like against a DUT ",
+                  "that will not wait."})
   endfunction
   // pragma quickuvm custom class_item_additional end
 

@@ -94,6 +94,31 @@ jobs:
           curl -fsSL "$url" | tar -xz
           echo "$PWD/verible-${VERIBLE_VERSION}/bin" >> "$GITHUB_PATH"
 
+      # EXHAUSTIVE: lint every committed example, not a hand-picked list.
+      #
+      # The per-feature steps below grew one config at a time, and the list went stale the
+      # moment a feature landed that none of them exercised. That is not hypothetical: the
+      # responder driver's DEAD_RESPONDER / SILENT_RESPONDER / EMPTY_TRANSFER guards shipped
+      # with `\` line continuations (forbidden) and CI was green, because not one of the
+      # hand-picked configs has a responder agent. A committed example even carried a
+      # leftover debug `$display` past review for the same reason.
+      #
+      # The committed trees also contain the hand-written pragma code, so this lints what
+      # actually ships — which is what caught both of the above.
+      - name: Verible lint (EVERY committed example)
+        run: |
+          fail=0
+          for d in examples/*/gen; do
+            out=$(verible-verilog-lint --rules_config .verible-lint.rules \
+                    "$d"/*.sv "$d"/*.svh 2>&1) || true
+            if [ -n "$out" ]; then
+              echo "== $(basename "$(dirname "$d")")"
+              echo "$out"
+              fail=1
+            fi
+          done
+          exit $fail
+
       - name: Generate the example testbench
         run: quick-uvm generate -c examples/simple_reg/simple_reg.yaml -o gen_tb
 

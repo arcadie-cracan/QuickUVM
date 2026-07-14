@@ -29,6 +29,19 @@ function {{ sb_out_item }} {{ sb_prefix }}_predictor::predict({{ sb_in_item }} t
   //   extr.{{ out.name }} = ...;   // from t.<request field>
 {% endfor %}
 
+  // AN UNFILLED SEAM CANNOT FAIL. `extr` is a copy of what was OBSERVED, so leaving this
+  // stub in place makes expected == actual for every field: the scoreboard reports
+  // "N Ran / N Passed" against a DUT it never modelled. That is a green bench measuring
+  // nothing, and it is the single easiest way to fool yourself with this generator.
+  //
+  // So the stub FAILS until you replace it. Delete this line as you write the model.
+  // (If this DUT genuinely needs no data-path scoreboard, set `analysis.scoreboards: []`
+  // rather than leaving the seam empty — see examples/fifo.)
+  `uvm_fatal("UNFILLED_PREDICTOR",
+             {"the `prediction_logic` seam is still the generated stub, so `extr` is just ",
+              "a copy of what was observed and every compare would trivially pass. Model ",
+              "the DUT here, or set `analysis.scoreboards: []` if it needs no data-path ",
+              "scoreboard."})
   // pragma quickuvm custom prediction_logic end
 
   `uvm_info("CALC #2", extr.convert2string(), UVM_FULL)
@@ -68,6 +81,19 @@ function {{ sb_out_item }} {{ sb_prefix }}_predictor::predict({{ sb_in_item }} t
   // end
 {% endif %}
 
+  // AN UNFILLED SEAM CANNOT FAIL. `extr` is a copy of what was OBSERVED, so leaving this
+  // stub in place makes expected == actual for every field: the scoreboard reports
+  // "N Ran / N Passed" against a DUT it never modelled. That is a green bench measuring
+  // nothing, and it is the single easiest way to fool yourself with this generator.
+  //
+  // So the stub FAILS until you replace it. Delete this line as you write the model.
+  // (If this DUT genuinely needs no data-path scoreboard, set `analysis.scoreboards: []`
+  // rather than leaving the seam empty — see examples/fifo.)
+  `uvm_fatal("UNFILLED_PREDICTOR",
+             {"the `prediction_logic` seam is still the generated stub, so `extr` is just ",
+              "a copy of what was observed and every compare would trivially pass. Model ",
+              "the DUT here, or set `analysis.scoreboards: []` if it needs no data-path ",
+              "scoreboard."})
   // pragma quickuvm custom prediction_logic end
 
   `uvm_info("CALC #2", extr.convert2string(), UVM_FULL)
