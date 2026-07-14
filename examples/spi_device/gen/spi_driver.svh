@@ -51,7 +51,6 @@ class spi_driver extends uvm_driver #(spi_item);
     forever begin
       // THE ITEM COMES FIRST. Do not move this below the wait.
       seq_item_port.get_next_item(tr);
-      m_responses++;
       // THE USER SEAM. The payload is in `tr`. Wait for the transfer to begin, then drive
       // it out and sample the DUT's own bits back in, edge by edge, on the protocol's
       // clock. Nothing here is generatable: no generator emits protocol logic (OpenTitan's
@@ -85,6 +84,12 @@ class spi_driver extends uvm_driver #(spi_item);
                    {"`drive_transfer` returned in ZERO TIME — the seam is empty, so this ",
                     "responder never drove anything. A prefetch responder must drive the ",
                     "transfer itself: no generator emits protocol logic."})
+      // Counted HERE, after the transfer COMPLETED — not when the item was fetched.
+      // Counting the fetch would make DEAD_RESPONDER blind to the failure it exists to
+      // catch: a device driver parked forever inside `drive_transfer` (waiting on a frame
+      // the DUT never opens) has fetched an item but driven NOTHING, and would report
+      // itself alive. m_responses must mean "transfers I actually drove".
+      m_responses++;
       seq_item_port.item_done();
     end
   endtask

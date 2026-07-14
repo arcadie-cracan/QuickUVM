@@ -556,3 +556,26 @@ def test_a_responder_on_a_dut_driven_clock_burns_no_edges_at_startup(tmp_path):
     init = (tmp_path / "mem_driver.svh").read_text().split("task initialize")[1]
     init = init.split("endtask")[0]
     assert "@vif.cb1" not in init, "a gated DUT clock may not have ticked yet"
+
+
+def test_prefetch_counts_transfers_driven_not_items_fetched(tmp_path):
+    """`m_responses` must mean "transfers I actually DROVE", not "items I fetched".
+
+    A prefetch driver takes its item BEFORE waiting for the transfer to begin. If the
+    counter is bumped at the fetch, then a driver parked forever inside `drive_transfer`
+    — waiting on a frame the DUT never opens — has fetched an item but driven NOTHING,
+    and reports itself alive. DEAD_RESPONDER goes blind to the exact failure it exists
+    to catch.
+
+    Proved on examples/spi_device with a DUT mutated never to assert csb: before the fix
+    NO guard fired at all; after it, DEAD_RESPONDER does.
+    """
+    _gen(tmp_path, agents=_prefetch())
+    body = (tmp_path / "mem_driver.svh").read_text().split("task run_phase")[1]
+    fetch = body.index("get_next_item")
+    seam = body.index("drive_transfer end")
+    count = body.index("m_responses++")
+    assert fetch < seam < count, (
+        "m_responses++ must come AFTER the transfer completes — counting the fetch makes "
+        "DEAD_RESPONDER blind to a driver that never drove anything"
+    )
