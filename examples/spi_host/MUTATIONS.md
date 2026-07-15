@@ -109,6 +109,28 @@ MOSI check (`host_byte()` in `sdio_driver.svh`) closes it, and only then does th
 Until this bench, **per-lane `inouts` had never been mutation-proved anywhere**: `examples/spi_device`
 declares *scalar* miso/mosi and has no `inouts:` at all.
 
+## M7 — per-lane ownership is load-bearing in DUAL, too *(a scalar enable cannot make `0011`)*
+
+Run a dual read and mutate the device's enable to the **standard** subset:
+
+    xrun -f xrun.f +UVM_TESTNAME=rand_test +SPI_SPEED=1 -svseed 1     # baseline: 0 UVM_ERROR
+    # in gen/sdio_driver.svh, the DUAL branch:  vif.sd_oe = 4'b0011;  ->  4'b0010;
+
+**Expected: 8/8 fail.** In dual RdOnly the DUT reads `sd[1:0]` (spi_host_shift_register.sv:60); the
+device must drive both lanes (`0011`). Drop to `0010` and `sd[0]` floats to the pull-up, so every
+even bit reads 1 and RXDATA mismatches. **A scalar output enable — `0000` or `1111` only — cannot
+produce `0011`.** With Standard (`0010`, M4) that is two of three required patterns a scalar cannot
+express.
+
+## M8 — the dual/quad RX check discriminates lane count
+
+    xrun -f xrun.f +UVM_TESTNAME=rand_test +SPI_SPEED=2 -svseed 1     # baseline: 0 UVM_ERROR
+    # in the QUAD branch:  vif.sd_oe = 4'b1111;  ->  4'b0011;
+
+**Expected: 8/8 fail** (`sd[3:2]` float). Note quad's `1111` *is* scalar-achievable, so this proves
+the check works, **not** that per-lane is required for quad specifically. Dual (M7) is the load-bearing
+per-lane proof; quad is corroboration.
+
 ## M5 — the modes are REAL, not aliased to mode 0
 
 Four green modes prove nothing if `cpol`/`cpha` never reach the DUT: wrong `CONFIGOPTS` bit

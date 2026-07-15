@@ -137,18 +137,22 @@ would sleep through the first transfer. The fix predated the prediction. Reporte
 prediction is worth as much as a right one — and because this is the second time in this campaign a
 confident prediction about the reactive agent has not survived contact.
 
-## Next
+**Slices 1–3 + Dual/Quad — done.** `respond: prefetch` is load-bearing on this RTL (M3). All four
+CPOL/CPHA modes green and provably distinct. Dual/Quad RdOnly reads (`+SPI_SPEED=1/2`) prove per-lane
+`_oe` in the `0011`/`1111` patterns — a scalar enable cannot express `0010` (std) or `0011` (dual).
 
-* **Slice 4 (optional)** — the generated UVM bench, then immediately the mutations. A green bench that has
-  not been mutation-proved does not count.
-* **The mutation that justifies T2 (M3)** — flip `respond: prefetch` → `on_request` against
-  *this* RTL. If it stays green, the full-duplex argument was an artefact of my own DUT, and that
-  is a headline finding. **Report either way.**
+Every mutation is a recipe in [`MUTATIONS.md`](MUTATIONS.md); the honest assessment, with the nine
+false claims an adversarial review caught in its first draft, is
+[`docs/t2_spi_host_assessment.md`](../../docs/t2_spi_host_assessment.md).
+
+**Deliberately not done** (all stated in the assessment's §7 limits, not implied): RAL, LEN > 1 /
+CSAAT chaining, a `clkdiv` sweep, and a *simulation* mutation for `clock[].source: dut` (it has only
+generation- and elaboration-time proofs).
 
 ## What is vendor, what is ours
 
 * **Vendor, unmodified** (lowRISC/opentitan, Apache-2.0): every line of the SPI protocol — see
-  `rtl/vendor/README.md`. `grep -rl tlul rtl/vendor/` returns nothing.
+  `rtl/vendor/README.md`. `grep -rl tlul rtl/vendor/*.sv rtl/vendor/*.svh` returns nothing.
 * **Ours** (the declared bus normalisation): `spi_host_reg_generic.sv` and `spi_host_ot.sv`,
   replacing the three TL-UL files.
 
