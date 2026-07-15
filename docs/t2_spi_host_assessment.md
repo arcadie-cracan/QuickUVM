@@ -230,5 +230,7 @@ draft rigged it by re-labelling reasoning's hits as "design" and counting only i
   (`command_csid_i` is hardwired to 0; `NumCS = 1`). The registers that *would* misbehave are
   `COMMAND` (a write launches a transfer), `RXDATA` (destructive read), `TXDATA` (write-only) and
   `CONTROL.SW_RST`. Untested either way.
-* **Only 1-byte segments.** LEN > 1, CSAAT chaining and a `clkdiv` sweep are unexercised.
+* **Only 1-byte segments.** LEN > 1 and CSAAT chaining are unexercised. (A `clkdiv` sweep
+  IS exercised now — `+SPI_CLKDIV`, MUTATIONS.md M10: divisors 2–32 all pass, proving the
+  edge-relative device timing is divider-independent.)
 * **No simulation logs are committed.** Results are reproducible from `MUTATIONS.md`, not archived.

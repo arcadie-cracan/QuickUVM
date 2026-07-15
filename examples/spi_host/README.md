@@ -146,7 +146,7 @@ false claims an adversarial review caught in its first draft, is
 [`docs/t2_spi_host_assessment.md`](../../docs/t2_spi_host_assessment.md).
 
 **Deliberately not done** (all stated in the assessment's §7 limits, not implied): RAL, LEN > 1 /
-CSAAT chaining, a `clkdiv` sweep, and a *simulation* mutation for `clock[].source: dut` (it has only
+CSAAT chaining, and a *simulation* mutation for `clock[].source: dut` (it has only
 generation- and elaboration-time proofs).
 
 ## What is vendor, what is ours

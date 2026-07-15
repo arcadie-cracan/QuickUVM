@@ -180,3 +180,14 @@ test still ends, because a responder-only test on a DUT-driven clock bounds itse
 (`#(N*period)`), not on `sck` edges — which is the whole reason the sampled-clock feature bounds
 tests that way. A dead observed clock therefore comes out **RED**, not as a hang. (Contrast: bounding
 on the gated `sck` would hang forever, and a hung bench reports nothing.)
+
+## M10 — the sampled clock is divider-independent (a clkdiv sweep)
+
+`sck = clk / (2*(clkdiv+1))`. The device drives on sck *edges* (edge-relative), so its timing must
+hold at any divisor — the sampled-clock feature is not tuned to one speed.
+
+    for d in 2 4 8 16 32; do xrun -f xrun.f +UVM_TESTNAME=rand_test +SPI_CLKDIV=$d; done
+
+**Expected: 0 UVM_ERROR at every divisor** (sck period 6 → 66 core clocks). Only the wall-clock frame
+budget scales with the divisor; the protocol logic does not change. Composes with the modes:
+`+SPI_CLKDIV=32 +SPI_SPEED=1` (a slow dual read) also passes.
