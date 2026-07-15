@@ -1,0 +1,11 @@
+project: {name: qvip, author: QuickUVM}
+layout: packaged
+dut: {name: qvip, clock: clk, reset: rst_n, combinational: true}
+agents:
+  - name: io
+    interface: io_if
+    sequence_item: io_item
+    ports:
+      inputs:  [{name: req,  width: 1}, {name: addr, width: 8}]
+      outputs: [{name: gnt,  width: 1}, {name: data, width: 8}]
+tests: [{name: rand_test}]
