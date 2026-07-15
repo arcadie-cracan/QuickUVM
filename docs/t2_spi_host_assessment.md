@@ -225,11 +225,27 @@ draft rigged it by re-labelling reasoning's hits as "design" and counting only i
 * **Dual/Quad are RdOnly single-byte reads, mode 0 only** (`SPI_SPEED=1/2`). Enough to prove per-lane
   ownership in the `0011`/`1111` patterns; not a full dual/quad protocol (no WrOnly-dual, no CPHA=1
   in these modes, no multi-byte).
-* **No RAL.** `register_model:` is untried. The first draft asserted that a `bit_bash` walk through
-  `CSID` "would brick the DUT" — **false**: `CSID` is a dangling scratch flop in our wrapper
-  (`command_csid_i` is hardwired to 0; `NumCS = 1`). The registers that *would* misbehave are
-  `COMMAND` (a write launches a transfer), `RXDATA` (destructive read), `TXDATA` (write-only) and
-  `CONTROL.SW_RST`. Untested either way.
+* **RAL — tried, and it needs a custom frontdoor** (was "untried"). Wiring `register_model:` over
+  the generic register bus **structurally integrates [C]**: a hand-written `uvm_reg_block`, the
+  generated adapter (`reg2bus`/`bus2reg`), the `uvm_reg_predictor`, and the C5 `hw_reset`/`bit_bash`
+  tests all generate, connect, and *run*. But the register bus returns **read data registered** (one
+  clock late), and the generic monitor+adapter path delivers **stale read values** — `CONTROL` reads
+  `0x0`, not its `0x7f` reset — with `Response queue overflow` on the driver's read-response path.
+  **This is the pipelined-read wall, and it needs a custom `uvm_reg_frontdoor`** (QuickUVM has the
+  `register_model.frontdoor:` knob for exactly this) — the same conclusion the real `spi/quickuvm_tb`
+  RAL integration reached. Not built to green here; the finding is that RAL *integrates* but this bus
+  *shape* requires the frontdoor escape hatch, not that RAL is absent.
+  * **The `csr_excl` wall is real and identified [C]:** `COMMAND` (a write launches a transfer),
+    `RXDATA` (destructive read), `TXDATA` (write-only) and `STATUS` (hw-driven) each need
+    `NO_REG_BIT_BASH_TEST`; `CONTROL.SW_RST` resets the core mid-walk. `CSID` is the *safe* one — a
+    plain scratch flop (`command_csid_i` hardwired to 0, `NumCS = 1`) — correcting the first draft's
+    false "CSID bricks the DUT" claim. (Their bit_bash validation is blocked behind the read-path
+    wall above.)
+  * **A cross-agent nuance [C]:** on this two-agent bench a CSR-only test trips the SPI device's
+    `DEAD_RESPONDER` liveness — the generated CSR test disables the data-path *scoreboard*
+    (`sb_enable=0`) but not the responder's liveness. Gating that liveness on the same `sb_enable`
+    (a small generator change, mutation-verified not to weaken the real check) resolves it; a
+    candidate improvement, not built into main.
 * **Only 1-byte segments.** LEN > 1 and CSAAT chaining are unexercised. (A `clkdiv` sweep
   IS exercised now — `+SPI_CLKDIV`, MUTATIONS.md M10: divisors 2–32 all pass, proving the
   edge-relative device timing is divider-independent.)
