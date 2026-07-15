@@ -80,6 +80,9 @@ endclass
     // means some queue is non-empty.
     {{ agent.sequence_item }}{{ agent.param_args }} id_q[int][$];  // per-ID request queues
     int outstanding;
+{% if agent.reorder_policy == "round_robin" %}
+    int m_last_id = -1;   // round-robin cursor: the id served last (-1 => below every id)
+{% endif %}
 
     fork
       // ACCEPT. Never blocks the drive side — the backlog grows to whatever the DUT floats.
@@ -96,10 +99,26 @@ endclass
         int pick;
         wait (outstanding > 0);
         foreach (id_q[i]) if (id_q[i].size() > 0) ready.push_back(i);
-        // Cross-ID reorder policy: lowest ready ID first (deterministic). Change this one
-        // line for round-robin / random / fixed-priority; the rest is protocol-agnostic.
+{% if agent.reorder_policy == "round_robin" %}
+        // Cross-ID reorder policy (reorder_policy: round_robin): the next ready id after
+        // the one served last, wrapping — a fair rotation, so no id can starve.
+        pick = -1;
+        foreach (ready[i])
+          if (ready[i] > m_last_id && (pick == -1 || ready[i] < pick)) pick = ready[i];
+        if (pick == -1) begin  // nothing above the cursor -> wrap to the lowest ready id
+          pick = ready[0];
+          foreach (ready[i]) if (ready[i] < pick) pick = ready[i];
+        end
+        m_last_id = pick;
+{% elif agent.reorder_policy == "random" %}
+        // Cross-ID reorder policy (reorder_policy: random): any ready id, uniformly —
+        // the unpredictable slave (matches PULP's axi_rand_slave).
+        pick = ready[$urandom_range(0, ready.size() - 1)];
+{% else %}
+        // Cross-ID reorder policy (reorder_policy: priority): lowest ready id first.
         pick = ready[0];
         foreach (ready[i]) if (ready[i] < pick) pick = ready[i];
+{% endif %}
         req = id_q[pick].pop_front();
         outstanding--;
 

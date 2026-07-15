@@ -36,7 +36,8 @@ DRIVE  (forever):  wait(outstanding>0)    ->  pick a ready id  ->  pop_front  //
 
 - **Same-ID** responses stay in arrival order (`pop_front`); **cross-ID** is free to reorder —
   the AXI ordering rule.
-- The cross-ID policy is **lowest-ready-id-first** (deterministic; one line to change).
+- The cross-ID policy is **lowest-ready-id-first** by default; `reorder_policy:` selects
+  `priority` / `round_robin` / `random` (see [`../axi_reorder/`](../axi_reorder/)).
 - The `response_logic` seam is **identical to `on_request`**, so flipping between the two shapes
   preserves whatever you wrote there.
 

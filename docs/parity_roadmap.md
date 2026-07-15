@@ -747,6 +747,11 @@ and is the long pole for campaign target **T2** (`spi_host`).
   them without blocking on the bus (same-ID in order, cross-ID reordered), and a
   `STRANDED_REQUESTS` guard fails an incompletely-drained burst. Built + mutation-proved on
   `examples/axi_read/`; see [`t6_axi_outstanding_assessment.md`](t6_axi_outstanding_assessment.md) §7.
+- *Cross-ID arbitration `reorder_policy:` — DONE* (`priority` default / `round_robin` / `random`):
+  the cross-ID pick when several ids have a request waiting. Deterministic for priority (lowest
+  id) and round_robin (fair rotation, a `m_last_id` cursor); random matches `axi_rand_slave`.
+  Built + mutation-proved on `examples/axi_reorder/` (round_robin `[0 1 0 1 0 1]` vs priority
+  `[0 0 0 1 1 1]` from the same backlog).
 - *Deferred:* the `mem_model` primitive; an `if_mode`-style host/device driver swap within one
   agent; the full 5-channel AXI VIP (AR+AW / R+B, atomics) — gap-by-design.
 

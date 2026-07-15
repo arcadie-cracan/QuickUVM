@@ -1,0 +1,60 @@
+# reorder_policy — the cross-ID arbitration knob for a pipelined responder.
+#
+# Same pipelined AXI-read responder as examples/axi_read/, but the DUT master floats a
+# backlog with REPEATED ids (3 reads on id 0, then 3 on id 1) so the choice of policy is
+# visible in the response order:
+#   priority     -> lowest ready id first  -> the backlog drains GROUPED  [0 0 0 1 1 1]
+#   round_robin  -> next id after the last  -> the backlog drains FAIR    [0 1 0 1 0 1]  (this bench)
+#   random       -> any ready id            -> an unpredictable interleave
+# Same-ID responses stay in arrival order and nothing is stranded under EVERY policy; only
+# the cross-id sequence changes. See examples/axi_reorder/MUTATIONS.md.
+
+project:
+  name: axi_reorder_tb
+  author: qa@example.com
+
+dut:
+  name: axi_reorder
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: rd
+    interface: rd_if
+    sequence_item: rd_item
+    seq_item_style: manual
+    active: true
+
+    mode: responder
+    request_valid: arvalid
+    respond: pipelined
+    reorder_by: arid
+    reorder_policy: round_robin   # fair rotation across ids — the flagship non-default policy
+
+    ports:
+      inputs:
+        - {name: rvalid, width: 1,  randomize: true}
+        - {name: rid,    width: 4,  randomize: true}
+        - {name: rdata,  width: 32, randomize: true}
+        - {name: rlast,  width: 1,  randomize: true}
+      outputs:
+        - {name: arvalid, width: 1}
+        - {name: arid,    width: 4}
+        - {name: araddr,  width: 32}
+        - {name: arlen,   width: 8}
+
+analysis:
+  coverage: []
+  scoreboards: []
+
+tests:
+  - {name: rand_test, num_items: 140}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f

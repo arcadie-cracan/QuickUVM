@@ -679,3 +679,106 @@ def test_pipelined_is_opt_in(tmp_path):
     _gen(tmp_path, agents=_continuous())
     sqr = (tmp_path / "mem_sequencer.svh").read_text()
     assert "STRANDED_REQUESTS" not in sqr and "m_accepted" not in sqr
+
+
+# --- F1e: `reorder_policy` — the cross-ID arbitration knob (priority/round_robin/random) ---
+
+
+def _pipelined_policy(policy):
+    a = {**_pipelined()[0], "reorder_policy": policy}
+    return [a]
+
+
+def test_reorder_policy_defaults_to_priority(tmp_path):
+    """Opt-in: absent `reorder_policy` reproduces the original lowest-id-first behaviour,
+    byte-identical for a bench that never set it."""
+    cfg = _gen(tmp_path, agents=_pipelined())
+    assert cfg.agents[0].reorder_policy == "priority"
+    seq = (tmp_path / "mem_responder_seq.svh").read_text()
+    assert "reorder_policy: priority" in seq
+    assert "m_last_id" not in seq and "urandom_range" not in seq
+
+
+def test_reorder_policy_round_robin_emits_a_cursor(tmp_path):
+    """Round-robin needs state (the id served last) that persists across responses, and it
+    must wrap. Mutation-proved on examples/axi_reorder: round_robin gives the fully
+    interleaved order [0 1 0 1 0 1] (same-id adjacency 0); flip to priority and it groups
+    to [0 0 0 1 1 1] (adjacency 4), which the bench's $fatal catches."""
+    cfg = _gen(tmp_path, agents=_pipelined_policy("round_robin"))
+    assert cfg.agents[0].reorder_policy == "round_robin"
+    seq = (tmp_path / "mem_responder_seq.svh").read_text()
+    # The cursor MUST start below every legal id (-1) so the first pick is the lowest ready
+    # id. Starting at 0 would skip id 0 on a full first backlog — a regression the example's
+    # adjacency check cannot see (both orders have adjacency 0), so pin the init value here.
+    assert "int m_last_id = -1;" in seq
+    assert "ready[i] > m_last_id" in seq  # next id ABOVE the cursor
+    assert "wrap to the lowest ready id" in seq  # ...else wrap
+    assert "urandom_range" not in seq
+
+
+def test_reorder_policy_random_emits_urandom(tmp_path):
+    cfg = _gen(tmp_path, agents=_pipelined_policy("random"))
+    assert cfg.agents[0].reorder_policy == "random"
+    seq = (tmp_path / "mem_responder_seq.svh").read_text()
+    assert "$urandom_range(0, ready.size() - 1)" in seq
+    assert "m_last_id" not in seq
+
+
+def test_reorder_policy_rejected_without_pipelined():
+    """The knob is meaningless without the pipelined shape (on_request has no per-id pick)."""
+    a = {
+        **_BASE["agents"][0],
+        "reorder_policy": "round_robin",
+    }  # respond defaults on_request
+    with pytest.raises(ValidationError, match="only valid with `respond: pipelined`"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_reorder_policy_rejected_on_initiator():
+    a = {**_BASE["agents"][0]}
+    a.pop("mode")
+    a.pop("request_valid")
+    a["reorder_policy"] = "random"
+    with pytest.raises(ValidationError, match="only valid with"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_reorder_policy_rejected_on_other_responder_shapes():
+    """The same guard governs prefetch and combinational responders (not just on_request):
+    none of them has a per-id pick, so a non-default policy is meaningless there too."""
+    for shape in ("prefetch", "combinational"):
+        a = {**_BASE["agents"][0], "respond": shape, "reorder_policy": "round_robin"}
+        with pytest.raises(
+            ValidationError, match="only valid with `respond: pipelined`"
+        ):
+            ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_reorder_policy_rejects_unknown_value():
+    a = {**_pipelined()[0], "reorder_policy": "fifo"}
+    with pytest.raises(ValidationError):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_reorder_by_width_capped_for_the_pick():
+    """The pick keys buckets with int'(<id>) and seeds the round-robin cursor at -1; a
+    >= 32-bit id could cast negative and alias the sentinel, so the width is capped."""
+    a = {**_pipelined()[0]}
+    a["ports"] = {
+        "inputs": [{"name": "gnt", "width": 1}, {"name": "rdata", "width": 32}],
+        "outputs": [{"name": "req", "width": 1}, {"name": "id", "width": 32}],
+    }
+    with pytest.raises(ValidationError, match="too wide for the per-ID pick"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_reorder_policy_priority_is_byte_identical_to_the_default(tmp_path):
+    """Setting reorder_policy: priority explicitly must generate exactly what the default
+    (unset) does — the pick code is the same, only the comment names the policy."""
+    d1 = tmp_path / "default"
+    d2 = tmp_path / "explicit"
+    _gen(d1, agents=_pipelined())
+    _gen(d2, agents=_pipelined_policy("priority"))
+    assert (d1 / "mem_responder_seq.svh").read_text() == (
+        d2 / "mem_responder_seq.svh"
+    ).read_text()

@@ -1,0 +1,11 @@
+// xrun filelist — axi_reorder (pipelined responder, reorder_policy: round_robin). Run from sim/.
+-uvm
+-access +rwc
+-timescale 1ns/1ns
+-top tb_top
++incdir+../gen
+../gen/axi_reorder_tb_pkg.sv
+../gen/rd_if.sv
+../gen/clkgen.sv
+../rtl/axi_reorder.sv
+../gen/tb_top.sv
