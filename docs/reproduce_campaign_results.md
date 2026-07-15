@@ -11,8 +11,10 @@ fails against real, taped-out or shipping RTL. Each target has its own assessmen
 
 **The predictor seam and the schema are far more expressive than the campaign predicted — five
 "it breaks" predictions all dissolved on contact with simulation. The real gaps are one level up:
-VIP ownership, emulation partitioning, env topology, and (the one true capability gap) a
-multi-outstanding out-of-order responder.**
+VIP ownership, emulation partitioning, env topology. The one true *capability* gap it found — a
+multi-outstanding out-of-order responder — has since been built and mutation-proved
+(`respond: pipelined`, `examples/axi_read/`); the rest are architecture/topology, banked as
+findings.**
 
 ## What was proven on real RTL (built + mutation-proved on Xcelium)
 
@@ -46,11 +48,13 @@ multi-outstanding out-of-order responder.**
   adapter, predictor, CSR tests all generate and run), but a registered-read register bus delivers
   stale read values through the generic monitor+adapter path — it needs a custom `uvm_reg_frontdoor`,
   the same conclusion the real `spi/quickuvm_tb` reached.
-- **T6 — the multi-outstanding, out-of-order responder. The one true *capability* gap.** A QuickUVM
-  responder can *buffer* N outstanding requests (the `request_fifo` is unbounded) but **cannot answer
-  a burst out of order** — the generated `forever { get; <seam>; finish_item }` loop drives one
-  response per incoming request and strands the rest; the loop is generated, not a pragma. Needs a
-  `respond: pipelined` shape (a per-ID queue drained by an independent thread). Scoped, not built.
+- **T6 — the multi-outstanding, out-of-order responder. The one true *capability* gap — now CLOSED.**
+  A QuickUVM responder can *buffer* N outstanding requests, but the `on_request` loop (`forever { get;
+  <seam>; finish_item }`) answers one per incoming request and strands the rest. The fix,
+  `respond: pipelined` + `reorder_by:`, forks an accept thread (buffers into per-ID queues) and a
+  drive thread (drains them without blocking on the bus), plus a `STRANDED_REQUESTS` liveness guard.
+  Built and mutation-proved on Xcelium (`examples/axi_read/`: issue `[4 3 2 1 0]` → recv `[4 0 1 2 3]`,
+  5/5, break the drain and STRANDED_REQUESTS fires). The full 5-channel AXI VIP remains gap-by-design.
 
 ## The meta-lesson: predicted seam-breaks kept dissolving — until running caught one going the other way
 
@@ -88,10 +92,13 @@ direction.**
   headline; T6 reports no metric at all (`axi_rand_slave` is plain SV, not a generator).
 - **Every claim tagged [C]/[I]/[P]** (T3–T6), so a reviewer can audit each at a glance.
 
+## Built since (the one capability gap)
+
+- **T6 `respond: pipelined`** — DONE. The per-ID-queue responder shape, built and mutation-proved
+  (`examples/axi_read/`). The campaign's one true capability gap is closed; see the T6 assessment §7.
+
 ## Left open (deliberately)
 
-- **T6 `respond: pipelined`** — the biggest open lever: build the per-ID-queue responder shape and
-  close the one true capability gap, mutation-proved against the T6 spike.
 - **T3 F2' (VIP ownership build)** — scoped, seam proven achievable, ~5–7d, not built.
 - **T2 RAL custom frontdoor** — the pipelined-read wall; `register_model.frontdoor:` exists for it.
 - **T5 full cosim** — NO-GO (needs the lowRISC Spike fork; the one axis is already answered).

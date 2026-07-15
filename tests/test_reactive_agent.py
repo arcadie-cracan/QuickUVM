@@ -579,3 +579,103 @@ def test_prefetch_counts_transfers_driven_not_items_fetched(tmp_path):
         "m_responses++ must come AFTER the transfer completes — counting the fetch makes "
         "DEAD_RESPONDER blind to a driver that never drove anything"
     )
+
+
+# --- F1d: `respond: pipelined` — multi-outstanding, out-of-order by ID (T6) ---
+
+
+def _pipelined():
+    """A responder that buffers N outstanding requests and answers out of order by an ID
+    field (`id`), which must be a SAMPLED port."""
+    a = {**_BASE["agents"][0], "respond": "pipelined", "reorder_by": "id"}
+    a["ports"] = {
+        "inputs": [
+            {"name": "gnt", "width": 1, "randomize": True},
+            {"name": "rdata", "width": 32, "randomize": True},
+        ],
+        "outputs": [
+            {"name": "req", "width": 1},
+            {"name": "addr", "width": 8},
+            {"name": "id", "width": 4},
+        ],
+    }
+    return [a]
+
+
+def test_pipelined_predicates(tmp_path):
+    """The pipelined shape has a responder sequence AND a request fifo (its accept thread
+    drains that fifo), but is neither prefetch, zero-slack, nor continuous."""
+    cfg = _gen(tmp_path, agents=_pipelined())
+    a = cfg.agents[0]
+    assert a.is_pipelined and a.has_responder_seq and a.has_request_fifo
+    assert not (a.is_prefetch or a.is_zero_slack or a.is_continuous)
+
+
+def test_pipelined_requires_reorder_by():
+    a = {**_BASE["agents"][0], "respond": "pipelined"}
+    with pytest.raises(ValidationError, match="requires `reorder_by`"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_pipelined_reorder_by_must_be_sampled():
+    """reorder_by names the request's ID field — a SAMPLED port (the DUT drives it)."""
+    a = {**_pipelined()[0], "reorder_by": "gnt"}  # gnt is DRIVEN, not sampled
+    with pytest.raises(ValidationError, match="must name a SAMPLED port"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_pipelined_reorder_by_is_not_the_valid_strobe():
+    a = {**_pipelined()[0], "reorder_by": "req"}  # req is the request_valid qualifier
+    with pytest.raises(ValidationError, match="cannot be the request_valid"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_reorder_by_rejected_without_pipelined():
+    """reorder_by only means something for the pipelined shape."""
+    a = {**_BASE["agents"][0], "reorder_by": "addr"}  # respond defaults to on_request
+    with pytest.raises(ValidationError, match="only valid with `respond: pipelined`"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_reorder_by_rejected_on_initiator():
+    a = {**_BASE["agents"][0]}
+    a.pop("mode")
+    a.pop("request_valid")
+    a["reorder_by"] = "addr"
+    with pytest.raises(ValidationError, match="only valid with `mode: responder`"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_pipelined_seq_decouples_accept_from_drive(tmp_path):
+    """The whole point: the response loop must NOT be get -> respond -> get (which strands
+    a burst). It is two forever threads — one buffers into per-ID queues, one drains them —
+    and the drive thread does not block on a new request."""
+    _gen(tmp_path, agents=_pipelined())
+    seq = (tmp_path / "mem_responder_seq.svh").read_text()
+    assert "fork" in seq and "id_q[int][$]" in seq
+    assert "id_q[int'(in_req.id)].push_back" in seq  # buckets keyed by reorder_by
+    assert "pop_front" in seq  # same-ID FIFO order
+    # the seam is the SAME as on_request, so on_request<->pipelined preserves the fill
+    assert "response_logic" in seq
+
+
+def test_pipelined_has_a_strand_liveness_check(tmp_path):
+    """DEAD_RESPONDER (in the driver) catches 'answered NOTHING'; it is blind to a STRAND
+    (answered SOME, stranded the tail). The sequencer carries the complementary check:
+    accepted must equal answered.
+
+    Mutation-proved on examples/axi_read: break the drive loop to answer once and
+    STRANDED_REQUESTS fires (accepted 5, answered 1); the correct drain passes 5/5.
+    """
+    _gen(tmp_path, agents=_pipelined())
+    sqr = (tmp_path / "mem_sequencer.svh").read_text()
+    assert "STRANDED_REQUESTS" in sqr
+    assert "m_accepted" in sqr and "m_answered" in sqr
+    assert "check_phase" in sqr
+
+
+def test_pipelined_is_opt_in(tmp_path):
+    """A responder without `respond: pipelined` gets none of the pipelined machinery."""
+    _gen(tmp_path, agents=_continuous())
+    sqr = (tmp_path / "mem_sequencer.svh").read_text()
+    assert "STRANDED_REQUESTS" not in sqr and "m_accepted" not in sqr

@@ -742,8 +742,13 @@ and is the long pole for campaign target **T2** (`spi_host`).
   the same request every cycle it was held, made `initialize()` park at the declared `idle:`
   values, and gave the responder factory context (without which the advertised
   swap-in-an-error-injector override silently no-opped).
-- *Deferred:* the `mem_model` primitive; pipelined/out-of-order responders (`put_response` /
-  `set_id_info`); an `if_mode`-style host/device driver swap within one agent.
+- *Pipelined / out-of-order responders — DONE* (`respond: pipelined` + `reorder_by:`): the T6
+  gap. An accept thread buffers N outstanding requests into per-ID queues, a drive thread drains
+  them without blocking on the bus (same-ID in order, cross-ID reordered), and a
+  `STRANDED_REQUESTS` guard fails an incompletely-drained burst. Built + mutation-proved on
+  `examples/axi_read/`; see [`t6_axi_outstanding_assessment.md`](t6_axi_outstanding_assessment.md) §7.
+- *Deferred:* the `mem_model` primitive; an `if_mode`-style host/device driver swap within one
+  agent; the full 5-channel AXI VIP (AR+AW / R+B, atomics) — gap-by-design.
 
 ### Reactive / responder agent — the original investigation
 A per-agent **reactive** mode: the driver responds to DUT-initiated transfers (a
