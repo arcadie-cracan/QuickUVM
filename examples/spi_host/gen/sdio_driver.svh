@@ -24,6 +24,18 @@ class sdio_driver extends uvm_driver #(sdio_item);
   // The SPI mode, from plusargs — the same knobs the sequence programs into CONFIGOPTS.
   int unsigned m_cpol = 0;
   int unsigned m_cpha = 0;
+
+  // FULL DUPLEX MEANS TWO DIRECTIONS, AND BOTH MUST BE CHECKED. Without this the bench
+  // verifies only what the host RECEIVED (RXDATA) and never what the device received —
+  // so the host's MOSI could be corrupted, or contended, and nothing would notice.
+  int       m_frames;
+  bit [7:0] m_mosi;
+
+  // What the host sends on frame n. The directed sequence writes exactly this to TXDATA,
+  // so the device can predict it independently of anything on the wire.
+  function bit [7:0] host_byte(int n);
+    return 8'h5A ^ 8'(n);
+  endfunction
   // pragma quickuvm custom class_item_additional end
 
   function new (string name, uvm_component parent);
@@ -70,22 +82,45 @@ class sdio_driver extends uvm_driver #(sdio_item);
       //
       // `vif.clk` IS sck (the DUT drives it). cpol=0 => leading is posedge; cpol=1 => negedge.
       @(negedge vif.csb);
-      if (!m_cpha) begin
-        vif.sd_o  = {2'b00, tr.miso_byte[7], 1'b0};   // before ANY sck edge exists
-        vif.sd_oe = 4'b0010;
-        for (int i = 6; i >= 0; i--) begin
-          if (m_cpol) @(posedge vif.clk); else @(negedge vif.clk);   // TRAILING
-          vif.sd_o = {2'b00, tr.miso_byte[i], 1'b0};
+      m_mosi = '0;
+      fork
+        // THE OTHER HALF OF THE TRANSFER. Sample the host's MOSI on the edge the host
+        // drives us on. Checking only RXDATA leaves this direction unverified — and it is
+        // where a lane-0 contention would show up.
+        begin
+          for (int i = 7; i >= 0; i--) begin
+            if (m_cpha ^ m_cpol) @(negedge vif.clk); else @(posedge vif.clk);  // SAMPLING
+            m_mosi = {m_mosi[6:0], vif.sd[0]};
+          end
         end
-      end else begin
-        vif.sd_oe = 4'b0010;
-        for (int i = 7; i >= 0; i--) begin
-          if (m_cpol) @(negedge vif.clk); else @(posedge vif.clk);   // LEADING
-          vif.sd_o = {2'b00, tr.miso_byte[i], 1'b0};
+        begin
+          if (!m_cpha) begin
+            vif.sd_o  = {2'b00, tr.miso_byte[7], 1'b0};   // before ANY sck edge exists
+            vif.sd_oe = 4'b0010;                          // LANE 1 ONLY — the host owns lane 0
+            for (int i = 6; i >= 0; i--) begin
+              if (m_cpol) @(posedge vif.clk); else @(negedge vif.clk);   // TRAILING
+              vif.sd_o = {2'b00, tr.miso_byte[i], 1'b0};
+            end
+          end else begin
+            vif.sd_oe = 4'b0010;
+            for (int i = 7; i >= 0; i--) begin
+              if (m_cpol) @(negedge vif.clk); else @(posedge vif.clk);   // LEADING
+              vif.sd_o = {2'b00, tr.miso_byte[i], 1'b0};
+            end
+          end
         end
-      end
+      join
       @(posedge vif.csb);
       vif.sd_oe = 4'b0000;                            // release the shared bus
+
+      // Did we receive what the host actually sent? Predicted from the frame index, not
+      // from the wire. This is what makes a lane-0 contention visible: drive lane 0 as well
+      // as lane 1 (what a SCALAR output enable forces) and the host's MOSI resolves to X.
+      if (m_mosi !== host_byte(m_frames))
+        `uvm_error("MOSI_MISMATCH",
+                   $sformatf("frame %0d: the device received %02h, the host sent %02h",
+                             m_frames, m_mosi, host_byte(m_frames)))
+      m_frames++;
       // pragma quickuvm custom drive_transfer end
       // An unfilled seam is caught HERE, OUTSIDE the pragma — a guard placed inside the
       // region it protects is deleted along with it. A real transfer must consume time
