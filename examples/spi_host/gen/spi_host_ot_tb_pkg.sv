@@ -79,9 +79,10 @@ package spi_host_ot_tb_pkg;
     endtask
 
     task body;
-      int unsigned cpol = 0, cpha = 0;
+      int unsigned cpol = 0, cpha = 0, speed = 0;
       void'($value$plusargs("SPI_CPOL=%d", cpol));
       void'($value$plusargs("SPI_CPHA=%d", cpha));
+      void'($value$plusargs("SPI_SPEED=%d", speed));   // 0=Std, 1=Dual, 2=Quad
 
       // CONTROL.OUTPUT_EN (bit 29) is NOT optional. It resets to 0 and gates sck, csb and
       // every sd lane: without it the DUT drives NOTHING, the pull-ups float the bus high,
@@ -92,10 +93,17 @@ package spi_host_ot_tb_pkg;
                               (32'd2 << 24) | (32'd2 << 20) | (32'd2 << 16) | 32'd4);
 
       for (int f = 0; f < 8; f++) begin
-        beat(RTxdata,  1'b1, {24'h0, 8'h5A ^ 8'(f)}, 4'b0001);
-        beat(RCommand, 1'b1, (32'd3 << 23) | 32'd0);   // Bidir, len=0 => one byte
+        if (speed == 0) begin
+          // Standard, Bidir: push a TX byte and read one back, full duplex.
+          beat(RTxdata,  1'b1, {24'h0, 8'h5A ^ 8'(f)}, 4'b0001);
+          beat(RCommand, 1'b1, (32'd3 << 23) | 32'd0);          // direction=Bidir, Standard
+        end else begin
+          // Dual/Quad, RdOnly: no TX — the device provides the data on the shared lanes.
+          // direction=RdOnly (bit 23), speed in [22:21], len=0 => one byte.
+          beat(RCommand, 1'b1, (32'd1 << 23) | (32'(speed) << 21) | 32'd0);
+        end
         #3000ns;                                        // let the frame run
-        beat(RRxdata,  1'b0, '0);                      // pop what the device sent us
+        beat(RRxdata,  1'b0, '0);                       // pop what the device sent us
         #200ns;
       end
       #500ns;

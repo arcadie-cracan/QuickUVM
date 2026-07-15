@@ -22,8 +22,9 @@ class sdio_driver extends uvm_driver #(sdio_item);
 
   // pragma quickuvm custom class_item_additional begin
   // The SPI mode, from plusargs — the same knobs the sequence programs into CONFIGOPTS.
-  int unsigned m_cpol = 0;
-  int unsigned m_cpha = 0;
+  int unsigned m_cpol  = 0;
+  int unsigned m_cpha  = 0;
+  int unsigned m_speed = 0;   // 0=Standard, 1=Dual, 2=Quad
 
   // FULL DUPLEX MEANS TWO DIRECTIONS, AND BOTH MUST BE CHECKED. Without this the bench
   // verifies only what the host RECEIVED (RXDATA) and never what the device received —
@@ -82,6 +83,7 @@ class sdio_driver extends uvm_driver #(sdio_item);
       //
       // `vif.clk` IS sck (the DUT drives it). cpol=0 => leading is posedge; cpol=1 => negedge.
       @(negedge vif.csb);
+      if (m_speed == 0) begin
       m_mosi = '0;
       fork
         // THE OTHER HALF OF THE TRANSFER. Sample the host's MOSI on the edge the host
@@ -121,6 +123,32 @@ class sdio_driver extends uvm_driver #(sdio_item);
                    $sformatf("frame %0d: the device received %02h, the host sent %02h",
                              m_frames, m_mosi, host_byte(m_frames)))
       m_frames++;
+      end else begin
+        // DUAL / QUAD, RdOnly. The host RELEASES the data lanes and the DEVICE drives them
+        // (spi_host_fsm.sv:601-607 `sd_en_o`; spi_host_shift_register.sv:59-62 capture):
+        //   Dual -> drive sd[1:0], enable 4'b0011, 2 bits/edge, MSB pair first;
+        //   Quad -> drive sd[3:0], enable 4'b1111, 4 bits/edge, MSB nibble first.
+        // A scalar enable can make 4'b1111 (quad) but NOT 4'b0011 (dual) or 4'b0010 (std),
+        // so DUAL is where per-lane ownership is load-bearing beyond the standard case.
+        // Mode 0 only (the realistic flash-read case): DUT samples on posedge, we change on
+        // negedge, first symbol on the wire before the first edge.
+        if (m_speed == 1) begin                     // DUAL
+          vif.sd_oe     = 4'b0011;
+          vif.sd_o[1:0] = tr.miso_byte[7:6];        // pair 0, before the first edge
+          for (int j = 1; j < 4; j++) begin
+            @(negedge vif.clk);
+            vif.sd_o[1:0] = tr.miso_byte[7 - 2*j -: 2];   // [5:4], [3:2], [1:0]
+          end
+        end else begin                              // QUAD
+          vif.sd_oe     = 4'b1111;
+          vif.sd_o[3:0] = tr.miso_byte[7:4];        // nibble 0
+          @(negedge vif.clk);
+          vif.sd_o[3:0] = tr.miso_byte[3:0];        // nibble 1
+        end
+        @(posedge vif.csb);
+        vif.sd_oe = 4'b0000;                        // release the shared bus
+        m_frames++;
+      end
       // pragma quickuvm custom drive_transfer end
       // An unfilled seam is caught HERE, OUTSIDE the pragma — a guard placed inside the
       // region it protects is deleted along with it. A real transfer must consume time
@@ -158,6 +186,7 @@ class sdio_driver extends uvm_driver #(sdio_item);
     // pragma quickuvm custom initialize_additional begin
     void'($value$plusargs("SPI_CPOL=%d", m_cpol));
     void'($value$plusargs("SPI_CPHA=%d", m_cpha));
+    void'($value$plusargs("SPI_SPEED=%d", m_speed));
     // pragma quickuvm custom initialize_additional end
   endtask
 

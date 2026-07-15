@@ -18,7 +18,7 @@ that only works against RTL its own author designed has proved nothing.
 | feature | proved against my own RTL? | proved here, on OpenTitan's? | how |
 |---|---|---|---|
 | `respond: prefetch` | yes (mutation) | **yes (mutation)** | **M3** — flip to `on_request`: 8/8 fail, `DEAD_RESPONDER` |
-| per-lane `inouts` | **NO — never mutated, anywhere** | **yes (mutation) — first time** | **M4** — a scalar enable: 8 × `MOSI_MISMATCH` |
+| per-lane `inouts` | **NO — never mutated, anywhere** | **yes — Standard (M4) AND Dual (M7)** | a scalar enable cannot express `0010` (std) or `0011` (dual): 8 × mismatch each |
 | `clock[].source: dut` | no mutation | **elaboration + generation only** | `source: tb` ⇒ Xcelium `*E,MULDRN`; deleting the DUT connection ⇒ the generator refuses |
 
 **`respond: prefetch` is load-bearing on real hardware.** M3 is the headline and it holds:
@@ -109,6 +109,23 @@ lives in exactly that half. With the device's MOSI check added, the same mutatio
 
 A false claim → a failed proof → a genuine bench defect → the feature finally proved. **The failed
 mutation was worth more than the passing bench.**
+
+Dual/Quad (`SPI_SPEED=1/2`, RdOnly reads) then exercise the feature in **two more lane patterns**,
+and this is where per-lane ownership is decisively load-bearing. The DUT drives, and the device
+must own, exactly:
+
+| mode | device enable | a scalar enable can make it? |
+|---|---|---|
+| Standard (M4) | `0010` | **no** |
+| Dual (M7) | `0011` | **no** |
+| Quad (M8) | `1111` | yes |
+
+**A scalar enable (only `0000` or `1111`) can produce Quad, but *neither* Standard nor Dual.** M7
+mutates the dual device to the standard subset `0010`; `sd[0]` floats and the read fails 8/8. So
+per-lane `_oe` is not a nicety — two of the three required patterns are inexpressible without it.
+Quad's `1111` is scalar-achievable, so quad alone does not *require* per-lane; M8 (drive `0011`
+instead) still fails, which proves the RX check discriminates lane count but not that per-lane is
+necessary for quad. That distinction is stated because the earlier draft would have blurred it.
 
 ### 4.2 The phantom-clock guard fired on correct input
 
@@ -203,7 +220,9 @@ draft rigged it by re-labelling reasoning's hits as "design" and counting only i
   not `cip_lib` inheritance, their testplan, or TL-UL protocol coverage.
 * **`clock[].source: dut` has no simulation mutation** (§1).
 * **The vendor snapshot is unpinned** — branch, not SHA (§2).
-* **Standard speed only.** Dual/Quad would be a third exercise of per-lane `oe`. Not done.
+* **Dual/Quad are RdOnly single-byte reads, mode 0 only** (`SPI_SPEED=1/2`). Enough to prove per-lane
+  ownership in the `0011`/`1111` patterns; not a full dual/quad protocol (no WrOnly-dual, no CPHA=1
+  in these modes, no multi-byte).
 * **No RAL.** `register_model:` is untried. The first draft asserted that a `bit_bash` walk through
   `CSID` "would brick the DUT" — **false**: `CSID` is a dangling scratch flop in our wrapper
   (`command_csid_i` is hardwired to 0; `NumCS = 1`). The registers that *would* misbehave are
