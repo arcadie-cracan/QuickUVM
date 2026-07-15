@@ -746,7 +746,17 @@ class AgentConfig(BaseModel):
     # depend
     # on MOSI bit k. That needs a clock the TB does not generate, so it lands with the
     # sampled clock, where a bench can actually prove it.
-    respond: Literal["on_request", "prefetch", "combinational"] = "on_request"
+    respond: Literal["on_request", "prefetch", "combinational", "pipelined"] = (
+        "on_request"
+    )
+
+    # PIPELINED responder only. Names the SAMPLED request field (an `outputs` port, e.g.
+    # AXI's `arid`) that identifies a transaction. Requests are bucketed into per-ID
+    # queues: same-ID answered in arrival order (the AXI ordering rule), cross-ID free
+    # to reorder. Without it there is no notion of "which outstanding request is this",
+    # so a pipelined responder cannot answer out of order — hence it is required for,
+    # and only for, `respond: pipelined`.
+    reorder_by: str | None = None
 
     @property
     def is_responder(self) -> bool:
@@ -774,13 +784,28 @@ class AgentConfig(BaseModel):
         return self.is_responder and self.respond == "combinational"
 
     @property
+    def is_pipelined(self) -> bool:
+        """MULTI-OUTSTANDING, out-of-order responder (AXI-style).
+
+        The `on_request` sequence answers ONE response per incoming request (get ->
+        respond -> get), so a burst that arrives faster than it is answered is stranded:
+        after draining the backlog into a buffer it blocks on a NEW request that never
+        comes. A pipelined responder decouples accept from drive — one thread buffers
+        every request into per-ID queues, a second drains those queues without waiting
+        on the bus — so N requests can be outstanding and answered out of order by
+        `reorder_by`. See docs/t6_axi_outstanding_assessment.md.
+        """
+        return self.is_responder and self.respond == "pipelined"
+
+    @property
     def has_request_fifo(self) -> bool:
         """Whether the response path runs through the monitor -> fifo -> sequence chain.
 
         A zero-slack responder cannot: that chain costs a cycle it does not have. Its
-        driver reads the raw request signals itself.
+        driver reads the raw request signals itself. The pipelined shape needs it too —
+        its accept thread drains exactly this fifo into per-ID queues.
         """
-        return self.is_responder and self.respond == "on_request"
+        return self.is_responder and self.respond in ("on_request", "pipelined")
 
     @property
     def is_continuous(self) -> bool:
@@ -970,6 +995,11 @@ class AgentConfig(BaseModel):
                     f"agent '{self.name}': `idle` is only valid with `mode: responder` "
                     f"(it selects the continuous, non-blocking responder driver)."
                 )
+            if self.reorder_by is not None:
+                raise ValueError(
+                    f"agent '{self.name}': `reorder_by` is only valid with "
+                    f"`mode: responder` + `respond: pipelined`."
+                )
             return self
 
         if not self.active:
@@ -1020,6 +1050,34 @@ class AgentConfig(BaseModel):
                     f"agent '{self.name}': idle value {val} for port '{name}' does not "
                     f"fit its {p.bit_width}-bit width."
                 )
+
+        # PIPELINED — reorder_by names the sampled ID field the per-queue buckets use.
+        if self.is_pipelined:
+            if self.reorder_by is None:
+                raise ValueError(
+                    f"agent '{self.name}': `respond: pipelined` requires `reorder_by`: "
+                    f"the sampled request field (an `outputs` port, e.g. AXI's `arid`) "
+                    f"that identifies which outstanding transaction a response answers "
+                    f"— without it there is no per-ID ordering, no way to reorder."
+                )
+            rb = sampled.get(self.reorder_by)
+            if rb is None:
+                raise ValueError(
+                    f"agent '{self.name}': reorder_by='{self.reorder_by}' must name a "
+                    f"SAMPLED port (`outputs`, DUT-driven). Sampled ports: "
+                    f"{sorted(sampled)}."
+                )
+            if self.reorder_by == self.request_valid:
+                raise ValueError(
+                    f"agent '{self.name}': reorder_by cannot be the request_valid "
+                    f"qualifier '{self.request_valid}' — it must be the ID field that "
+                    f"distinguishes outstanding requests, not the valid strobe."
+                )
+        elif self.reorder_by is not None:
+            raise ValueError(
+                f"agent '{self.name}': `reorder_by` is only valid with "
+                f"`respond: pipelined` (got respond='{self.respond}')."
+            )
         return self
 
     @model_validator(mode="after")

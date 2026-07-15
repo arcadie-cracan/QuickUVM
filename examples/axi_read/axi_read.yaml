@@ -1,0 +1,62 @@
+# PIPELINED responder — multi-outstanding, out-of-order by ID (AXI read address -> read data).
+#
+# The DUT is an AXI-read MASTER that floats several read requests (AR beats) before any is
+# answered; the testbench is the SLAVE that buffers them and returns R beats OUT OF ORDER by
+# `arid`. The `on_request` shape cannot do this: it answers one response per incoming request
+# and strands the tail of a burst (docs/t6_axi_outstanding_assessment.md). `respond: pipelined`
+# decouples accept from drive — one thread buffers every request into per-ID queues, a second
+# drains them without waiting on the bus.
+
+project:
+  name: axi_read_tb
+  author: qa@example.com
+
+dut:
+  name: axi_read
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: rd
+    interface: rd_if
+    sequence_item: rd_item
+    seq_item_style: manual
+    active: true
+
+    mode: responder       # the DUT masters the bus; we are the slave that answers
+    request_valid: arvalid  # sampled: the DUT asserts a read-address request
+    respond: pipelined      # multi-outstanding, out-of-order
+    reorder_by: arid        # per-ID queues: same-id in arrival order, cross-id reordered
+
+    ports:
+      # inputs = what the agent DRIVES = the RESPONSE (R) channel (the DUT's inputs)
+      inputs:
+        - {name: rvalid, width: 1,  randomize: true}
+        - {name: rid,    width: 4,  randomize: true}
+        - {name: rdata,  width: 32, randomize: true}
+        - {name: rlast,  width: 1,  randomize: true}
+      # outputs = what the agent SAMPLES = the REQUEST (AR) channel (the DUT's outputs)
+      outputs:
+        - {name: arvalid, width: 1}
+        - {name: arid,    width: 4}
+        - {name: araddr,  width: 32}
+        - {name: arlen,   width: 8}
+
+# The DUT master self-checks (it matches R beats to its outstanding AR by rid and asserts it
+# received them all). The QuickUVM side proves LIVENESS: DEAD_RESPONDER (drove nothing) and
+# STRANDED_REQUESTS (accepted != answered) both guard the responder from the silent-pass trap.
+analysis:
+  coverage: []
+  scoreboards: []
+
+tests:
+  - {name: rand_test, num_items: 120}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f

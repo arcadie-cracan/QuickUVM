@@ -1,13 +1,20 @@
 # T6 — AXI multi-outstanding, out-of-order responder — the campaign's first real gap
 
+> **STATUS: CLOSED.** The gap this document found is now closed by `respond: pipelined` +
+> `reorder_by:`, built and mutation-proved on Xcelium in `examples/axi_read/` (issue `[4 3 2 1 0]`
+> → recv `[4 0 1 2 3]`, 5/5 answered, cross-id reorders=4; break the drain and the new
+> `STRANDED_REQUESTS` check fires). See §7. The finding below is preserved as the record of the
+> gap and the reasoning that settled it.
+
 The question the campaign deferred twice — at T3 (tl_agent) and T5 (Ibex) — is whether a QuickUVM
 responder can hold **N outstanding** requests and answer them **out of order by ID**, the way
 PULP's `axi_rand_slave` (in `pulp-platform/axi`'s `axi_test.sv`) does. T6 answers it, **by running
 it on Xcelium** rather than by inspection.
 
-**Verdict: no. This is the first genuine capability gap of the campaign** — and, unlike the five
-"it breaks" predictions that *didn't*, this one was **claimed to work and doesn't**. Claims tagged
-**[C]** run-verified this session / **[I]** inspection / **[P]** predicted.
+**Verdict (at the time of the finding): no. This was the first genuine capability gap of the
+campaign** — and, unlike the five "it breaks" predictions that *didn't*, this one was **claimed to
+work and doesn't**. Claims tagged **[C]** run-verified this session / **[I]** inspection /
+**[P]** predicted.
 
 ---
 
@@ -113,3 +120,49 @@ metric like T4 — and no line-count is reported, deliberately.
   generated. This is a banked finding.
 - Only the **read (AR→R) channel-pair** was probed; the write path and the full 5-channel VIP are
   §4's gap-by-design, not exercised.
+
+---
+
+## 7. Resolution — `respond: pipelined` (built + mutation-proved)
+
+The scoped feature of §3 is now built. It is a new responder *shape*, opt-in and byte-identical for
+every existing bench:
+
+    respond: pipelined
+    reorder_by: arid     # the sampled request-ID field the per-queue buckets key on
+
+**What it emits as scaffold** (the parts §1 proved the seam could not express):
+
+- The responder sequence forks **two threads** — an ACCEPT thread that drains `request_fifo` into
+  per-ID queues (`id_q[int][$]`), and a DRIVE thread that answers the backlog **without blocking on
+  a new request**. This is exactly `axi_rand_slave`'s accept/serve split, and it is the loop the
+  `on_request` shape could not write in a seam.
+- Same-ID responses in arrival order (`pop_front`); cross-ID reordered by a deterministic
+  lowest-ready-id-first policy (one line to change). The `response_logic` seam is unchanged from
+  `on_request`, so flipping shapes preserves the user's fill.
+- A new liveness guard, `STRANDED_REQUESTS`, on the sequencer: it fails if `accepted != answered`.
+  `DEAD_RESPONDER` catches "answered nothing"; it is **blind to a strand** — the §1 failure, where
+  the responder answers *some* of a burst. This check makes that failure impossible to ship silent.
+
+**Run-verified [C]** (`examples/axi_read/`, Xcelium 25.09): the master floats five reads in
+descending id order and the slave models a read latency, so a backlog builds and lowest-first drains
+it ascending:
+
+    [MASTER] issue order = [ 4 3 2 1 0 ]  recv order = [ 4 0 1 2 3 ]  got=5/5  cross-id reorders=4
+    UVM_ERROR : 0   UVM_FATAL : 0
+
+**Mutation-proved [C]** (`examples/axi_read/MUTATIONS.md`):
+
+- Break the drain (drive thread answers once): `STRANDED_REQUESTS` — *accepted 5, answered 1* — a
+  UVM_ERROR, exactly the §1 strand, now caught rather than passed. `got=1/5`.
+- Flip the reorder policy to highest-first: `recv == issue`, reorders=0 — proving the baseline's
+  reorder is produced by the policy, not by luck.
+
+**Still gap-by-design** (unchanged from §4): the full 5-channel AXI VIP. `respond: pipelined` is the
+read channel-pair (AR→R); AR+AW / R+B and atomics remain a two-agent protocol-VIP build. The
+genuine *capability* question — the out-of-order responder — is what this closes.
+
+**The meta-lesson, now with its bookend:** §2 recorded that a scoping pass called this "expressible,
+proven by construction" from generation alone, and running it refuted that. The fix earns the mirror
+rule: it was built by **running every claim** — the strand, the reorder, and the liveness teeth were
+each proven by a mutation that made the bench fail, not by reading the generated code.
