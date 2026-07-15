@@ -1,0 +1,54 @@
+# T4 proof-by-construction: reproduce the UVMF SHA512 HVL half in QuickUVM schema.
+# in-agent (initiator, drives op+test_case_sel) + out-agent (passive, samples result),
+# two-stream scoreboard source:sha_in monitor:sha_out (mirrors UVMF tlm_connections).
+project:
+  name: sha512_tb
+  author: qa@example.com
+
+dut:
+  name: sha512
+  clock: clk
+  reset: rst
+  reset_active_low: false        # UVMF reset_assertion_level: False (active-HIGH)
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  # UVMF SHA512_in interface = INITIATOR agent, drives op + test_case_sel.
+  - name: sha_in
+    interface: sha_in_if
+    sequence_item: sha_in_item
+    seq_item_style: manual
+    active: true
+    ports:
+      inputs:
+        # UVMF hdl_typedefs sha512_in_op_transactions -> QuickUVM port enum (HVL-only).
+        - name: op
+          width: 3
+          randomize: true
+          enum: {reset_op: 0, sha224_op: 4, sha256_op: 5, sha384_op: 6, sha512_op: 7}
+          constraint: "op inside {sha224_op, sha256_op, sha384_op, sha512_op}"
+        - {name: test_case_sel, width: 8, randomize: true}
+
+  # UVMF SHA512_out interface = RESPONDER-typed but PASSIVE: samples DUT result only.
+  - name: sha_out
+    interface: sha_out_if
+    sequence_item: sha_out_item
+    seq_item_style: manual
+    active: false
+    ports:
+      outputs:
+        - {name: result, width: 512}
+
+analysis:
+  coverage: [sha_in]
+  scoreboards:
+    # UVMF's explicit tlm_connections (in.monitored_ap->pred, pred->sb.expected,
+    # out.monitored_ap->sb.actual) INFERRED from source/monitor.
+    - {name: sb, source: sha_in, monitor: sha_out}
+
+tests:
+  - {name: rand_test, num_items: 50}
