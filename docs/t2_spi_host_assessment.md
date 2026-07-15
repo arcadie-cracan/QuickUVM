@@ -218,7 +218,9 @@ draft rigged it by re-labelling reasoning's hits as "design" and counting only i
 * **This is not OpenTitan's DV environment.** It reproduces the *shape* their bench needs — a
   device-mode SPI agent on a DUT-driven clock, tri-state lanes, a register-programming sequence —
   not `cip_lib` inheritance, their testplan, or TL-UL protocol coverage.
-* **`clock[].source: dut` has no simulation mutation** (§1).
+* **`clock[].source: dut`** — now has a runtime mutation too (`MUTATIONS.md` M9): a dead
+  observed clock (`sck` forced constant) yields `DEAD_RESPONDER` and the test **terminates**
+  (wall-clock bound), proving it goes RED not hang. Was gen/elab-only.
 * **The vendor snapshot is unpinned** — branch, not SHA (§2).
 * **Dual/Quad are RdOnly single-byte reads, mode 0 only** (`SPI_SPEED=1/2`). Enough to prove per-lane
   ownership in the `0011`/`1111` patterns; not a full dual/quad protocol (no WrOnly-dual, no CPHA=1
@@ -228,5 +230,7 @@ draft rigged it by re-labelling reasoning's hits as "design" and counting only i
   (`command_csid_i` is hardwired to 0; `NumCS = 1`). The registers that *would* misbehave are
   `COMMAND` (a write launches a transfer), `RXDATA` (destructive read), `TXDATA` (write-only) and
   `CONTROL.SW_RST`. Untested either way.
-* **Only 1-byte segments.** LEN > 1, CSAAT chaining and a `clkdiv` sweep are unexercised.
+* **Only 1-byte segments.** LEN > 1 and CSAAT chaining are unexercised. (A `clkdiv` sweep
+  IS exercised now — `+SPI_CLKDIV`, MUTATIONS.md M10: divisors 2–32 all pass, proving the
+  edge-relative device timing is divider-independent.)
 * **No simulation logs are committed.** Results are reproducible from `MUTATIONS.md`, not archived.

@@ -163,3 +163,31 @@ Run the **Slice 0a** smoke test (no UVM):
 
 **Expected: `FAIL — the host received the device's byte: got c3, expect 3c`.** Restore it and it
 passes. The vendored RTL is genuinely under test, and the smoke test can genuinely fail.
+
+## M9 — the observed clock is DUT-driven, and a dead one goes RED (not hang, not silent)
+
+`clock[].source: dut` says `sck` is a DUT output the TB only samples. The gen-time proof (a
+`clkgen` on it ⇒ `*E,MULDRN`; deleting the connection ⇒ the generator refuses) has a runtime
+companion: **a dead observed clock must make the bench fail and terminate.** In
+`rtl/spi_host_ot.sv`:
+
+    assign sck = output_en ? core_sck : 1'b0;   ->   assign sck = 1'b0;   // DUT never drives sck
+
+**Expected: `TEST FAILED` — `DEAD_RESPONDER`, and the test TERMINATES via `$finish`.**
+
+Two things at once: the device never drives (its clock never ticks) ⇒ `DEAD_RESPONDER`; and the
+test still ends, because a responder-only test on a DUT-driven clock bounds itself on **wall-clock**
+(`#(N*period)`), not on `sck` edges — which is the whole reason the sampled-clock feature bounds
+tests that way. A dead observed clock therefore comes out **RED**, not as a hang. (Contrast: bounding
+on the gated `sck` would hang forever, and a hung bench reports nothing.)
+
+## M10 — the sampled clock is divider-independent (a clkdiv sweep)
+
+`sck = clk / (2*(clkdiv+1))`. The device drives on sck *edges* (edge-relative), so its timing must
+hold at any divisor — the sampled-clock feature is not tuned to one speed.
+
+    for d in 2 4 8 16 32; do xrun -f xrun.f +UVM_TESTNAME=rand_test +SPI_CLKDIV=$d; done
+
+**Expected: 0 UVM_ERROR at every divisor** (sck period 6 → 66 core clocks). Only the wall-clock frame
+budget scales with the divisor; the protocol logic does not change. Composes with the modes:
+`+SPI_CLKDIV=32 +SPI_SPEED=1` (a slow dual read) also passes.

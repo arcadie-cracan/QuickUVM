@@ -79,10 +79,11 @@ package spi_host_ot_tb_pkg;
     endtask
 
     task body;
-      int unsigned cpol = 0, cpha = 0, speed = 0;
+      int unsigned cpol = 0, cpha = 0, speed = 0, clkdiv = 4;
       void'($value$plusargs("SPI_CPOL=%d", cpol));
       void'($value$plusargs("SPI_CPHA=%d", cpha));
-      void'($value$plusargs("SPI_SPEED=%d", speed));   // 0=Std, 1=Dual, 2=Quad
+      void'($value$plusargs("SPI_SPEED=%d", speed));    // 0=Std, 1=Dual, 2=Quad
+      void'($value$plusargs("SPI_CLKDIV=%d", clkdiv));  // sck = clk / (2*(clkdiv+1))
 
       // CONTROL.OUTPUT_EN (bit 29) is NOT optional. It resets to 0 and gates sck, csb and
       // every sd lane: without it the DUT drives NOTHING, the pull-ups float the bus high,
@@ -90,7 +91,7 @@ package spi_host_ot_tb_pkg;
       beat(RControl,    1'b1, (32'h1 << 31) | (32'h1 << 29) | 32'h7f);
       // CPOL[31], CPHA[30], csn lead/trail/idle, clkdiv
       beat(RConfigopts, 1'b1, (32'(cpol) << 31) | (32'(cpha) << 30) |
-                              (32'd2 << 24) | (32'd2 << 20) | (32'd2 << 16) | 32'd4);
+                              (32'd2 << 24) | (32'd2 << 20) | (32'd2 << 16) | 32'(clkdiv));
 
       for (int f = 0; f < 8; f++) begin
         if (speed == 0) begin
@@ -102,7 +103,7 @@ package spi_host_ot_tb_pkg;
           // direction=RdOnly (bit 23), speed in [22:21], len=0 => one byte.
           beat(RCommand, 1'b1, (32'd1 << 23) | (32'(speed) << 21) | 32'd0);
         end
-        #3000ns;                                        // let the frame run
+        #((clkdiv + 2) * 300ns);                        // frame budget scales with sck
         beat(RRxdata,  1'b0, '0);                       // pop what the device sent us
         #200ns;
       end
