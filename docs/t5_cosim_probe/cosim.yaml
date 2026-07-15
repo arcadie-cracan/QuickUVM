@@ -1,0 +1,11 @@
+# T5 probe: can the K0 predictor hold a chandle + a STEPPED DPI call (a lockstep ISS)?
+project: {name: cosim, author: QuickUVM, imports: [cosim_dpi_pkg]}
+dut: {name: cosim, clock: clk, reset: rst_n, combinational: true}
+agents:
+  - name: rvfi
+    interface: rvfi_if
+    sequence_item: rvfi_item
+    ports:
+      inputs:  [{name: valid, width: 1}, {name: insn, width: 32}]
+      outputs: [{name: pc, width: 32}, {name: rd_wdata, width: 32}]
+tests: [{name: rand_test}]
