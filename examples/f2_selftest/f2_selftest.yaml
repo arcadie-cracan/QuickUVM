@@ -1,0 +1,13 @@
+# F2' — a DUT-LESS self-test of the io VIP. `kind: selftest` emits a loopback top (no
+# DUT); the referenced io agent drives `din`, the loopback returns it on `dout`, and the
+# scoreboard checks it. Corrupt the loopback and the test goes red (it actually tests).
+project: {name: f2_selftest, author: QuickUVM}
+kind: selftest
+layout: packaged
+clock: {period: 10, unit: ns}
+agent_refs:
+  - {name: io, manifest: ../f2_iovip/gen/f2_iovip.qvip}
+analysis:
+  coverage: [io]
+  scoreboards: [{name: sb, source: io}]
+tests: [{name: rand_test, num_items: 10}]

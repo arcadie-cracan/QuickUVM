@@ -678,6 +678,15 @@ class AgentConfig(BaseModel):
     # reused subtree can name the agent as originally declared (`g`, not `left_g`) and
     # the resolver maps it to the prefixed handle. "" = never prefixed.
     original_name: str = Field(default="", exclude=True, repr=False)
+    # F2' — consume-by-reference. A referenced agent is wired into the env (its
+    # <name>_pkg is imported and its classes instantiated) but its SOURCE is NOT
+    # regenerated — it comes from an external, separately-generated VIP. The loader
+    # (from_yaml) sets these from a VIP manifest when the bench declares `agent_refs:`;
+    # a normally-declared agent has is_reference=False (byte-identical). `ref_filelist`
+    # is the path to the VIP's <name>_pkg.f, chained with Cadence `-F` (relative to the
+    # file), captured absolute at load and rewritten relative to the output dir on emit.
+    is_reference: bool = Field(default=False, exclude=True, repr=False)
+    ref_filelist: str = Field(default="", exclude=True, repr=False)
     # M1 — multi-clock/reset: name the clock domain / external reset this agent runs on.
     # None ⇒ the sole/first clock, and the reset bound to that clock (byte-identical for
     # a single-clock/single-reset bench).
@@ -1900,6 +1909,10 @@ class ProjectMeta(BaseModel):
     author: str = ""
     year: int = 2026
     uvm_version: Literal["1.1d", "1.2"] = "1.2"  # selects version-specific UVM APIs
+    # F2' — VIP identity. Stamped into a generated VIP's manifest (.qvip) so a
+    # consuming bench records which VERSION of the VIP it wired in by reference.
+    # Pure metadata; changes nothing for a bench that never generates/consumes a VIP.
+    version: str = "0.1.0"
     # Packages to import into tb_pkg (e.g. for PortConfig.type external references).
     # Prefer the black-box default (generated enums); use this only when the TB
     # genuinely must share a spec/DUT package.
@@ -2354,8 +2367,71 @@ class RegressConfig(BaseModel):
         return self
 
 
+class AgentRef(BaseModel):
+    """F2' — a reference to an agent inside an external, separately-generated VIP. The
+    loader resolves `manifest` relative to the consuming config file, reads the named
+    agent's spec + the VIP's package filelist, and reconstructs a referenced AgentConfig
+    (is_reference=True) that is wired into the env but never regenerated."""
+
+    name: str  # the agent's name inside the VIP (and the local handle prefix)
+    manifest: str  # path to the VIP's .qvip manifest, relative to this config file
+
+    @model_validator(mode="after")
+    def _check_name(self) -> AgentRef:
+        _check_sv_identifier(self.name, "agent_ref name")
+        return self
+
+
+def _resolve_agent_refs(raw: dict, cfg_dir: Path) -> None:
+    """F2' — expand `agent_refs:` into referenced agents appended to `agents:`.
+
+    Each ref names an agent inside a VIP manifest (.qvip). This reads the manifest
+    (relative to the consuming config file), reconstructs the agent's config, marks it
+    is_reference=True, and records the ABSOLUTE path to the VIP's package filelist so
+    the generator can chain it with Cadence `-F`. Mutates `raw` in place.
+    """
+    for ref in raw.get("agent_refs", []):
+        name = ref.get("name") if isinstance(ref, dict) else None
+        man_rel = ref.get("manifest") if isinstance(ref, dict) else None
+        if not name or not man_rel:
+            raise ValueError("agent_ref requires both `name` and `manifest`.")
+        man_path = (cfg_dir / man_rel).resolve()
+        if not man_path.exists():
+            raise ValueError(
+                f"agent_ref '{name}': VIP manifest not found: {man_path}. "
+                f"Generate the VIP first (kind: vip)."
+            )
+        with open(man_path) as fh:
+            manifest = yaml.safe_load(fh) or {}
+        agents = manifest.get("agents", {})
+        if name not in agents:
+            raise ValueError(
+                f"agent_ref '{name}': no agent '{name}' in manifest {man_path} "
+                f"(has: {sorted(agents)})."
+            )
+        entry = agents[name]
+        if "filelist" not in entry:
+            raise ValueError(
+                f"agent_ref '{name}': manifest {man_path} entry has no `filelist` "
+                f"(a corrupt or hand-edited .qvip)."
+            )
+        agent_dict = dict(entry.get("config", {}))
+        # The consuming bench refers to the agent by the ref NAME (the manifest key), so
+        # that authoritative so a hand-edited manifest whose key != config.name still
+        # wires the agent under the name the consumer (and env) uses.
+        agent_dict["name"] = name
+        agent_dict["is_reference"] = True
+        agent_dict["ref_filelist"] = str(
+            (man_path.parent / entry["filelist"]).resolve()
+        )
+        raw.setdefault("agents", []).append(agent_dict)
+
+
 class ProjectConfig(BaseModel):
     project: ProjectMeta
+    # F2' — required for an ordinary bench; SYNTHESIZED (name = project name, no RTL
+    # emitted) by a before-validator when `vip`/`selftest` is set and no dut given, so
+    # the ~40 downstream `self.dut.*` reads never see None. See _synthesize_vip_dut.
     dut: DutConfig
     # M1 — `clock:` accepts a single ClockConfig (today, byte-identical) OR a list of
     # them. A list is split by a before-validator into `clock` (the primary/first, kept
@@ -2367,6 +2443,12 @@ class ProjectConfig(BaseModel):
     # synthesizes today's single reset from `dut` (byte-identical).
     resets: list[ResetConfig] = Field(default_factory=list)
     agents: list[AgentConfig] = Field(default_factory=list)
+    # F2' — consume agent VIPs BY REFERENCE. Each entry names an agent and a VIP
+    # manifest (.qvip); the loader (from_yaml) reads the manifest, reconstructs the
+    # agent, marks it is_reference=True, and appends it to `agents` — so it is wired
+    # into the env (imported + instantiated) but its source is NOT regenerated. Opt-in,
+    # empty ⇒ byte-identical. Requires `layout: packaged`.
+    agent_refs: list[AgentRef] = Field(default_factory=list)
     tests: list[TestConfig] = Field(default_factory=lambda: [TestConfig(name="test1")])
     analysis: AnalysisConfig | None = None
     register_model: RegisterModelConfig | None = None
@@ -2389,6 +2471,12 @@ class ProjectConfig(BaseModel):
     # <dut>_env_pkg, and a <dut>_test_pkg, with per-package .f filelists — for
     # separate compilation and cross-project reuse of the agent VIP.
     layout: Literal["flat", "packaged"] = "flat"
+    # F2' — GENERATION KIND (mutually exclusive by construction). `bench` (default) is
+    # today's path (byte-identical). `vip` emits ONLY the reusable agent VIP(s) — the
+    # per-agent packages + filelists + a .qvip manifest — with no DUT, env, test or top.
+    # `selftest` emits a DUT-less bench that exercises the VIP against itself (two
+    # cross-connected agents). `vip`/`selftest` require `layout: packaged`.
+    kind: Literal["bench", "vip", "selftest"] = "bench"
     # Name of the generated top module + file: `module <top_name>;` in <top_name>.sv,
     # and the elaboration `-top`. Default "tb_top" (byte-identical); set to e.g. "tb"
     # for the OpenTitan/uvmdvgen convention. NB: a hand-authored sim wrapper that
@@ -2419,6 +2507,21 @@ class ProjectConfig(BaseModel):
     # its true unprefixed module name however many prefixes stack. "" = never
     # prefixed (dut_module falls through to dut.name).
     original_dut_name: str = Field(default="", exclude=True, repr=False)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _synthesize_vip_dut(cls, data: object) -> object:
+        """F2' — a VIP / self-test has no DUT. Rather than make `dut` Optional (which
+        would NPE ~40 downstream `self.dut.*` reads), synthesize a nameplate DutConfig
+        (name = project name) when `kind` is vip/selftest and no dut is given. No DUT
+        module is emitted (the vip/selftest generator path skips the stub). An ordinary
+        bench is untouched (byte-identical)."""
+        if isinstance(data, dict) and data.get("kind") in ("vip", "selftest"):
+            if not data.get("dut"):
+                proj = data.get("project") or {}
+                name = proj.get("name") if isinstance(proj, dict) else None
+                data["dut"] = {"name": name or "vip", "combinational": True}
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -3180,6 +3283,37 @@ class ProjectConfig(BaseModel):
                 )
         elif not self.agents:
             raise ValueError("At least one agent must be defined.")
+        # F2' — VIP / self-test / by-reference need the packaged layout: a VIP is
+        # per-agent packages, and flat folds everything into one tb_pkg (nothing to
+        # reuse or reference).
+        if self.kind != "bench" and self.layout != "packaged":
+            raise ValueError(
+                f"`kind: {self.kind}` requires `layout: packaged` (a VIP is per-agent "
+                f"packages; flat has no package to reuse)."
+            )
+        if (self.agent_refs or any(a.is_reference for a in self.agents)) and (
+            self.layout != "packaged"
+        ):
+            raise ValueError(
+                "consuming an agent by reference (`agent_refs`) requires "
+                "`layout: packaged` — the referenced VIP is an external package."
+            )
+        # `agent_refs` are resolved by from_yaml (which reads the manifest relative to
+        # the config file). A bare model_validate can't do that file I/O, so a config
+        # with unresolved refs would generate NOTHING for them — fail loudly instead.
+        if self.agent_refs and not any(a.is_reference for a in self.agents):
+            raise ValueError(
+                "`agent_refs` were not resolved — load this config via "
+                "ProjectConfig.from_yaml (it reads each VIP manifest relative to "
+                "the config file); a bare model_validate cannot resolve them."
+            )
+        if self.is_vip and (
+            self.subenvs or self.register_model is not None or self.connections
+        ):
+            raise ValueError(
+                "`kind: vip` emits only reusable agent packages — it must not set "
+                "`subenvs` / `register_model` / `connections`."
+            )
         agent_name_set = set(names)
         if self.analysis is not None:
             agent_names = set(names)
@@ -3734,6 +3868,11 @@ class ProjectConfig(BaseModel):
         path = Path(path)
         with open(path) as fh:
             raw = yaml.safe_load(fh)
+        # F2' — resolve `agent_refs:` BEFORE validation so a referenced agent is an
+        # ordinary agent for every downstream validator (uniqueness, env wiring) — it
+        # differs only in is_reference=True, which makes the generator SKIP its source.
+        if isinstance(raw, dict) and raw.get("agent_refs"):
+            _resolve_agent_refs(raw, path.parent)
         cfg = cls.model_validate(raw)
         # H1 — resolve each child block config relative to this (top) file, then
         # cross-check the composition once all children are loaded.
@@ -3775,6 +3914,30 @@ class ProjectConfig(BaseModel):
                 cfg.subenv_configs[s.name] = child
             cfg.validate_subenv_composition()
         return cfg
+
+    @property
+    def is_vip(self) -> bool:
+        """F2' — a VIP-only generation (packages + manifest, no DUT/env/bench)."""
+        return self.kind == "vip"
+
+    @property
+    def is_selftest(self) -> bool:
+        """F2' — a DUT-less bench that exercises the VIP against itself."""
+        return self.kind == "selftest"
+
+    @property
+    def generated_agents(self) -> list[AgentConfig]:
+        """F2' — the agents whose SOURCE this bench emits: all agents minus the ones
+        consumed BY REFERENCE (is_reference, wired from an external VIP). Every
+        per-agent source loop iterates THIS, not `agents`, so a referenced agent is
+        wired (it stays in `agents`) but never regenerated. With no refs the two are
+        identical (byte-identical)."""
+        return [a for a in self.agents if not a.is_reference]
+
+    @property
+    def referenced_agents(self) -> list[AgentConfig]:
+        """F2' — the agents consumed by reference (wired, not generated)."""
+        return [a for a in self.agents if a.is_reference]
 
     @property
     def primary_agent(self) -> AgentConfig:

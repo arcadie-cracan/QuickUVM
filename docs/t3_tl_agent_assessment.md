@@ -1,5 +1,14 @@
 # T3 — OpenTitan `tl_agent` — assessment
 
+> **STATUS: CLOSED (F2' built).** The gap this document scoped is now built and mutation-proved on
+> Xcelium: `kind: vip` emits a standalone, versioned VIP + a `.qvip` manifest; a second bench
+> consumes an agent from it BY REFERENCE (`agent_refs:`) — wired into the env, source never
+> regenerated, filelist chained with `-F`; and `kind: selftest` exercises the VIP with no DUT.
+> Two generated benches genuinely share one generated VIP (M1/M2), and the self-test actually
+> tests (M3). See §7. Examples: `examples/f2_iovip` (VIP), `examples/f2_con` (by-reference
+> consumer), `examples/f2_selftest` (DUT-less self-test). The finding below is preserved as the
+> record of the gap and the design that closed it.
+
 **The question, exactly as the campaign framed it:** *can QuickUVM emit a standalone, versioned,
 bench-independent VIP that a **second** generated bench consumes **by reference** rather than by
 regeneration?* This is the cheapest experiment that settles whether F2 (`layout: packaged`) is
@@ -127,3 +136,70 @@ them as the finding is exactly what the caution warns against.
   serves both.
 - No `tl_agent` RTL/DV was vendored (unlike T1/T2): this target is agent-to-agent, and the question
   is about QuickUVM's *ownership model*, which is answered without reproducing the protocol.
+
+---
+
+## 7. Resolution — F2' built (Stage 1 + Stage 2), mutation-proved
+
+The §4 feature is built. It decouples env-wiring from generation, exactly as §4 named the root cause.
+
+**Schema (opt-in, byte-identical when unused):** `project.version`; a `kind: bench | vip | selftest`
+enum; `agent_refs: [{name, manifest}]`; an `is_reference` flag on the reconstructed agent. A VIP /
+self-test needs no DUT — a before-validator synthesizes a nameplate `dut` (name = project) so the
+~40 downstream `dut.*` reads are untouched; no DUT module is emitted.
+
+**Stage 1 — generate-once / consume-by-reference [C]:**
+
+- `kind: vip` emits ONLY the reusable agent package(s) + a `.qvip` manifest (identity, version,
+  package, interface, sequence_item, and the full agent config so a consumer can reconstruct it) —
+  no DUT, env, scoreboard, test or top. It **compiles standalone on Xcelium** (`xrun -uvm -compile
+  -F io_pkg.f`, 0 errors).
+- A bench declaring `agent_refs:` has the loader resolve the manifest, reconstruct the agent with
+  `is_reference=True`, and append it to `agents` — so the env imports `io_pkg` and instantiates
+  `io_agent` **for free** (the env wiring is class-name-based), while the generator's three
+  per-agent source loops iterate `generated_agents` and **skip it**. Its filelist is chained with
+  Cadence **`-F`** (not `-f`), at a path relative to the consumer's gen dir — the §2 gotcha, emitted
+  correctly. Two consumers **elaborate against the one shared VIP**.
+
+**The M1/M2 mutations, re-run on GENERATED output [C]** (`examples/f2_con` + a second consumer):
+
+    baseline:            con_a ELABORATED   con_b ELABORATED   (both share one VIP)
+    edit io_pkg.sv once:  con_a FAILED       con_b FAILED       (they compile the shared source)
+    restore:             con_a ELABORATED   con_b ELABORATED
+    delete io_pkg.sv:    con_a FAILED       con_b FAILED       (they depend on the one artefact)
+    restore:             con_a ELABORATED   con_b ELABORATED
+
+This is precisely what §1-2 said was missing: **the generator now emits the consumers.** Flips gap
+rows a, b, d.
+
+**Stage 2 — VIP self-test bench [C]** (`examples/f2_selftest`): `kind: selftest` emits a loopback
+top (no DUT, no stub) that instantiates the VIP interface and wires a loopback seam; the referenced
+io agent drives `din`, the loopback returns it on `dout`, and the scoreboard checks it — **101/101
+on Xcelium, DUT-less, against the shared VIP**. Flips gap row c. **The PASS bar is met.**
+
+**M3 — the self-test actually tests [C]:** corrupt the loopback (`dout = ~din`) → **TEST FAILED,
+102 UVM_ERRORs**; restore → PASSED. A DUT-less self-test that passed while checking nothing is the
+dead-responder trap this project has repeatedly hit; M3 shows this one has teeth.
+
+**Still deferred (unchanged):** the adapter-inside-VIP (row e, a separate ownership axis) and semver
+*resolution/conflict*. The pipelined responder that §3/§6 deferred to T5 is **independently done**
+(`respond: pipelined`, see the T6 assessment).
+
+**Gate:** 39/39 byte-identity (the three F2' examples regenerate to themselves; the test copies a
+referenced VIP into the sandbox so cross-example refs resolve), 13 new unit tests, verible-clean,
+ruff/mypy clean.
+
+**Honest limits of the built feature** (from the adversarial review; each non-blocking, the happy
+path is proven):
+
+- **A referenced parameterized VIP is single-width.** The manifest carries the agent's parameters,
+  but `AgentRef` is `{name, manifest}` only — a consumer gets the VIP at its *default* width and
+  cannot request `#(16)`. (C3 `instances` is also layout-exclusive with packaged, so a referenced
+  VIP can't be multi-instantiated at different widths either.)
+- **No aliasing.** An agent VIP cannot be referenced twice in one consumer (name-uniqueness rejects
+  it, and `AgentRef` has no `as:`/rename) — unlike H1 subenv reuse, which auto-namespaces.
+- **Untested-but-working topologies** (verified to generate + elaborate in review, not pinned by a
+  shipped example): a multi-agent VIP, a responder/`inouts` VIP. The mainline *consumer-with-its-own-
+  agents-plus-a-ref* case IS pinned (`test_consumer_with_own_agent_and_a_ref`).
+- **`agent_refs` require `from_yaml`** (they resolve a manifest relative to the config file); a bare
+  `model_validate` now fails loudly rather than silently dropping them.

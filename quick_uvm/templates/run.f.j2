@@ -6,7 +6,9 @@
 {% endif %}
 +incdir+..
 clkgen.sv
+{% if not is_selftest %}
 {{ dut.name }}.sv
+{% endif %}
 {% if probes %}
 {{ dut.name }}_probe_if.sv
 {% endif %}

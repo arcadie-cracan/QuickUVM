@@ -1,0 +1,14 @@
+# F2' — a bench that CONSUMES the `io` agent from examples/f2_iovip BY REFERENCE. The
+# agent is wired into the env and chained via `-F`, but its source is NOT regenerated
+# here (no io_*.svh / io_pkg.sv in this gen/). Edit the ONE shared VIP and this bench
+# sees it; delete it and this bench fails to elaborate. See README.md.
+project: {name: f2_con, author: QuickUVM}
+layout: packaged
+dut: {name: f2_con, clock: clk, reset: '', combinational: true}
+clock: {period: 10, unit: ns}
+agent_refs:
+  - {name: io, manifest: ../f2_iovip/gen/f2_iovip.qvip}
+analysis:
+  coverage: [io]
+  scoreboards: [{name: sb, source: io}]
+tests: [{name: rand_test, num_items: 10}]

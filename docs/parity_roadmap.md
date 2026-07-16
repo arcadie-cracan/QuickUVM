@@ -386,18 +386,25 @@ field-derived coverage, multi-agent coordination, and a bring-your-own golden mo
 
 ## Priority tier 2 — reuse / architecture
 
-### VIP ownership (F2') — SCOPED, not built  *(T3 finding)*
-F2 `layout: packaged` produces a genuinely standalone, separately-compilable `<agent>_pkg` — but
-there is **no ownership model**: no `version`, and no way for a second generated bench to consume it
-**by reference** (a bench with `agents: []` is rejected; declaring an agent regenerates it → two
-byte-identical copies, not one shared VIP). So F2 is a reusable *artefact*, not reuse.
+### VIP ownership (F2') — DONE  *(T3 finding, now built)*
+F2 `layout: packaged` produced a standalone `<agent>_pkg` but no OWNERSHIP model — no version, and
+no way for a second generated bench to consume it by reference (declaring an agent regenerated it →
+two byte-identical copies). F2' adds the ownership model:
 
-**Settled by construction** ([`t3_tl_agent_assessment.md`](t3_tl_agent_assessment.md), Stage-0 probe):
-two hand-written benches DO share one generated VIP by reference (edit-once → both see it; delete-it
-→ both die), so the seam is achievable — the gap is only that the generator won't emit the consumers.
-The ~5–7 day slice (`project.version`, a `vip:` generation kind, `AgentRef`, a `.qvip` manifest, a
-self-test bench, `-F` filelist chaining) is scoped in the assessment. The pipelined-responder half
-rides on T5. Deliberately deferred; the finding is banked.
+- **`kind: vip`** emits ONLY the reusable agent package(s) + a `.qvip` manifest (identity, version,
+  package, types, filelist) — no DUT/env/test. Compiles standalone on Xcelium.
+- **`agent_refs: [{name, manifest}]`** consumes an agent BY REFERENCE: the loader reconstructs it
+  from the manifest, marks it `is_reference`, and appends it to `agents` so the env wires it for
+  free, while the generator's per-agent source loops (`generated_agents`) skip it and its filelist
+  is chained with Cadence `-F`. `project.version` stamps the VIP's identity.
+- **`kind: selftest`** exercises the VIP with NO DUT (a loopback top).
+
+Mutation-proved on `examples/f2_iovip` + `f2_con` + `f2_selftest`: two generated benches share one
+generated VIP (edit io_pkg once → both fail; delete → both die; M1/M2), and the DUT-less self-test
+goes red when the loopback is corrupted (M3). Flips PASS-bar rows a/b/c/d. See
+[`t3_tl_agent_assessment.md`](t3_tl_agent_assessment.md) §7. The pipelined-responder half is
+independently done (`respond: pipelined`, T6). *Still deferred:* adapter-inside-VIP (row e) and
+semver resolution/conflict.
 
 ### F2 — VIP package restructuring — DONE
 `layout: flat | packaged`. `packaged`: standalone `<agent>_pkg`, `<env>_pkg`, thin bench,
