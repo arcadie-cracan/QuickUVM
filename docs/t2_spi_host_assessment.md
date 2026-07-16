@@ -235,6 +235,15 @@ draft rigged it by re-labelling reasoning's hits as "design" and counting only i
   `register_model.frontdoor:` knob for exactly this) — the same conclusion the real `spi/quickuvm_tb`
   RAL integration reached. Not built to green here; the finding is that RAL *integrates* but this bus
   *shape* requires the frontdoor escape hatch, not that RAL is absent.
+  * **RESOLVED — and the conclusion was too specific** (`examples/ahb_regs`, built on a registered-read
+    AHB-Lite bus). Running it shows the real requirement is **two-phase bus TIMING**, not a
+    `uvm_reg_frontdoor` per se: a naive single-cycle capture reproduces the exact stale-read
+    (every register reads the *previous* one's value, 4 UVM_ERRORs), and a **two-phase DRIVER seam**
+    (drive the address phase, `HTRANS=IDLE`, advance to the data phase, capture the now-valid `HRDATA`)
+    closes it with the **generic adapter** — all three CSR tests green, mutation-proved. So a custom
+    frontdoor is *not* needed for an in-order pipelined bus; the `register_model.frontdoor:` knob is for
+    genuinely *decoupled* request/response channels (TL-UL's a/d), which AHB is not. (spi_host's extra
+    `Response queue overflow` was its serial full-duplex responder, a separate axis.)
   * **The `csr_excl` wall is real and identified [C]:** `COMMAND` (a write launches a transfer),
     `RXDATA` (destructive read), `TXDATA` (write-only) and `STATUS` (hw-driven) each need
     `NO_REG_BIT_BASH_TEST`; `CONTROL.SW_RST` resets the core mid-walk. `CSID` is the *safe* one — a
