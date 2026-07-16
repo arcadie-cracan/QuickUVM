@@ -758,6 +758,14 @@ class AgentConfig(BaseModel):
     # and only for, `respond: pipelined`.
     reorder_by: str | None = None
 
+    # PIPELINED responder only. The CROSS-ID arbitration when more than one id has a
+    # request waiting (same-ID is always arrival order). `priority` = lowest ready id
+    # first (deterministic, the default — can starve a high id under sustained load);
+    # `round_robin` = the next ready id after the one served last, wrapping (fair, no
+    # starvation); `random` = any ready id (matches PULP's axi_rand_slave). Same-ID FIFO
+    # order and the no-strand guarantee hold under every policy.
+    reorder_policy: Literal["priority", "round_robin", "random"] = "priority"
+
     @property
     def is_responder(self) -> bool:
         return self.mode == "responder"
@@ -1000,6 +1008,11 @@ class AgentConfig(BaseModel):
                     f"agent '{self.name}': `reorder_by` is only valid with "
                     f"`mode: responder` + `respond: pipelined`."
                 )
+            if self.reorder_policy != "priority":
+                raise ValueError(
+                    f"agent '{self.name}': `reorder_policy` is only valid with "
+                    f"`mode: responder` + `respond: pipelined`."
+                )
             return self
 
         if not self.active:
@@ -1073,9 +1086,24 @@ class AgentConfig(BaseModel):
                     f"qualifier '{self.request_valid}' — it must be the ID field that "
                     f"distinguishes outstanding requests, not the valid strobe."
                 )
+            # The generated pick keys buckets with `id_q[int'(<id>)]` and (round_robin)
+            # seeds the cursor at -1. A field >= 32 bits could cast to a negative int
+            # and alias that sentinel / a real id, so cap the width — a transaction-id
+            # space that large is not a real design anyway.
+            if rb.bit_width > 31:
+                raise ValueError(
+                    f"agent '{self.name}': reorder_by='{self.reorder_by}' is "
+                    f"{rb.bit_width} bits — too wide for the per-ID pick (keep it "
+                    f"<= 31; an id space that large is not a real transaction id)."
+                )
         elif self.reorder_by is not None:
             raise ValueError(
                 f"agent '{self.name}': `reorder_by` is only valid with "
+                f"`respond: pipelined` (got respond='{self.respond}')."
+            )
+        if not self.is_pipelined and self.reorder_policy != "priority":
+            raise ValueError(
+                f"agent '{self.name}': `reorder_policy` is only valid with "
                 f"`respond: pipelined` (got respond='{self.respond}')."
             )
         return self

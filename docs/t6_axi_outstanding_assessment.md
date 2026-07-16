@@ -137,9 +137,10 @@ every existing bench:
   per-ID queues (`id_q[int][$]`), and a DRIVE thread that answers the backlog **without blocking on
   a new request**. This is exactly `axi_rand_slave`'s accept/serve split, and it is the loop the
   `on_request` shape could not write in a seam.
-- Same-ID responses in arrival order (`pop_front`); cross-ID reordered by a deterministic
-  lowest-ready-id-first policy (one line to change). The `response_logic` seam is unchanged from
-  `on_request`, so flipping shapes preserves the user's fill.
+- Same-ID responses in arrival order (`pop_front`); cross-ID reordered by `reorder_policy:`
+  (`priority` = lowest-ready-id-first, the default; `round_robin` = fair rotation; `random` =
+  `axi_rand_slave`-style — built and mutation-proved in `examples/axi_reorder/`). The
+  `response_logic` seam is unchanged from `on_request`, so flipping shapes preserves the fill.
 - A new liveness guard, `STRANDED_REQUESTS`, on the sequencer: it fails if `accepted != answered`.
   `DEAD_RESPONDER` catches "answered nothing"; it is **blind to a strand** — the §1 failure, where
   the responder answers *some* of a burst. This check makes that failure impossible to ship silent.
