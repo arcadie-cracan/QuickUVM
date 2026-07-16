@@ -1,0 +1,21 @@
+# F2' — a reusable, versioned agent VIP. `kind: vip` emits ONLY the agent package(s) +
+# a .qvip manifest (no DUT, env, test or top). A bench consumes the `io` agent by
+# reference (see examples/f2_con/) instead of regenerating it, and the VIP self-tests
+# with no DUT (see examples/f2_selftest/). Bump `project.version` to re-identify it.
+project:
+  name: f2_iovip
+  author: QuickUVM
+  version: 1.0.0
+
+kind: vip
+layout: packaged
+
+agents:
+  - name: io
+    interface: io_if
+    sequence_item: io_seq_item
+    seq_item_style: manual
+    active: true
+    ports:
+      inputs:  [{name: din,  width: 8}]
+      outputs: [{name: dout, width: 8}]

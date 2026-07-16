@@ -2,7 +2,14 @@
 // Paths are relative to this gen/ directory.
 +incdir+.
 {% for agent in agents %}
+{% if agent.is_reference %}
+// F2' — agent '{{ agent.name }}' is consumed BY REFERENCE from an external VIP. Its
+// package is NOT regenerated here; chain the VIP's own filelist with -F (paths resolve
+// relative to that file's directory).
+-F {{ agent_ref_filelists[agent.name] }}
+{% else %}
 -f {{ agent.name }}_pkg.f
+{% endif %}
 {% endfor %}
 {% if register_model %}
 // The env imports {{ register_model.package }} (external, e.g. reggen) — list its

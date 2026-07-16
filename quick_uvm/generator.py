@@ -4,15 +4,17 @@ Generator — orchestrates Jinja2 rendering and output file management.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from .merger import MergeError, merge
-from .models import InstanceView, ProjectConfig, ScoreboardSpec, TestConfig
+from .models import AgentConfig, InstanceView, ProjectConfig, ScoreboardSpec, TestConfig
 
 # ---------------------------------------------------------------------------
 # Jinja2 environment
@@ -76,6 +78,10 @@ class Generator:
     def __init__(self, config: ProjectConfig) -> None:
         self.config = config
         self._env = _make_jinja_env()
+        # F2' — output dir (set by generate_all) so a referenced VIP's filelist is
+        # emitted RELATIVE to it (Cadence -F). None for list/status/dry-run without
+        # an -o → the absolute path from the manifest is used as-is.
+        self._output_dir: Path | None = None
 
     # ------------------------------------------------------------------
     # Build the ordered list of files to generate
@@ -252,6 +258,18 @@ class Generator:
         sb_multi = cfg.analysis is not None and len(cfg.analysis.scoreboards) >= 2
         base_ctx["sb_multi"] = sb_multi
         base_ctx["sb_prefix"] = cfg.dut.name
+        # F2' — each referenced VIP's package filelist, RELATIVE to the output dir
+        # (where the consumer's filelists live, so Cadence `-F` resolves it). Absolute
+        # fallback when no output dir is known. Empty for an ordinary bench.
+        base_ctx["agent_ref_filelists"] = {
+            a.name: (
+                os.path.relpath(a.ref_filelist, self._output_dir)
+                if self._output_dir and a.ref_filelist
+                else a.ref_filelist
+            )
+            for a in cfg.referenced_agents
+        }
+        base_ctx["is_selftest"] = cfg.is_selftest
 
         # DUT stub — ALL agents' ports deduped by name (first occurrence wins), so the
         # <dut>.sv placeholder is complete for a multi-agent bench (not just agents[0]);
@@ -270,6 +288,10 @@ class Generator:
         base_ctx["dut_ports_inout"] = [p for k, p in _dut_ports if k == "inout"]
         base_ctx["dut_stub_reset"] = bool(cfg.dut.reset) and cfg.dut.reset not in _seen
 
+        # F2' — a VIP-only generation: just the reusable agent package(s) + a manifest.
+        if cfg.is_vip:
+            return self._vip_files(base_ctx)
+
         specs: list[FileSpec] = []
 
         # ---- global files ------------------------------------------------
@@ -277,46 +299,13 @@ class Generator:
         # so a child emits only its reusable env layer (no clkgen / DUT stub).
         if not subenv:
             specs.append(FileSpec("clkgen.sv.j2", "clkgen.sv", base_ctx))
-            specs.append(FileSpec("dut.sv.j2", f"{cfg.dut.name}.sv", base_ctx))
+            # F2' — a self-test has no DUT; the top wires a loopback instead of a stub.
+            if not cfg.is_selftest:
+                specs.append(FileSpec("dut.sv.j2", f"{cfg.dut.name}.sv", base_ctx))
 
         # ---- per-agent files (interface + TB components) -----------------
-        for agent in cfg.agents:
-            ctx = {
-                **base_ctx,
-                "agent": agent,
-                "coverage_model": cfg.coverage_model_for(agent.name),
-                # M1 — this agent's resolved clock domain + external reset (None if
-                # none). For a single-domain bench these equal the global clock / the
-                # dut reset, so the agent templates render byte-identical.
-                "agent_clock": cfg.agent_clock(agent),
-                "agent_reset": cfg.agent_reset(agent),
-                # M1 multi agent-driven reset — this agent's own reset port + polarity
-                # (None on the external/combinational path). Falls back to dut.reset →
-                # byte-identical for a single-reset agent-driven bench.
-                "agent_driven_reset": cfg.agent_driven_reset(agent),
-                # M1 mixed-unit — this agent's exact clocking-block drive skew (a delay
-                # in the -timescale unit). Unchanged for a single-unit bench.
-                "agent_clock_skew": _skew_literal(
-                    cfg.agent_clock(agent).drive_offset_pct,
-                    cfg.clock_period_ts(cfg.agent_clock(agent)),
-                ),
-            }
-            specs.append(FileSpec("agent_if.sv.j2", f"{agent.interface}.sv", ctx))
-            specs.append(
-                FileSpec("agent_trans.svh.j2", f"{agent.sequence_item}.svh", ctx)
-            )
-            specs.append(FileSpec("agent_config.svh.j2", f"{agent.name}_cfg.svh", ctx))
-            specs.append(
-                FileSpec("agent_sequencer.svh.j2", f"{agent.name}_sequencer.svh", ctx)
-            )
-            specs.append(
-                FileSpec("agent_driver.svh.j2", f"{agent.name}_driver.svh", ctx)
-            )
-            specs.append(
-                FileSpec("agent_monitor.svh.j2", f"{agent.name}_monitor.svh", ctx)
-            )
-            specs.append(FileSpec("agent_agent.svh.j2", f"{agent.name}_agent.svh", ctx))
-            specs.append(FileSpec("agent_cover.svh.j2", f"{agent.name}_cov.svh", ctx))
+        for agent in cfg.generated_agents:
+            specs.extend(self._agent_source_specs(agent, base_ctx))
 
         # ---- scoreboard(s) (prefixed by the DUT/block name) --------------
         dut = cfg.dut.name
@@ -348,41 +337,8 @@ class Generator:
         specs.append(FileSpec("env.svh.j2", f"{dut}_env.svh", base_ctx))
 
         # ---- per-agent sequences -----------------------------------------
-        for agent in cfg.agents:
-            # Use the first test's num_items as default sequence length;
-            # per-test specialisation happens in the test .svh files.
-            first_test = cfg.tests[0] if cfg.tests else TestConfig(name="test1")
-            adr = cfg.agent_driven_reset(agent)
-            ctx = {
-                **base_ctx,
-                "agent": agent,
-                "test": first_test,
-                "agent_driven_reset": adr,
-            }
-            specs.append(
-                FileSpec("agent_sequence.svh.j2", f"{agent.default_seq_name}.svh", ctx)
-            )
-            # Reactive agent — the forever responder sequence. Opt-in: an initiator
-            # emits nothing (byte-identical).
-            if agent.has_responder_seq:
-                specs.append(
-                    FileSpec(
-                        "agent_responder_seq.svh.j2",
-                        f"{agent.responder_seq_name}.svh",
-                        ctx,
-                    )
-                )
-            # S2 — the per-agent sequence library (one class per declared sequence)
-            for seq in agent.sequences:
-                seq_ctx = {
-                    **base_ctx,
-                    "agent": agent,
-                    "sequence": seq,
-                    "agent_driven_reset": adr,
-                }
-                specs.append(
-                    FileSpec("agent_seq_lib.svh.j2", f"{seq.name}.svh", seq_ctx)
-                )
+        for agent in cfg.generated_agents:
+            specs.extend(self._agent_seq_specs(agent, base_ctx))
 
         # ---- C2: virtual sequencer + virtual sequences -------------------
         # `effective_virtual_sequences` = the explicit ones, or an auto-default
@@ -483,18 +439,19 @@ class Generator:
             # Composed child: emit only the reusable env layer — the agent VIP
             # package(s) + the env package. No top/test package, no tb_top, no
             # run.f (the top bench supplies those and composes this env_pkg).
-            for agent in cfg.agents:
+            for agent in cfg.generated_agents:
                 actx = {**base_ctx, "agent": agent}
                 specs.append(FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx))
                 specs.append(FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx))
             specs.append(FileSpec("env_pkg.sv.j2", f"{dut}_env_pkg.sv", base_ctx))
             specs.append(FileSpec("env_pkg.f.j2", f"{dut}_env_pkg.f", base_ctx))
             return specs
-        specs.append(FileSpec("top.sv.j2", f"{cfg.top_name}.sv", base_ctx))
+        top_template = "selftest_top.sv.j2" if cfg.is_selftest else "top.sv.j2"
+        specs.append(FileSpec(top_template, f"{cfg.top_name}.sv", base_ctx))
         if cfg.layout == "packaged":
             # F2: a standalone <agent>_pkg per agent + a <dut>_env_pkg + a
             # <dut>_test_pkg, each with its own .f filelist.
-            for agent in cfg.agents:
+            for agent in cfg.generated_agents:
                 actx = {**base_ctx, "agent": agent}
                 specs.append(FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx))
                 specs.append(FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx))
@@ -510,6 +467,117 @@ class Generator:
         if cfg.regress is not None:
             specs.append(FileSpec("Makefile.j2", "Makefile", base_ctx))
 
+        return specs
+
+    def _agent_source_specs(self, agent: AgentConfig, base_ctx: dict) -> list[FileSpec]:
+        """The interface + TB-component source of ONE agent (the reusable VIP body).
+        Shared by the ordinary bench path and the F2' VIP-only path, so an agent's files
+        are byte-identical however it is generated."""
+        cfg = self.config
+        ctx = {
+            **base_ctx,
+            "agent": agent,
+            "coverage_model": cfg.coverage_model_for(agent.name),
+            # M1 — this agent's resolved clock domain + external reset (None if none).
+            # For a single-domain bench these equal the global clock / the dut reset, so
+            # the agent templates render byte-identical.
+            "agent_clock": cfg.agent_clock(agent),
+            "agent_reset": cfg.agent_reset(agent),
+            # M1 multi agent-driven reset — this agent's own reset port + polarity (None
+            # on the external/combinational path). Falls back to dut.reset.
+            "agent_driven_reset": cfg.agent_driven_reset(agent),
+            # M1 mixed-unit — this agent's exact clocking-block drive skew.
+            "agent_clock_skew": _skew_literal(
+                cfg.agent_clock(agent).drive_offset_pct,
+                cfg.clock_period_ts(cfg.agent_clock(agent)),
+            ),
+        }
+        return [
+            FileSpec("agent_if.sv.j2", f"{agent.interface}.sv", ctx),
+            FileSpec("agent_trans.svh.j2", f"{agent.sequence_item}.svh", ctx),
+            FileSpec("agent_config.svh.j2", f"{agent.name}_cfg.svh", ctx),
+            FileSpec("agent_sequencer.svh.j2", f"{agent.name}_sequencer.svh", ctx),
+            FileSpec("agent_driver.svh.j2", f"{agent.name}_driver.svh", ctx),
+            FileSpec("agent_monitor.svh.j2", f"{agent.name}_monitor.svh", ctx),
+            FileSpec("agent_agent.svh.j2", f"{agent.name}_agent.svh", ctx),
+            FileSpec("agent_cover.svh.j2", f"{agent.name}_cov.svh", ctx),
+        ]
+
+    def _agent_seq_specs(self, agent: AgentConfig, base_ctx: dict) -> list[FileSpec]:
+        """The default + responder + library sequences of ONE agent (part of its VIP
+        package). Shared by the bench and VIP-only paths."""
+        cfg = self.config
+        first_test = cfg.tests[0] if cfg.tests else TestConfig(name="test1")
+        adr = cfg.agent_driven_reset(agent)
+        ctx = {
+            **base_ctx,
+            "agent": agent,
+            "test": first_test,
+            "agent_driven_reset": adr,
+        }
+        out = [FileSpec("agent_sequence.svh.j2", f"{agent.default_seq_name}.svh", ctx)]
+        # Reactive agent — the forever responder sequence (opt-in; byte-identical when
+        # an initiator).
+        if agent.has_responder_seq:
+            out.append(
+                FileSpec(
+                    "agent_responder_seq.svh.j2",
+                    f"{agent.responder_seq_name}.svh",
+                    ctx,
+                )
+            )
+        # S2 — the per-agent sequence library (one class per declared sequence).
+        for seq in agent.sequences:
+            seq_ctx = {
+                **base_ctx,
+                "agent": agent,
+                "sequence": seq,
+                "agent_driven_reset": adr,
+            }
+            out.append(FileSpec("agent_seq_lib.svh.j2", f"{seq.name}.svh", seq_ctx))
+        return out
+
+    def _vip_files(self, base_ctx: dict) -> list[FileSpec]:
+        """F2' — a VIP-only generation: the reusable agent package(s) + a `.qvip`
+        manifest, with NO DUT stub, env, scoreboard, test or top. Each agent yields its
+        interface + component sources, its sequences, and an `<agent>_pkg` (+ `.f`); one
+        shared `<project>.qvip` records their identity + version + filelists so a
+        by-reference consumer can wire them in without regenerating them."""
+        cfg = self.config
+        specs: list[FileSpec] = []
+        for agent in cfg.generated_agents:
+            specs.extend(self._agent_source_specs(agent, base_ctx))
+            specs.extend(self._agent_seq_specs(agent, base_ctx))
+            actx = {**base_ctx, "agent": agent}
+            specs.append(FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx))
+            specs.append(FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx))
+        # The manifest records the VIP's identity + version + each agent's package,
+        # filelist and full config (so a by-reference consumer can reconstruct the agent
+        # without seeing the source). yaml.safe_dump here, emitted verbatim by the
+        # template; the config round-trips through AgentConfig on the consumer side.
+        manifest = {
+            "qvip_version": 1,
+            "project": cfg.project.name,
+            "version": cfg.project.version,
+            "uvm_version": cfg.project.uvm_version,
+            "agents": {
+                a.name: {
+                    "package": f"{a.name}_pkg",
+                    "filelist": f"{a.name}_pkg.f",
+                    "interface": a.interface,
+                    "sequence_item": a.sequence_item,
+                    "config": a.model_dump(
+                        mode="json", exclude_defaults=True, exclude_none=True
+                    ),
+                }
+                for a in cfg.generated_agents
+            },
+        }
+        mctx = {
+            **base_ctx,
+            "manifest_yaml": yaml.safe_dump(manifest, sort_keys=False).rstrip(),
+        }
+        specs.append(FileSpec("vip_manifest.qvip.j2", f"{cfg.project.name}.qvip", mctx))
         return specs
 
     @staticmethod
@@ -790,6 +858,7 @@ class Generator:
         merge would be unsafe (caller decides how to surface it).
         """
         results: list[tuple[str, str]] = []
+        self._output_dir = Path(output_dir)
         for spec in self.files_to_generate():
             if only and spec.output != only:
                 continue

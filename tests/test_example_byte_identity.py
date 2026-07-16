@@ -19,6 +19,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 from quick_uvm.generator import Generator
 from quick_uvm.models import ProjectConfig
@@ -50,9 +51,18 @@ def test_committed_example_regenerates_byte_identical(example: Path, tmp_path: P
     # preserves hand-edited pragmas). The heavy sim/ artifacts aren't read by
     # generation, so skip them for speed.
     sandbox = tmp_path / name
-    shutil.copytree(
-        example, sandbox, ignore=shutil.ignore_patterns("sim", "*.bak.*", "__pycache__")
-    )
+    _ignore = shutil.ignore_patterns("sim", "*.bak.*", "__pycache__")
+    shutil.copytree(example, sandbox, ignore=_ignore)
+
+    # F2' — a consumer's `agent_refs` point at a VIP manifest in a SIBLING example
+    # (e.g. ../f2_iovip/gen/f2_iovip.qvip). Copy each referenced example dir alongside
+    # the sandbox so from_yaml resolves the manifest at the same relative path.
+    raw = yaml.safe_load(cfg_file.read_text()) or {}
+    for ref in raw.get("agent_refs") or []:
+        ref_example = (example / ref["manifest"]).resolve().parent.parent
+        dest = sandbox.parent / ref_example.name
+        if ref_example.is_dir() and not dest.exists():
+            shutil.copytree(ref_example, dest, ignore=_ignore)
 
     cfg = ProjectConfig.from_yaml(sandbox / f"{name}.yaml")
     results = Generator(cfg).generate_all(sandbox / "gen", backup=False)

@@ -237,6 +237,7 @@ def list_cmd(config: str, output: str | None) -> None:
     cfg = _load_config(config)
     out_dir = Path(output) if output else Path("tb")
     gen = Generator(cfg)
+    gen._output_dir = out_dir  # F2': relative -F path for referenced VIP filelists
     specs = gen.files_to_generate()
 
     click.echo(f"{'Template':<40}  {'Output file':<35}  Exists")
@@ -334,6 +335,7 @@ def status(config: str, output: str | None) -> None:
     cfg = _load_config(config)
     out_dir = Path(output) if output else Path("tb")
     gen = Generator(cfg)
+    gen._output_dir = out_dir  # F2': relative -F path for referenced VIP filelists
 
     any_findings = False
     for spec in gen.files_to_generate():
