@@ -1,0 +1,53 @@
+# ahb_regs — RAL over an AHB-Lite bus with a REGISTERED read (the data phase is one cycle
+# after the address phase). Tests the registered-read frontdoor gap the campaign found on
+# spi_host (T2 §7): a naive single-phase adapter reads STALE data; a two-phase access fixes
+# it. `register_model:` wires the hand-written RAL (ral/ahb_regs_ral_pkg.sv).
+project:
+  name: ahb_regs
+  author: QuickUVM
+
+dut:
+  name: ahb_regs
+  clock: HCLK
+  reset: HRESETn
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: ahb
+    interface: ahb_if
+    sequence_item: ahb_seq_item
+    seq_item_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: HADDR,  width: 12}
+        - {name: HWRITE, width: 1}
+        - {name: HTRANS, width: 2}
+        - {name: HWDATA, width: 32}
+      outputs:
+        - {name: HRDATA, width: 32}
+        - {name: HREADY, width: 1}
+        - {name: HRESP,  width: 1}
+
+analysis:
+  coverage: []
+  scoreboards: []   # a pure RAL/CSR bench: the reg model does the checking
+
+tests:
+  - {name: rand_test, num_items: 10}
+
+register_model:
+  package: ahb_regs_ral_pkg
+  block: ahb_regs_reg_block
+  bus_agent: ahb
+  adapter: reg_adapter
+  backdoor_root: tb_top.dut_inst
+  csr_tests: [hw_reset, bit_bash, rw]
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f

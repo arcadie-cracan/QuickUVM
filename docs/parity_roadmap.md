@@ -939,6 +939,15 @@ cip block inherits it for free from `csr_utils`).
 **Accept:** a register block generates a `csr_rw`/`bit_bash`/`hw_reset` test that runs
 against the RAL and passes.
 
+**Registered-read bus — RESOLVED** *(the T2 spi_host frontdoor gap, closed on `examples/ahb_regs`)*.
+A pipelined bus returns read data one cycle after the address; T2 concluded this "needs a custom
+`uvm_reg_frontdoor`". Running it on a registered-read AHB-Lite bus refines that: the real requirement
+is **two-phase bus timing in the driver seam** (drive the address phase, `HTRANS=IDLE`, advance to the
+data phase, capture `HRDATA`), after which the **generic adapter** works — all three CSR tests green,
+mutation-proved (a naive single-cycle capture reads every register's *previous* value, 4 UVM_ERRORs).
+A custom frontdoor is only needed for *decoupled* request/response channels (TL-UL), not an in-order
+pipelined bus. See [`t2_spi_host_assessment.md`](t2_spi_host_assessment.md) §7.
+
 **Status — landed:**
 - `register_model.csr_tests: [hw_reset, bit_bash, rw, mem_walk, shared]` → one
   `<dut>_csr_<kind>_test` per kind, each running the matching UVM built-in register
