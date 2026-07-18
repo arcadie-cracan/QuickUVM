@@ -2,20 +2,23 @@
 
 **Can QuickUVM's predictor seam express a WINDOWED statistic — N raw samples accumulate and
 ONE pass/fail verdict emerges per window (an N:1 statistic), not one-verdict-per-sample?**
-Yes — proven here, with a specific shape. This models OpenTitan `entropy_src`'s **Adaptive
-Proportion** health test: over a window of `WINDOW` symbols, count the 1-bits; the window
-**fails** if the count is `> HI` or `< LO` (strict, like the RTL). A second, cross-window level
-sits on top: **consecutive failing windows** accumulate and, at `ALERTN`, latch an **alert** — a
-passing window resets the run (OpenTitan's `ALERT_SUMMARY_FAIL_COUNTS` / `ALERT_THRESHOLD`).
+Yes — and it is now a first-class QuickUVM feature, the **`window:` scoreboard** (this bench is its
+proof and its example). It models OpenTitan `entropy_src`'s **Adaptive Proportion** health test:
+over a window of symbols, count the 1-bits; the window **fails** if the count is `> HI` or `< LO`
+(strict, like the RTL). A second, cross-window level sits on top: **consecutive failing windows**
+accumulate and, at `ALERTN`, latch an **alert** — a passing window resets the run (OpenTitan's
+`ALERT_SUMMARY_FAIL_COUNTS` / `ALERT_THRESHOLD`).
 
-## The finding: single-stream copy-through does it; two-stream cannot
+## The feature: single-stream copy-through does it; two-stream cannot
 
 K0's predictor is `predict(item) → exp` — **one transaction in, one expected out**. A windowed
-test is **N:1**. The resolution is the scoreboard *shape*:
+test is **N:1**. The resolution is the scoreboard *shape*, and it is what the `window:` feature
+encodes:
 
 - A **two-stream** scoreboard (source→predictor, monitor→comparator) is strictly **1:1**: the
   comparator pairs one expected with one actual in order (`expfifo.get` then `outfifo.get`). Feed
-  it N raw samples against 1 verdict per window and the streams **desync**. It cannot express N:1.
+  it N raw samples against 1 verdict per window and the streams **desync**. It cannot express N:1 —
+  the schema rejects `window` with a `monitor`.
 - A **single-stream** scoreboard feeds the *same* monitored transaction to **both** the predictor
   and the comparator's "actual", and `predict()` starts with `extr.copy(t)`. So the predictor can
   **accumulate the window in its own state** and **override the verdict fields only on the boundary
@@ -25,10 +28,15 @@ test is **N:1**. The resolution is the scoreboard *shape*:
 ```yaml
 analysis:
   scoreboards:
-    - {name: sb, source: es}     # single-stream: predict(es_item) -> expected es_item
+    - name: sb
+      source: es
+      window: {boundary: window_done, length: 8}   # the DUT strobe + samples/window
 ```
 
-The statistic is computed **independently** from the accumulated samples (not echoed from the DUT):
+The `window:` block makes QuickUVM generate the sample counter, the boundary keying off
+`window_done`, the copy-through cadence, and the **dual liveness** (below); the reference model's
+`window_accumulate` / `window_verdict` seams hold only the ADAPTP domain logic (~15 lines). The
+statistic is computed **independently** from the accumulated samples (not echoed from the DUT):
 the predictor sums `popcount(sample)` across the window and compares its own `ones_cnt` /
 `test_fail` / `alert` against the DUT's. The window **boundary** is taken from the DUT's own
 `window_done` strobe (which delimits the windows in the emitted stream), but that is **not a guard

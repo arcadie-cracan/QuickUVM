@@ -107,6 +107,9 @@ class Generator:
             "sb_match": sb.match,
             "sb_match_key": sb.match_key,
             "sb_max_latency": sb.max_latency,
+            # Windowed scoreboard (opt-in): the boundary strobe + window length, or None
+            # for the plain predictor (byte-identical when unused).
+            "sb_window": sb.window,
             # M1 — the window is measured on the MONITOR (response) lane, so scale by
             # that agent's clock period (== the sole clock for a single-domain bench)
             # and emit the literal in that lane's time unit.
@@ -138,6 +141,7 @@ class Generator:
             "sb_max_latency": None,
             "sb_max_lat_time": None,
             "sb_clock_unit": cfg.agent_clock(iv.agent).unit,
+            "sb_window": None,  # C3 instances are never windowed
         }
 
     def files_to_generate(self, subenv: bool = False) -> list[FileSpec]:
@@ -258,6 +262,15 @@ class Generator:
         sb_multi = cfg.analysis is not None and len(cfg.analysis.scoreboards) >= 2
         base_ctx["sb_multi"] = sb_multi
         base_ctx["sb_prefix"] = cfg.dut.name
+        # Windowed scoreboard (opt-in): the sole scoreboard's window, if set. Multi-sb
+        # sets it per-set in _sb_set_ctx; here for the single-scoreboard reference model
+        # (sb_sets == [base_ctx]). None => the plain predictor (byte-identical unused).
+        _sole_sb = (
+            cfg.analysis.scoreboards[0]
+            if cfg.analysis is not None and len(cfg.analysis.scoreboards) == 1
+            else None
+        )
+        base_ctx["sb_window"] = _sole_sb.window if _sole_sb is not None else None
         # F2' — each referenced VIP's package filelist, RELATIVE to the output dir
         # (where the consumer's filelists live, so Cadence `-F` resolves it). Absolute
         # fallback when no output dir is known. Empty for an ordinary bench.
@@ -654,6 +667,7 @@ class Generator:
                 "sb_max_latency": None,
                 "sb_max_lat_time": None,
                 "sb_clock_unit": cfg.clock.unit,
+                "sb_window": None,  # cross-block subenv scoreboards are two-stream
             }
             specs.append(FileSpec("sb_predictor.svh.j2", f"{p}_predictor.svh", sbx))
             specs.append(FileSpec("sb_comparator.svh.j2", f"{p}_comparator.svh", sbx))

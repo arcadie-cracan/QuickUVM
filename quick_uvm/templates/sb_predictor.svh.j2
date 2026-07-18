@@ -19,6 +19,29 @@ class {{ sb_prefix }}_predictor extends uvm_subscriber #({{ sb_in_item }});
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
+{% if sb_window %}
+
+  // Windowed scoreboard: samples seen in the current window; the boundary liveness holds
+  // every window to {{ sb_window.length }} of them. Domain state (accumulators, latched
+  // outputs) goes in the class_item_additional seam above.
+  int m_wcount  = 0;
+  int m_windows = 0;   // windows closed over the whole test (0 => nothing was checked)
+  bit m_enabled = 1;   // mirrors the comparator's sb_enable (a RAL/CSR test disables the
+                       // data-path scoreboard, and drives no samples through this agent)
+
+  // A windowed scoreboard that closes ZERO windows checked nothing — its verdict override
+  // never ran, so every compare was a trivial copy-through pass. Fail rather than report a
+  // vacuous "all passed": this catches an unfilled window_verdict seam on a test shorter
+  // than one window (where the boundary fatal never fires), and a boundary strobe that
+  // never asserts. A real windowed test closes at least one window. Skipped when the
+  // scoreboard is disabled (a CSR test that checks via the register model, not samples).
+  function void check_phase(uvm_phase phase);
+    super.check_phase(phase);
+    if (m_enabled && m_windows == 0)
+      `uvm_error("SB_WINDOW",
+                 "no window ever closed — the windowed scoreboard checked nothing")
+  endfunction
+{% endif %}
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -27,6 +50,9 @@ class {{ sb_prefix }}_predictor extends uvm_subscriber #({{ sb_in_item }});
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
     results_ap = new("results_ap", this);
+{% if sb_window %}
+    void'(uvm_config_db#(bit)::get(this, "", "sb_enable", m_enabled));
+{% endif %}
   endfunction
 
   function void write({{ sb_in_item }} t);

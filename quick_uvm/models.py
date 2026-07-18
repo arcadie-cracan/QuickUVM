@@ -1484,6 +1484,35 @@ class TestConfig(BaseModel):
         return self
 
 
+class WindowSpec(BaseModel):
+    """A WINDOWED scoreboard (opt-in). A health-test / statistics block accumulates N
+    raw samples and emits ONE verdict per window (an N:1 statistic), keyed off a DUT
+    boundary strobe. The generated predictor carries the sample counter, the boundary
+    keying, the copy-through cadence, and — crucially — the DUAL window-length liveness:
+    a boundary at the wrong sample count AND a window that never closes both fail, so
+    the strobe the verdict keys off is not a guard trusting itself. The user fills only
+    the domain accumulate + verdict in the window_accumulate / window_verdict seams.
+
+    Single-stream only (predict feeds both the predictor and the comparator's actual, so
+    the boundary override folds the N:1 statistic into the 1:1 cadence); a two-stream
+    scoreboard is strictly 1:1 and would desync N samples against 1 verdict. See
+    examples/es_adaptp and docs/es_adaptp_assessment.md.
+    """
+
+    # A source-agent OUTPUT port: the DUT strobe that closes a window (predict()
+    # overrides the verdict on the cycle this field is set).
+    boundary: str
+    # Samples per window — the length the liveness holds each window to.
+    length: int
+
+    @model_validator(mode="after")
+    def _check(self) -> WindowSpec:
+        _check_sv_identifier(self.boundary, "window boundary signal")
+        if self.length < 1:
+            raise ValueError("scoreboard window length must be >= 1 sample.")
+        return self
+
+
 class ScoreboardSpec(BaseModel):
     name: str = "sbd"
     source: str  # input/stimulus stream agent → predictor
@@ -1502,12 +1531,21 @@ class ScoreboardSpec(BaseModel):
     # arrived later than this; a response that never arrives is caught by
     # SB_LEFTOVER. Out-of-order only (the pool it stamps lives there).
     max_latency: int | None = None
+    # Windowed scoreboard (opt-in, single-stream only). None => the plain predictor
+    # (byte-identical when unused).
+    window: WindowSpec | None = None
 
     @model_validator(mode="after")
     def _check_match(self) -> ScoreboardSpec:
         # The name appears in generated class names (<dut>_<name>_predictor, ...) when
         # there are >=2 scoreboards, so it must be a legal SV identifier.
         _check_sv_identifier(self.name, "scoreboard name")
+        if self.window is not None and self.monitor is not None:
+            raise ValueError(
+                f"scoreboard '{self.name}': window requires a SINGLE-stream scoreboard "
+                f"(omit 'monitor'). A two-stream scoreboard is strictly 1:1 and cannot "
+                f"fold N samples into one per-window verdict."
+            )
         if self.match == "out_of_order":
             if self.monitor is None:
                 raise ValueError(
@@ -3373,6 +3411,37 @@ class ProjectConfig(BaseModel):
                             f"analysis.scoreboards '{s.name}': match_key "
                             f"'{s.match_key}' is {mk.bit_width} bits; the key is a "
                             f"64-bit longint, so the tag must be <= 64 bits."
+                        )
+                # Windowed scoreboard: the boundary strobe must be a 1-bit OUTPUT port
+                # of the source agent (predict() keys the per-window verdict off
+                # `t.<boundary>`), and the reference model is SystemVerilog.
+                if s.window is not None:
+                    src = next(a for a in self.agents if a.name == s.source)
+                    bport = next(
+                        (p for p in src.output_ports if p.name == s.window.boundary),
+                        None,
+                    )
+                    if bport is None:
+                        raise ValueError(
+                            f"analysis.scoreboards '{s.name}': window.boundary "
+                            f"'{s.window.boundary}' is not an output port of source "
+                            f"agent '{s.source}' (it must be the DUT strobe closing "
+                            f"a window)."
+                        )
+                    if (
+                        bport.bit_width != 1
+                        or bport.struct is not None
+                        or bport.packed_dims is not None
+                    ):
+                        raise ValueError(
+                            f"analysis.scoreboards '{s.name}': window.boundary "
+                            f"'{s.window.boundary}' must be a 1-bit scalar strobe."
+                        )
+                    if self.reference_model.language != "sv":
+                        raise ValueError(
+                            f"analysis.scoreboards '{s.name}': a windowed scoreboard "
+                            f"needs a SystemVerilog reference model (the accumulate/"
+                            f"verdict seams are SV); set reference_model.language: sv."
                         )
             # A two-stream scoreboard's predict() is SystemVerilog (DPI-C two-type
             # marshaling is not yet supported). With >=2 scoreboards each gets its

@@ -62,10 +62,14 @@ agents:
 analysis:
   coverage: [es]
   scoreboards:
-    # Single-stream: predict(es_item) -> the expected es_item. The predictor is STATEFUL
-    # (accumulates the window) and overrides the verdict only at the boundary — that is
-    # the whole experiment.
-    - {name: sb, source: es}
+    # WINDOWED single-stream scoreboard. The generator carries the sample counter, the
+    # boundary keying (off window_done), the copy-through cadence, and the dual
+    # window-length liveness; the reference model's window_accumulate / window_verdict
+    # seams hold only the ADAPTP domain logic (count 1s, threshold, consecutive-fail
+    # alert). See docs/es_adaptp_assessment.md.
+    - name: sb
+      source: es
+      window: {boundary: window_done, length: 8}
 
 tests:
   # Random entropy: every window's DUT verdict is checked against the golden model.

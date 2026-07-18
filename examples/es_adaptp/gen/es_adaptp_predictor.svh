@@ -18,22 +18,38 @@ class es_adaptp_predictor extends uvm_subscriber #(es_item);
   uvm_analysis_port #(es_item) results_ap;
 
   // pragma quickuvm custom class_item_additional begin
-  // ---- windowed ADAPTP golden-model state (mirrors rtl/es_adaptp.sv) ----------
-  // THE POINT OF THIS BENCH. K0's predict() is one-item-in / one-item-out, but a
-  // health test is WINDOWED: WINDOW samples accumulate into ONE verdict, and failing
-  // windows accumulate again into an alert. That works ONLY because predict() is a
-  // METHOD ON THIS CLASS, so the window (and the cross-window run) can be reconstructed
-  // from the transaction stream and held here.
-  localparam int SYMW         = 4;
-  localparam int WINDOW       = 8;
-  localparam int LO           = 8;
-  localparam int HI           = 24;
-  localparam int ALERTN       = 2;   // consecutive failing windows that latch the alert
-  int m_scount;    // valid samples so far in this window
-  int m_osum;      // running 1-bit count for this window
+  // ---- ADAPTP domain state (the windowing/liveness is carried by the generator) ------
+  // The window counter and dual liveness live in the generated scaffold (see the
+  // reference model). Only the ADAPTP statistic + the cross-window alert state live here.
+  localparam int SYMW   = 4;         // bits per symbol (popcount width)
+  localparam int LO     = 8;         // ADAPTP_LO_THRESHOLD (min 1-bits over the window)
+  localparam int HI     = 24;        // ADAPTP_HI_THRESHOLD (max 1-bits over the window)
+  localparam int ALERTN = 2;         // consecutive failing windows that latch the alert
+  int m_osum;      // running 1-bit count for this window (reset each window)
   int m_failrun;   // consecutive failing windows (reset by a passing window)
   bit m_alert;     // latched alert
   // pragma quickuvm custom class_item_additional end
+
+  // Windowed scoreboard: samples seen in the current window; the boundary liveness holds
+  // every window to 8 of them. Domain state (accumulators, latched
+  // outputs) goes in the class_item_additional seam above.
+  int m_wcount  = 0;
+  int m_windows = 0;   // windows closed over the whole test (0 => nothing was checked)
+  bit m_enabled = 1;   // mirrors the comparator's sb_enable (a RAL/CSR test disables the
+                       // data-path scoreboard, and drives no samples through this agent)
+
+  // A windowed scoreboard that closes ZERO windows checked nothing — its verdict override
+  // never ran, so every compare was a trivial copy-through pass. Fail rather than report a
+  // vacuous "all passed": this catches an unfilled window_verdict seam on a test shorter
+  // than one window (where the boundary fatal never fires), and a boundary strobe that
+  // never asserts. A real windowed test closes at least one window. Skipped when the
+  // scoreboard is disabled (a CSR test that checks via the register model, not samples).
+  function void check_phase(uvm_phase phase);
+    super.check_phase(phase);
+    if (m_enabled && m_windows == 0)
+      `uvm_error("SB_WINDOW",
+                 "no window ever closed — the windowed scoreboard checked nothing")
+  endfunction
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -42,6 +58,7 @@ class es_adaptp_predictor extends uvm_subscriber #(es_item);
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
     results_ap = new("results_ap", this);
+    void'(uvm_config_db#(bit)::get(this, "", "sb_enable", m_enabled));
   endfunction
 
   function void write(es_item t);
