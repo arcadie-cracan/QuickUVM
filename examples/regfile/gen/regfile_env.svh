@@ -24,6 +24,7 @@ class regfile_env extends uvm_env;
   // Register model front-door adapter + predictor
   reg_adapter bus_adapter;
   uvm_reg_predictor #(host_seq_item) reg_predictor;
+  regfile_reg_cov reg_cov_h;   // V2 — register access coverage from the RAL
 
   // pragma quickuvm custom class_item_additional begin
   // pragma quickuvm custom class_item_additional end
@@ -42,6 +43,7 @@ class regfile_env extends uvm_env;
     cov  = host_cov::type_id::create("cov",  this);
     bus_adapter = reg_adapter::type_id::create("bus_adapter");
     reg_predictor = uvm_reg_predictor#(host_seq_item)::type_id::create("reg_predictor", this);
+    reg_cov_h = regfile_reg_cov::type_id::create("reg_cov_h", this);
     // pragma quickuvm custom build_phase_additional begin
     // pragma quickuvm custom build_phase_additional end
   endfunction
@@ -57,6 +59,8 @@ class regfile_env extends uvm_env;
     reg_predictor.adapter = bus_adapter;
     host_agnt.ap.connect(reg_predictor.bus_in);
     env_cfg.reg_model.default_map.set_auto_predict(0);
+    // V2 — install the register-coverage callbacks now the reg model is built.
+    reg_cov_h.install(env_cfg.reg_model);
     // pragma quickuvm custom connect_phase_additional begin
     // pragma quickuvm custom connect_phase_additional end
   endfunction

@@ -1021,6 +1021,21 @@ cip block inherits it for free from `csr_utils`).
 **Accept:** a register block generates a `csr_rw`/`bit_bash`/`hw_reset` test that runs
 against the RAL and passes.
 
+### V2 — Register ACCESS coverage from the RAL — DONE
+The companion to C5: C5 *exercises* the registers, V2 *measures* it (OpenTitan's cip blocks sample
+reggen-emitted reg covergroups as a matter of course; the `rvtimer` reproduce flagged its absence).
+Opt-in `register_model.coverage: true` generates a coverage collector that installs a `uvm_reg_cbs`
+on every field, so each **predicted** access reports its exact register + read/write kind (no address
+decode — works with ANY external RAL, whether or not it was built with UVM_CVR covergroups). It
+tracks per-register read/write access **from the RAL's own register list at run time**, plus a
+per-register covergroup, and reports "N/M read, N/M written" at end of test, naming every
+un-exercised register. **Access-aware** — a read-only register is not expected to be written, so 100%
+is reachable and a `never written` line is a real hole. Built on `examples/regfile/` and proved to
+have teeth by *differentiating the CSR tests*: `rw`/`bit_bash` → 4/4 read + 4/4 written; `hw_reset`
+(read-only) → 4/4 read, **0/4 written** with all four registers named. Opt-in and byte-identical when
+off. *Scope:* counts PREDICTED (RAL-initiated front-door) accesses — raw bus sequences that bypass the
+RAL aren't counted; it is access coverage, not field-value coverage (UVM_CVR_FIELD_VALS).
+
 **Registered-read bus — RESOLVED** *(the T2 spi_host frontdoor gap, closed on `examples/ahb_regs`)*.
 A pipelined bus returns read data one cycle after the address; T2 concluded this "needs a custom
 `uvm_reg_frontdoor`". Running it on a registered-read AHB-Lite bus refines that: the real requirement
@@ -1258,10 +1273,6 @@ action items it surfaced, beyond R1/V2:
 
 ## Out of scope / low ROI (revisit only on demand)
 
-- **V2 — Register functional coverage** (auto reg/field coverage models) — valuable but
-  pairs with external reggen; do only when a register-heavy project needs closure.
-  *(The OpenTitan comparison raises this: cip blocks sample reggen-emitted reg covergroups
-  as a matter of course — promote V2 alongside C5 for register-heavy DUTs.)*
 - **A1 — QVIP / external-VIP integration** — niche.
 - **Mixed-language (VHDL) / BFM / emulation** — large effort, narrow audience; UVMF's
   domain.

@@ -38,6 +38,7 @@ package regfile_tb_pkg;
   // Environment
   `include "regfile_env_cfg.svh"
   `include "reg_adapter.svh"
+  `include "regfile_reg_cov.svh"
   `include "regfile_env.svh"
 
   // Sequences (per agent)

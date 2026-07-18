@@ -386,6 +386,8 @@ class Generator:
                     "reg_adapter.svh.j2", f"{cfg.register_model.adapter}.svh", base_ctx
                 )
             )
+            if cfg.register_model.coverage:
+                specs.append(FileSpec("reg_cov.svh.j2", f"{dut}_reg_cov.svh", base_ctx))
             if cfg.register_model.frontdoor:
                 specs.append(
                     FileSpec(
