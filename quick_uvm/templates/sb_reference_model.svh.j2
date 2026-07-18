@@ -12,7 +12,67 @@
 //
 // Edit the "prediction_logic" user section below.
 //----------------------------------------------------------------------
-{% if sb_two_stream %}
+{% if sb_window %}
+// WINDOWED single-stream scoreboard: predict() accumulates a window of samples and emits
+// ONE verdict per window, keyed off the DUT's `{{ sb_window.boundary }}` strobe. The
+// generator carries the sample counter, the boundary keying, the copy-through cadence,
+// and the DUAL window-length liveness (a boundary at the wrong count AND a window that
+// never closes both fail — the strobe is not a guard trusting only itself). You fill only
+// the domain accumulate + verdict below. See docs/es_adaptp_assessment.md.
+function {{ sb_out_item }} {{ sb_prefix }}_predictor::predict({{ sb_in_item }} t);
+  {{ sb_out_item }} extr = {{ sb_out_item }}::type_id::create("extr");
+
+  `uvm_info("CALC #1", t.convert2string(), UVM_FULL)
+
+  // Copy-through: on every NON-boundary cycle expected == actual (a trivial pass); the
+  // verdict override on the boundary cycle is the only meaningful compare per window.
+  extr.copy(t);
+
+  // pragma quickuvm custom window_accumulate begin
+  // Runs once per source transaction (use `emit_when:` to admit only real samples).
+  // Accumulate this sample into predictor state, and pin any HELD/latched output into
+  // `extr` so it is verified every cycle. Do NOT compute the verdict here.
+  //   e.g.   m_sum += <1-bits of t.data>;   extr.<held_output> = m_held;
+  // pragma quickuvm custom window_accumulate end
+
+  m_wcount++;   // samples seen in this window
+  if (t.{{ sb_window.boundary }}) begin
+    // The DUT closed a window. Independent length check: a boundary at the wrong sample
+    // count is an error, not a silent pass.
+    if (m_wcount != {{ sb_window.length }})
+      `uvm_error("SB_WINDOW", $sformatf(
+        "window closed after %0d samples, expected {{ sb_window.length }}", m_wcount))
+    // pragma quickuvm custom window_verdict begin
+    // Compute the per-window verdict from the accumulated state, OVERRIDE the verdict
+    // OUTPUT field(s) in `extr`, and RESET the per-window accumulators (cross-window
+    // state — running counters, latched alerts — persists).
+    //   e.g.   extr.<verdict> = (m_sum > THRESHOLD);   m_sum = 0;
+    //
+    // AN UNFILLED SEAM CANNOT FAIL: with this stub in place `extr` is just a copy of the
+    // observed transaction, so every per-window compare trivially passes — a green bench
+    // measuring nothing. So the stub FATALs when a window closes; and a test too short to
+    // close any window is caught at end-of-test by check_phase (m_windows == 0).
+    `uvm_fatal("UNFILLED_WINDOW",
+               {"the `window_verdict` seam is still the generated stub, so this windowed ",
+                "scoreboard overrides nothing and every per-window compare would trivially ",
+                "pass. Compute the verdict and override extr here."})
+    // pragma quickuvm custom window_verdict end
+    m_wcount = 0;
+    m_windows++;   // a window closed (see the predictor's check_phase)
+  end
+  else begin
+    // No boundary this cycle. Independent liveness: a window that never closes (a stuck
+    // strobe) must fail HERE — the check the boundary guard above cannot make — so a
+    // never-strobing DUT is caught, not silently copy-through forever.
+    if (m_wcount > {{ sb_window.length }})
+      `uvm_error("SB_WINDOW", $sformatf(
+        "no boundary after %0d samples (expected every {{ sb_window.length }})", m_wcount))
+  end
+
+  `uvm_info("CALC #2", extr.convert2string(), UVM_FULL)
+  return(extr);
+endfunction
+{% elif sb_two_stream %}
 // Two-stream scoreboard: `t` is the observed {{ sb_in_agent.name }} (request) item;
 // return the EXPECTED {{ sb_out_agent.name }} (response) item it should produce.
 function {{ sb_out_item }} {{ sb_prefix }}_predictor::predict({{ sb_in_item }} t);

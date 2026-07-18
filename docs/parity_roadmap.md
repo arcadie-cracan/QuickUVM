@@ -384,27 +384,44 @@ With K0, the **General-DV MVP is complete** (X0 + S1 + V1 + S2 + C2 + K0): stimu
 field-derived coverage, multi-agent coordination, and a bring-your-own golden model
 (SV or C) checking seam.
 
-**Windowed statistics (N:1 prediction) — DEMONSTRATED** *(the entropy_src scaling question,
-[not built as a feature](es_adaptp_assessment.md))*. K0's `predict(item) → exp` is 1-in-1-out, but
-`entropy_src`'s health tests are **windowed**: N raw samples accumulate into ONE per-window verdict,
-and consecutive failing windows latch an alert. `examples/es_adaptp/` proves the seam scales — the
-sixth over-pessimistic "it breaks" to dissolve — but only in **one scoreboard shape**. A
-**single-stream** scoreboard expresses it: the predictor accumulates the window in its own members
-and overrides the verdict fields only at the boundary (`extr.copy(t)` makes every non-boundary cycle
-a trivial pass), so the N:1 statistic folds into the 1:1 cadence. A **two-stream** scoreboard cannot
-— its comparator is strictly in-order 1:1 and its reference model does not `copy(t)`, so N samples
-vs 1 verdict desync. The predictor has no clock handle, so the window *boundary* is the DUT's own
-`window_done` strobe, made safe (not a guard trusting itself) by two independent window-length
-checks — one at the boundary (wrong count) and one off-boundary (no boundary). **adaptp 56/56, rand
-160/160, `make regress` 4/4, mutation-proved ×4** (threshold flips exactly the edge window; a moved
-boundary and a *stuck-low* `window_done` each trip a liveness; a dead alert-latch fails 33 vectors).
-The build caught, by running it, the input/output split-edge skew `cdc_fifo` hit — on both `sample`
-and the `emit_when` qualifier `valid` (the latter a latent monitor off-by-one an adversarial review
-surfaced, benign under constant valid but a desync on a gapped stream). Names the same
-**cycle-accurate temporal-checking** axis the
-[alert_handler probe](alert_handler_assessment.md) named — here as "the predictor cannot count
-cycles to define a window." A first-class **windowed-scoreboard** shape (accumulate-N-emit-1) would
-save re-deriving the copy-through + DUT-strobe + liveness pattern by hand.
+### Windowed scoreboard (N:1 prediction) — DONE  *(the entropy_src scaling question, now a feature)*
+
+K0's `predict(item) → exp` is 1-in-1-out, but `entropy_src`'s health tests are **windowed**: N raw
+samples accumulate into ONE per-window verdict, and consecutive failing windows latch an alert. This
+is now an opt-in feature — a `window:` block on a single-stream scoreboard:
+
+```
+analysis:
+  scoreboards:
+    - name: sb
+      source: es
+      window: {boundary: window_done, length: 8}   # DUT strobe + samples/window
+```
+
+The generated predictor carries the sample counter, the boundary keying (off the DUT strobe), the
+copy-through cadence (`extr.copy(t)` makes every non-boundary cycle a trivial pass, so the N:1
+statistic folds into the 1:1 cadence), and — crucially — the **dual window-length liveness**: a
+boundary at the wrong count (`m_wcount != length`) AND a window that never closes (`m_wcount >
+length`) both fail, so the strobe the verdict keys off is **not a guard trusting only itself**. The
+user fills only the domain accumulate + verdict in the `window_accumulate` / `window_verdict` seams.
+Fail-closed against the vacuous-green trap: an unfilled verdict FATALs (`UNFILLED_WINDOW`) when a
+window closes, and a `check_phase` fails a test that closes **zero** windows (too short, or a stuck
+strobe) — so a windowed scoreboard that checked nothing never reports "all passed" (it respects
+`sb_enable`, so a CSR test that disables the data-path scoreboard is exempt).
+
+**Why single-stream only:** a two-stream scoreboard's comparator is strictly in-order 1:1 and its
+reference model does not `copy(t)`, so N samples vs 1 verdict would desync — the schema rejects
+`window` with a `monitor`. The predictor has no clock handle, which is *why* the boundary is the
+DUT's own strobe rather than a cycle count.
+
+**Proven end-to-end on `examples/es_adaptp/`** (Adaptive Proportion + the consecutive-fail alert),
+which now *uses* the feature: adaptp 56/56, rand 160/160, `make regress` 4/4, verible clean,
+byte-identity gated, **mutation-proved ×4** — tighten `HI` → exactly the edge window flips; move the
+window and force `window_done` low → each trips the generated liveness; disable the alert latch → 33
+vectors fail. The domain logic in the seams shrank to ~15 lines; the counter + boundary + dual
+liveness (the part `es_adaptp` first hand-wrote and got wrong twice) is now generator-carried. This
+is the first-class shape that answers the **cycle-accurate temporal-checking** axis the
+[alert_handler probe](alert_handler_assessment.md) named.
 
 ## Priority tier 2 — reuse / architecture
 

@@ -112,11 +112,14 @@ samples, so none of these could be caught by a scoreboard echoing the DUT.
   the RTL and directed arithmetic, and produced the two fixes above — the write-up reflects the
   post-review state, not the first draft.
 
-## What this argues for (roadmap)
+## What this argued for — now built
 
-The windowed statistic is expressible, so nothing is *blocked*. But the build names two sharp edges
-worth a first-class answer: (1) a **windowed-scoreboard** shape (accumulate-N-emit-1) so the
-single-stream copy-through trick and the DUT-strobe-plus-liveness pattern are not re-derived by hand
-each time; and (2) the same **cycle-accurate temporal-checking** axis the alert_handler probe named
-— here it appears as "the predictor cannot count cycles to define a window," resolved by borrowing
-the DUT's strobe. Both are the transaction-vs-time seam showing through from a different angle.
+The build named a sharp edge worth a first-class answer: a **windowed-scoreboard** shape
+(accumulate-N-emit-1) so the single-stream copy-through trick and the DUT-strobe-plus-dual-liveness
+pattern are not re-derived by hand each time. That is now the **`window:` feature** (a `window:
+{boundary, length}` block on a single-stream scoreboard; see `docs/parity_roadmap.md`). This bench
+now *uses* it: the counter, boundary keying, copy-through cadence, and — the part hand-written here
+that was wrong twice — the dual liveness are generator-carried, and the seams hold only the ~15
+lines of ADAPTP domain logic. The feature answers the **cycle-accurate temporal-checking** axis the
+alert_handler probe named — "the predictor cannot count cycles to define a window," resolved by
+keying off the DUT's own strobe and guarding it from *outside* with the length liveness.
