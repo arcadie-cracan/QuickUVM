@@ -515,10 +515,18 @@ line). Distinct from C3 `instances` (different param values, each its **own** DU
 tb_top binding all N interfaces to one DUT via a concatenation `{inst_{N-1}, .., inst_0}`. Opt-in and
 byte-identical at `count: 1`. Built + mutation-proved on `examples/nchan/` (3 latch channels, one
 DUT): corrupt **only channel 1** → **only `ch_1`'s scoreboard fails**, proving per-channel
-independence *and* the index mapping. Scoped to initiator agents for this slice (responder+count is a
-follow-up — alert_handler's senders are hybrids, so a full bench wants `count` + the hybrid together).
-See [`count_array_assessment.md`](count_array_assessment.md). **This closes the last of alert_handler's
+independence *and* the index mapping. See [`count_array_assessment.md`](count_array_assessment.md). **This closes the last of alert_handler's
 three [I] gaps** (I-7 → the hybrid agent, I-8 → the windowed scoreboard, I-9 → this).
+
+**Composed with the hybrid agent — DONE** *(the alert_handler alert-sender array)*. `count` +
+`proactive: true`: N hybrid alert-senders into one DUT, each answering its own ping AND raising its
+own alerts, each with its **own** request-drain liveness. The `count` validator now allows a
+proactive responder (a pure responder is still rejected). Built + mutation-proved on
+`examples/alert_array/` (3×499/499): corrupt one channel's latch → only that channel's scoreboard
+fails; hang one replica's responder → only that replica's DEAD_RESPONDER fires — the N liveness
+checks are independent. So the two structural alert_handler gaps *compose* into the actual topology;
+what remains is protocol depth in seams, not primitives. See
+[`alert_array_assessment.md`](alert_array_assessment.md).
 
 ### H1 — Sub-environments — DONE (first slice)
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.

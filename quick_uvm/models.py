@@ -1358,11 +1358,13 @@ class AgentConfig(BaseModel):
                     f"vectored DUT) is mutually exclusive with C3 `instances`/"
                     f"`parameters` (those give each instance its own DUT at a width)."
                 )
-            if self.is_responder:
+            if self.is_responder and not self.proactive:
                 raise ValueError(
-                    f"agent '{self.name}': `count` is not yet supported with "
-                    f"`mode: responder` — the shared-DUT replica wiring is validated "
-                    f"for initiator agents (N stimulus/monitor channels into one DUT)."
+                    f"agent '{self.name}': `count` is not yet supported with a PURE "
+                    f"`mode: responder` — a proactive HYBRID (`proactive: true`) IS "
+                    f"supported (N hybrid alert-senders into one DUT: the "
+                    f"alert_handler topology), but a pure responder's shared-DUT "
+                    f"wiring is unvalidated."
                 )
         return self
 

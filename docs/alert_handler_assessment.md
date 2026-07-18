@@ -105,8 +105,13 @@ sits almost entirely in territory the generator does not reach.
 > **Update:** built as the `count: N` feature — see
 > [`count_array_assessment.md`](count_array_assessment.md) and `examples/nchan`. One agent replicated
 > N times into ONE vectored DUT, replica *i* on bit *i*. **All three of alert_handler's [I] gaps are
-> now closed** (I-7 → the hybrid agent, I-8 → the windowed scoreboard, I-9 → this); what remains for a
-> complete bench is composition, not missing primitives.
+> now closed** (I-7 → the hybrid agent, I-8 → the windowed scoreboard, I-9 → this).
+>
+> **And the two structural gaps now COMPOSE** — `examples/alert_array` builds N hybrid alert-senders
+> (`count` + `proactive: true`) into one DUT, each answering its own ping AND raising its own alerts,
+> each with its own request-drain liveness (mutation-proved per-replica-independent). See
+> [`alert_array_assessment.md`](alert_array_assessment.md). What a *complete* bench still needs is
+> protocol depth in seams (differential/ping handshake, escalation timers), not missing primitives.
 
 
 The alert_handler env's whole economy is **one** `alert_esc_agent` definition **reused ~67 times**

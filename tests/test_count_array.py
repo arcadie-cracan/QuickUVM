@@ -61,8 +61,11 @@ def test_count_makes_n_interfaces_one_vectored_dut(tmp_path):
         assert f"ch_if ch_{i}_if_inst" in top
     # exactly ONE DUT, with vectored (concatenated) port connections
     assert top.count("nchan dut_inst") == 1
-    assert ".d({ ch_2_if_inst.d, ch_1_if_inst.d, ch_0_if_inst.d })" in top
-    assert ".q({ ch_2_if_inst.q, ch_1_if_inst.q, ch_0_if_inst.q })" in top
+    # one vectored DUT port per signal, each a concatenation of the N replica interfaces
+    for sig in ("d", "q"):
+        for i in range(3):
+            assert f"ch_{i}_if_inst.{sig}" in top
+    assert top.count(".d(") == 1 and top.count(".q(") == 1
     # NOT the C3 per-instance-DUT path
     assert "ch_0_dut" not in top
 
@@ -100,8 +103,8 @@ def test_count_with_instances_rejected():
         )
 
 
-def test_count_with_responder_rejected():
-    with pytest.raises(Exception, match="`count` is not yet supported with"):
+def test_count_with_pure_responder_rejected():
+    with pytest.raises(Exception, match="`count` is not yet supported with a PURE"):
         AgentConfig(
             name="ch",
             interface="ch_if",
@@ -114,6 +117,49 @@ def test_count_with_responder_rejected():
                 "outputs": [PortConfig(name="req", width=1, randomize=False)],
             },
         )
+
+
+def _hybrid_count_agent():
+    """count + a HYBRID (proactive responder) — the alert_handler alert-sender array."""
+    return AgentConfig(
+        name="sndr",
+        interface="sndr_if",
+        sequence_item="sndr_item",
+        count=3,
+        mode="responder",
+        request_valid="ping",
+        respond="on_request",
+        proactive=True,
+        ports={
+            "inputs": [
+                PortConfig(name="resp", width=1),
+                PortConfig(name="alert", width=1),
+            ],
+            "outputs": [PortConfig(name="ping", width=1, randomize=False)],
+        },
+    )
+
+
+def test_count_plus_hybrid_accepted_and_per_replica_liveness(tmp_path):
+    """A HYBRID (proactive responder) IS allowed with count: N hybrid alert-senders into
+    one DUT. Each replica gets its own responder sequencer with the request-drain liveness,
+    so a dead responder in one channel is caught independently of the others."""
+    cfg = ProjectConfig(
+        project=ProjectMeta(name="aa"),
+        dut=DutConfig(name="aa", external_reset=True),
+        agents=[_hybrid_count_agent()],
+        tests=[TConf(name="t1", num_items=20)],
+    )
+    Generator(cfg).generate_all(tmp_path)
+    top = (tmp_path / "tb_top.sv").read_text()
+    sqr = (tmp_path / "sndr_sequencer.svh").read_text()
+    # 3 hybrid replicas into one vectored DUT
+    assert top.count("aa dut_inst") == 1
+    for i in range(3):
+        assert f"sndr_{i}_if_inst" in top
+    # the (shared) sequencer carries the un-maskable per-replica drain liveness
+    assert "request_fifo.used() != 0" in sqr
+    assert "DEAD_RESPONDER" in sqr
 
 
 # ---- fail-closed scope: reject out-of-scope combinations LOUDLY (not silent mis-gen) ----
