@@ -384,6 +384,28 @@ With K0, the **General-DV MVP is complete** (X0 + S1 + V1 + S2 + C2 + K0): stimu
 field-derived coverage, multi-agent coordination, and a bring-your-own golden model
 (SV or C) checking seam.
 
+**Windowed statistics (N:1 prediction) — DEMONSTRATED** *(the entropy_src scaling question,
+[not built as a feature](es_adaptp_assessment.md))*. K0's `predict(item) → exp` is 1-in-1-out, but
+`entropy_src`'s health tests are **windowed**: N raw samples accumulate into ONE per-window verdict,
+and consecutive failing windows latch an alert. `examples/es_adaptp/` proves the seam scales — the
+sixth over-pessimistic "it breaks" to dissolve — but only in **one scoreboard shape**. A
+**single-stream** scoreboard expresses it: the predictor accumulates the window in its own members
+and overrides the verdict fields only at the boundary (`extr.copy(t)` makes every non-boundary cycle
+a trivial pass), so the N:1 statistic folds into the 1:1 cadence. A **two-stream** scoreboard cannot
+— its comparator is strictly in-order 1:1 and its reference model does not `copy(t)`, so N samples
+vs 1 verdict desync. The predictor has no clock handle, so the window *boundary* is the DUT's own
+`window_done` strobe, made safe (not a guard trusting itself) by two independent window-length
+checks — one at the boundary (wrong count) and one off-boundary (no boundary). **adaptp 56/56, rand
+160/160, `make regress` 4/4, mutation-proved ×4** (threshold flips exactly the edge window; a moved
+boundary and a *stuck-low* `window_done` each trip a liveness; a dead alert-latch fails 33 vectors).
+The build caught, by running it, the input/output split-edge skew `cdc_fifo` hit — on both `sample`
+and the `emit_when` qualifier `valid` (the latter a latent monitor off-by-one an adversarial review
+surfaced, benign under constant valid but a desync on a gapped stream). Names the same
+**cycle-accurate temporal-checking** axis the
+[alert_handler probe](alert_handler_assessment.md) named — here as "the predictor cannot count
+cycles to define a window." A first-class **windowed-scoreboard** shape (accumulate-N-emit-1) would
+save re-deriving the copy-through + DUT-strobe + liveness pattern by hand.
+
 ## Priority tier 2 — reuse / architecture
 
 ### VIP ownership (F2') — DONE  *(T3 finding, now built)*

@@ -1,0 +1,79 @@
+# es_adaptp — a WINDOWED health-test statistic (OpenTitan entropy_src, Adaptive Proportion).
+#
+# THE QUESTION THIS BENCH EXISTS TO ANSWER (docs/es_adaptp_assessment.md):
+#   K0's predictor seam is `predict(item) -> exp` — one transaction in, one expected out.
+#   entropy_src's health tests are WINDOWED: N raw samples accumulate and ONE verdict
+#   emerges per window (an N:1 statistic), plus a SECOND cross-window level — consecutive
+#   failing windows accumulate and latch an alert, a passing window resets the run
+#   (ALERT_SUMMARY_FAIL_COUNTS / ALERT_THRESHOLD).
+#
+#   Does the GENERATED scoreboard express that, or does the 1-in-1-out seam break?
+#
+# The answer (see the README): a SINGLE-STREAM scoreboard does. The predictor accumulates
+# the window in its own state (like hmac's streaming model), and OVERRIDES the verdict
+# fields ONLY on the boundary cycle; every other cycle copy-through makes expected==actual,
+# so the check bites exactly once per window. A TWO-STREAM scoreboard cannot: it pairs one
+# expected with one actual in order, so N samples vs 1 verdict desync. That asymmetry is
+# the finding.
+
+project:
+  name: es_adaptp_tb
+  author: qa@example.com
+
+dut:
+  name: es_adaptp
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: es
+    interface: es_if
+    sequence_item: es_item
+    seq_item_style: manual
+    active: true
+    ports:
+      inputs:
+        - {name: sample, width: 4, randomize: true}
+        - {name: valid,  width: 1, randomize: true}
+      outputs:
+        - {name: window_done, width: 1}
+        - {name: ones_cnt,    width: 16}
+        - {name: test_fail,   width: 1}
+        - {name: alert,       width: 1}
+    # Only live samples enter the scoreboard, so the predictor's window count stays in
+    # lockstep with the DUT's. NOTE: the monitor seam re-samples `valid` (not just `sample`)
+    # at the output edge — without that, the emit gate would key off the previous cycle's
+    # valid and desync on a gapped stream. Current tests drive valid==1, so this is latent
+    # here, but the seam fix makes emit_when correct for intermittent valid too.
+    emit_when: valid
+    constraints:
+      - "valid == 1"
+    sequences:
+      # Random samples give mostly-passing windows; to exercise fail-lo, fail-hi, the
+      # threshold boundary and the consecutive-fail alert deterministically, a directed
+      # sequence drives specific windows.
+      - {name: adaptp_vector_seq, kind: directed}
+
+analysis:
+  coverage: [es]
+  scoreboards:
+    # Single-stream: predict(es_item) -> the expected es_item. The predictor is STATEFUL
+    # (accumulates the window) and overrides the verdict only at the boundary — that is
+    # the whole experiment.
+    - {name: sb, source: es}
+
+tests:
+  # Random entropy: every window's DUT verdict is checked against the golden model.
+  - {name: rand_test, num_items: 160}
+  # The directed windows: pass, fail-lo, fail-hi, the exact-threshold boundary, and two
+  # consecutive fails that latch the alert. This is the mutation target.
+  - {name: adaptp_test, sequence: {agent: es, name: adaptp_vector_seq}}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f
