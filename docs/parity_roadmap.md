@@ -819,6 +819,14 @@ and is the long pole for campaign target **T2** (`spi_host`).
   id) and round_robin (fair rotation, a `m_last_id` cursor); random matches `axi_rand_slave`.
   Built + mutation-proved on `examples/axi_reorder/` (round_robin `[0 1 0 1 0 1]` vs priority
   `[0 0 0 1 1 1]` from the same backlog).
+- *AXI write channel `AW + W → B` — DONE as an example* (the AXI epic, slice 1): the write side,
+  counterpart to `axi_read`. Its new problem — two request channels (`AW`+`W`) correlated into one
+  response, `W` having no id — is solved with a **monitor AW→W order-correlation seam** (queue awids,
+  pop on `WLAST`) + `request_valid: wlast`, reusing the T6 responder **unchanged** (no framework
+  change). Built + mutation-proved on `examples/axi_write/`; the full 5-channel epic (bursts, ready
+  handshake, unified read+write agent, atomics) is scoped slice-by-slice in
+  [`axi_epic_assessment.md`](axi_epic_assessment.md) — the remaining deep gap is the *unified*
+  multi-channel agent (slice 4), left as a deliberate design decision, not built speculatively.
 - *Hybrid (initiator + responder) `proactive: true` — DONE* (the alert_handler I-7 gap). A
   responder that ALSO accepts proactive TB stimulus: an alert-sender answers the DUT's pings AND
   spontaneously raises alerts. The agent stays a responder (the env forks its responder sequence)
