@@ -1,0 +1,23 @@
+# nchan — the I-9 `count` feature: one agent replicated N times into ONE vectored DUT.
+project: {name: nchan_tb, author: qa@example.com}
+dut: {name: nchan, clock: clk, reset: rst_n, external_reset: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: ch
+    interface: ch_if
+    sequence_item: ch_item
+    seq_item_style: manual
+    active: true
+    count: 3            # 3 identical channels into one DUT (ports become [2:0])
+    ports:
+      inputs:
+        - {name: d, width: 1, randomize: true}
+        - {name: v, width: 1, randomize: true}
+      outputs:
+        - {name: q, width: 1}
+analysis:
+  scoreboards:
+    - {name: sb, source: ch}
+tests:
+  - {name: rand_test, num_items: 100}
+regress: {seeds: 2, filelist: ../sim/xrun.f}

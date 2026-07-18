@@ -507,6 +507,19 @@ via Jinja macros.
 - *Landed in the next slice:* `instances:` — two instances of the VIP at different
   widths in **one** bench (see the multi-instantiation status block above).
 
+### `count` — N agents into ONE vectored DUT — DONE  *(the alert_handler I-9 gap)*
+Replicate one agent `count` times into **one** DUT with vectored ports (`[N-1:0]`), replica *i*
+bound to bit *i* — the alert_handler topology (one `alert_esc_agent` reused ~63×, one per alert
+line). Distinct from C3 `instances` (different param values, each its **own** DUT). Reuses the C3
+`instance_views` machinery (per-instance agents/config/scoreboards/sequences); the one new piece is
+tb_top binding all N interfaces to one DUT via a concatenation `{inst_{N-1}, .., inst_0}`. Opt-in and
+byte-identical at `count: 1`. Built + mutation-proved on `examples/nchan/` (3 latch channels, one
+DUT): corrupt **only channel 1** → **only `ch_1`'s scoreboard fails**, proving per-channel
+independence *and* the index mapping. Scoped to initiator agents for this slice (responder+count is a
+follow-up — alert_handler's senders are hybrids, so a full bench wants `count` + the hybrid together).
+See [`count_array_assessment.md`](count_array_assessment.md). **This closes the last of alert_handler's
+three [I] gaps** (I-7 → the hybrid agent, I-8 → the windowed scoreboard, I-9 → this).
+
 ### H1 — Sub-environments — DONE (first slice)
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.
 **Accept:** a subsystem env composes ≥2 block envs. ✅

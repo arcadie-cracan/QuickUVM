@@ -100,7 +100,14 @@ transaction-level activity. **[P] partial:** a K1 SVA could assert a duration, b
 still not the predictor's job. The ~1000-line reference model is the bulk of the human effort and
 sits almost entirely in territory the generator does not reach.
 
-### [I]-9 — write-once-reuse × ~63 is the known VIP-reuse gap, at scale
+### [I]-9 — write-once-reuse × ~63 is the known VIP-reuse gap, at scale  — NOW CLOSED (`count`)
+
+> **Update:** built as the `count: N` feature — see
+> [`count_array_assessment.md`](count_array_assessment.md) and `examples/nchan`. One agent replicated
+> N times into ONE vectored DUT, replica *i* on bit *i*. **All three of alert_handler's [I] gaps are
+> now closed** (I-7 → the hybrid agent, I-8 → the windowed scoreboard, I-9 → this); what remains for a
+> complete bench is composition, not missing primitives.
+
 
 The alert_handler env's whole economy is **one** `alert_esc_agent` definition **reused ~67 times**
 with per-instance config (`is_alert`/`if_mode`/`is_async`) into **one** DUT. QuickUVM regenerates an

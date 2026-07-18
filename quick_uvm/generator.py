@@ -211,6 +211,9 @@ class Generator:
             # runs unchanged (byte-identical).
             "instances": cfg.instance_views,
             "has_instances": bool(cfg.instance_views),
+            # I-9 — `count` replicas share ONE vectored DUT (vs C3 per-instance DUTs).
+            "shared_dut": cfg.shared_dut,
+            "count_agent": cfg.count_agent,
         }
 
         # A2 — scoreboard stream types. Single-stream (default): predict(pa) -> pa
