@@ -673,6 +673,12 @@ class AgentConfig(BaseModel):
     # C3 — instantiate this parameterized VIP more than once at different values
     # (opt-in, byte-identical when empty). Requires `parameters`.
     instances: list[InstanceConfig] = Field(default_factory=list)
+    # I-9 — replicate this agent COUNT times into ONE DUT with vectored ports (N alert
+    # lines, N interrupt channels): the alert_handler topology (one agent def, ~63x).
+    # Distinct from C3 `instances` (different param values, each its own DUT): count
+    # replicas are IDENTICAL and share one DUT, each bound to a slice of the vectors.
+    # Opt-in; 1 (default) is the single-agent wiring, byte-identical.
+    count: int = 1
     # Runtime: the agent's ORIGINAL name, captured before any H1 namespace prefix is
     # applied (like ProjectConfig.original_dut_name). So a cross-level endpoint into a
     # reused subtree can name the agent as originally declared (`g`, not `left_g`) and
@@ -1342,6 +1348,22 @@ class AgentConfig(BaseModel):
                             f"agent '{self.name}': instance '{inst.name}' sets unknown "
                             f"parameter '{k}' (parameters: {pnames})."
                         )
+        # I-9 — count: N identical replicas sharing one vectored DUT.
+        if self.count < 1:
+            raise ValueError(f"agent '{self.name}': `count` must be >= 1.")
+        if self.count > 1:
+            if self.instances or self.parameters:
+                raise ValueError(
+                    f"agent '{self.name}': `count` (identical replicas into one "
+                    f"vectored DUT) is mutually exclusive with C3 `instances`/"
+                    f"`parameters` (those give each instance its own DUT at a width)."
+                )
+            if self.is_responder:
+                raise ValueError(
+                    f"agent '{self.name}': `count` is not yet supported with "
+                    f"`mode: responder` — the shared-DUT replica wiring is validated "
+                    f"for initiator agents (N stimulus/monitor channels into one DUT)."
+                )
         return self
 
 
@@ -1355,10 +1377,21 @@ class InstanceView:
     Not user config — built by `ProjectConfig.instance_views`.
     """
 
-    def __init__(self, agent: AgentConfig, name: str, pav: str):
+    def __init__(
+        self,
+        agent: AgentConfig,
+        name: str,
+        pav: str,
+        shared: bool = False,
+        index: int = 0,
+    ):
         self.agent = agent
         self.name = name  # instance base name, e.g. io8
         self.pav = pav  # concrete args for this instance, e.g. #(16)
+        # I-9 — a `count` replica: all replicas share ONE vectored DUT (this instance
+        # binds to bit `index` of each port). C3 `instances` leave these default.
+        self.shared = shared
+        self.index = index
 
     @property
     def handle(self) -> str:
@@ -3325,6 +3358,64 @@ class ProjectConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def validate_count(self) -> ProjectConfig:
+        """I-9 — `count` is a focused first slice (a single-agent, single-clock,
+        external-reset, initiator array with plain single-stream scoreboards). The
+        shared-DUT wiring reuses the C3 per-instance env path, which does NOT wire a
+        second agent, coverage, inouts, multi-clock, or a customized scoreboard — so
+        REJECT those combinations LOUDLY here rather than silently mis-generate."""
+        count_agents = [a for a in self.agents if a.count > 1]
+        if not count_agents:
+            return self
+        if len(count_agents) > 1:
+            raise ValueError("at most one agent may use `count` per bench.")
+        ca = count_agents[0]
+        if len(self.agents) != 1:
+            raise ValueError(
+                f"`count` (agent '{ca.name}') requires it be the SOLE agent for now — "
+                f"the shared-vectored-DUT wiring does not yet compose a count array "
+                f"with other agents (alert_handler's N alerts + tl_agent: follow-up)."
+            )
+        if self.clocks or self.resets:
+            raise ValueError(
+                f"`count` (agent '{ca.name}') is not yet supported with multi-clock/"
+                f"reset (`clock:`/`resets:` lists) — the shared-DUT array is 1-domain."
+            )
+        if not self.dut.external_reset:
+            raise ValueError(
+                f"`count` (agent '{ca.name}') requires `dut.external_reset: true` — a "
+                f"shared vectored DUT binds the top-level reset net."
+            )
+        if ca.inout_ports:
+            raise ValueError(
+                f"`count` (agent '{ca.name}') does not yet support `inouts` — the "
+                f"shared-DUT wiring vectors inputs/outputs only."
+            )
+        _cov = self.analysis is not None and self.analysis.coverage
+        if _cov or self.coverage_models:
+            raise ValueError(
+                f"`count` (agent '{ca.name}') does not yet wire coverage — the "
+                f"per-instance env path omits the collectors (declare it on a "
+                f"non-count bench for now)."
+            )
+        if self.analysis is not None:
+            for s in self.analysis.scoreboards:
+                if (
+                    s.monitor
+                    or s.window
+                    or s.match != "in_order"
+                    or s.match_key
+                    or s.max_latency
+                ):
+                    raise ValueError(
+                        f"`count` (agent '{ca.name}'): scoreboard '{s.name}' must be a "
+                        f"plain single-stream scoreboard — a windowed/two-stream/"
+                        f"out-of-order one is flattened per-instance, dropping its "
+                        f"customization."
+                    )
+        return self
+
+    @model_validator(mode="after")
     def validate_agents(self) -> ProjectConfig:
         names = [a.name for a in self.agents]
         if len(names) != len(set(names)):
@@ -4115,11 +4206,28 @@ class ProjectConfig(BaseModel):
         used, byte-identical)."""
         views: list[InstanceView] = []
         for a in self.agents:
+            if a.count > 1:
+                # I-9 — N identical replicas sharing one vectored DUT.
+                for i in range(a.count):
+                    views.append(
+                        InstanceView(a, f"{a.name}_{i}", "", shared=True, index=i)
+                    )
             for inst in a.instances:
                 views.append(
                     InstanceView(a, inst.name, a.instance_param_args_values(inst))
                 )
         return views
+
+    @property
+    def shared_dut(self) -> bool:
+        """I-9 — the bench replicates an agent with `count` into ONE vectored DUT (as
+        opposed to C3 `instances`, which give each instance its own DUT)."""
+        return any(a.count > 1 for a in self.agents)
+
+    @property
+    def count_agent(self) -> AgentConfig | None:
+        """The agent replicated by `count` (I-9), or None."""
+        return next((a for a in self.agents if a.count > 1), None)
 
     @property
     def effective_virtual_sequences(self) -> list[VseqConfig]:
