@@ -1040,7 +1040,16 @@ generators. Needed for CDC and most real SoC blocks.
   `examples/dualreg/`: two registered lanes, each reset by its own agent at OPPOSITE
   polarities (a active-low + b active-high) — both self-check and pass **2/2 on Xcelium**
   (0 errors). verible-lint-clean; CI gates it.
-- *Deferred:* per-domain scoreboard latency across two differently-clocked streams;
+- **CDC cross-domain integrity — DEMONSTRATED** *(the M1×A2 composition question)*. M1
+  (multi-clock) and the A2 two-stream scoreboard **compose into a working clock-domain-crossing
+  check**: `examples/cdc_fifo/` runs an async gray FIFO with a write agent on `wclk` and a read
+  agent on `rclk`, matching the pushed stream against the popped stream in order across the
+  crossing — **16/16, 0 warnings, mutation-proved** (corrupt the crossing → every word flagged;
+  `make regress` 2/2). Draining (not tolerating residual) is what makes leftover-source==0 mean
+  *no data lost*. The build also caught, by running it, an RTL combinational-loop deadlock and a
+  monitor input-data/output-qualifier misalignment (fixed via the `sample_dut_additional` seam).
+- *Deferred:* per-domain scoreboard latency across two differently-clocked streams (the
+  OUT-OF-ORDER latency window; the in-order CDC match above needs none);
   multi-domain with `instances`; mixed-unit / nested-multi-clock clocked leaves;
   agent-driven resets combined with M1 multi-clock domains; a dedicated assert-then-
   deassert reset sequence-kind body.
