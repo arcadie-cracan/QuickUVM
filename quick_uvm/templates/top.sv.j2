@@ -120,11 +120,13 @@ module {{ top_name }};
   // (a concatenation MSB..LSB puts instance 0 at bit 0). The DUT's ports are [{{ count_agent.count }}-1:0]
   // (times the port width). This is the alert_handler topology: N alert lines, one block.
   {{ dut.name }} dut_inst (
-{% for port in count_agent.output_ports %}
-    .{{ port.name }}({ {% for inst in instances|reverse %}{{ inst.if_inst }}.{{ port.name }}{% if not loop.last %}, {% endif %}{% endfor %} }),
+{% for port in count_agent.output_ports + count_agent.input_ports %}
+    .{{ port.name }}({
+{% for inst in instances|reverse %}
+      {{ inst.if_inst }}.{{ port.name }}{% if not loop.last %},{% endif %}
+
 {% endfor %}
-{% for port in count_agent.input_ports %}
-    .{{ port.name }}({ {% for inst in instances|reverse %}{{ inst.if_inst }}.{{ port.name }}{% if not loop.last %}, {% endif %}{% endfor %} }),
+    }),
 {% endfor %}
     .{{ dut.clock }}(clk){% if dut.reset %},
     .{{ dut.reset }}({{ dut.reset }}){% endif %}

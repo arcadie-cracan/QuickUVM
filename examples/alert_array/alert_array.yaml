@@ -1,0 +1,31 @@
+# alert_array — COMPOSE `count` + the hybrid agent: N hybrid alert-senders into ONE DUT
+# (the alert_handler topology). Each replica answers its own ping (reactive) AND raises
+# its own alerts (proactive); each gets its own request-FIFO-drain liveness.
+project: {name: alert_array_tb, author: qa@example.com}
+dut: {name: alert_array, clock: clk, reset: rst_n, external_reset: true}
+clock: {period: 10, unit: ns}
+agents:
+  - name: sndr
+    interface: sndr_if
+    sequence_item: sndr_item
+    seq_item_style: manual
+    active: true
+    count: 3                # 3 alert channels -> DUT ports vectored
+    mode: responder         # answer the DUT's ping...
+    request_valid: ping
+    respond: on_request
+    proactive: true         # ...AND raise alerts (the hybrid)
+    ports:
+      inputs:
+        - {name: resp,  width: 1}
+        - {name: alert, width: 1}
+        - {name: adata, width: 4, randomize: true}
+      outputs:
+        - {name: ping,       width: 1}
+        - {name: last_adata, width: 4}
+analysis:
+  scoreboards:
+    - {name: sb, source: sndr}
+tests:
+  - {name: rand_test, num_items: 120}
+regress: {seeds: 2, filelist: ../sim/xrun.f}
