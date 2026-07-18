@@ -58,6 +58,24 @@ class {{ agent.name }}_sequencer{{ agent.param_decl }} extends uvm_sequencer #({
                             "incoming request cannot (docs/t6_axi_outstanding_assessment.md)."},
                            m_accepted, m_answered))
   endfunction
+{% elif agent.is_proactive %}
+
+  // HYBRID responder liveness — deliberately NOT in a pragma, and NOT the driver's
+  // DEAD_RESPONDER. This agent also drives PROACTIVE stimulus, so the driver's drive count
+  // is inflated: a dead responder would still look like it "drove something". The request
+  // FIFO, though, is fed only by observed requests and drained only by the responder
+  // sequence — proactive stimulus never touches it. So an unanswered request always shows:
+  // fail if any request the monitor observed was never drained.
+  function void check_phase(uvm_phase phase);
+    super.check_phase(phase);
+    if (request_fifo.used() != 0)
+      `uvm_error("DEAD_RESPONDER",
+                 $sformatf({"%0d observed request(s) were never answered — the responder ",
+                            "is dead or lagging. A hybrid's liveness is the request-FIFO ",
+                            "drain, not the driver's drive count (proactive stimulus ",
+                            "inflates that)."},
+                           request_fifo.used()))
+  endfunction
 {% endif %}
 
 endclass

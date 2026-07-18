@@ -734,6 +734,22 @@ class AgentConfig(BaseModel):
     # See docs/reactive_agent_investigation.md.
     idle: dict[str, int] = Field(default_factory=dict)
 
+    # HYBRID (initiator + responder). A responder that ALSO accepts proactive TB
+    # stimulus on its sequencer — an alert-sender answers the DUT's pings AND
+    # spontaneously raises alerts. Opt-in; only for `respond: on_request` (the shape
+    # with a request FIFO + a blocking responder sequence). When true the agent STAYS a
+    # responder — the env still forks its responder sequence — but it also joins the
+    # stimulus agents, so the test starts a proactive sequence on the same sequencer and
+    # UVM arbitrates the two (the responder sequence blocks on requests; the proactive
+    # one drives when it has an item). Byte-identical when false.
+    #
+    # The subtlety this closes: the driver's DEAD_RESPONDER counts DRIVES, which the
+    # proactive stimulus inflates — so a dead responder would be MASKED (it "drove
+    # something", just never a response). A proactive responder therefore gets an
+    # un-maskable request-drain liveness on its sequencer instead (proactive stimulus
+    # never touches the request FIFO, so an unanswered request always shows).
+    proactive: bool = False
+
     # F1 — THE RESPONSE-TIMING CONTRACT. Responder-only; opt-in; default = today's
     # shape.
     #
@@ -828,6 +844,13 @@ class AgentConfig(BaseModel):
     def is_continuous(self) -> bool:
         """The CONTINUOUS responder shape — non-blocking driver + drive-idle-on-miss."""
         return self.is_responder and bool(self.idle) and self.respond == "on_request"
+
+    @property
+    def is_proactive(self) -> bool:
+        """HYBRID responder: answers the DUT AND accepts proactive TB stimulus on its
+        sequencer. Only for on_request — its request FIFO's drain is the un-maskable
+        liveness (DEAD_RESPONDER's drive count is inflated by proactive stimulus)."""
+        return self.is_responder and self.proactive
 
     @property
     def responder_seq_name(self) -> str:
@@ -1022,6 +1045,11 @@ class AgentConfig(BaseModel):
                     f"agent '{self.name}': `reorder_policy` is only valid with "
                     f"`mode: responder` + `respond: pipelined`."
                 )
+            if self.proactive:
+                raise ValueError(
+                    f"agent '{self.name}': `proactive` is only valid with "
+                    f"`mode: responder` (it makes a responder ALSO accept TB stimulus)."
+                )
             return self
 
         if not self.active:
@@ -1041,6 +1069,21 @@ class AgentConfig(BaseModel):
                 f"`instances` — each instance would need its own responder, and the "
                 f"generated test starts per-instance stimulus on every instance's "
                 f"sequencer (which a responder's forever sequence owns)."
+            )
+        if self.proactive and self.respond != "on_request":
+            raise ValueError(
+                f"agent '{self.name}': `proactive` requires `respond: on_request` — a "
+                f"hybrid's un-maskable liveness is the request-FIFO drain, which only "
+                f"on_request has (prefetch/combinational have no request FIFO; "
+                f"pipelined already carries its own STRANDED_REQUESTS check)."
+            )
+        if self.proactive and self.idle:
+            raise ValueError(
+                f"agent '{self.name}': `proactive` is incompatible with `idle` — a "
+                f"continuous (non-blocking) responder drives every cycle, leaving no "
+                f"room for a proactive sequence to interleave. A hybrid uses the "
+                f"BLOCKING on_request driver (its responder sequence parks on the "
+                f"request FIFO, so a proactive sequence gets the sequencer when idle)."
             )
         if self.request_valid is None:
             raise ValueError(
@@ -3803,13 +3846,15 @@ class ProjectConfig(BaseModel):
                         f"vsequence '{vs.name}': step targets passive agent "
                         f"'{step.agent}' — no sequencer is built for it."
                     )
-                if ag_obj.is_responder:
+                if ag_obj.is_responder and not ag_obj.is_proactive:
                     raise ValueError(
                         f"vsequence '{vs.name}': step targets RESPONDER agent "
                         f"'{step.agent}'. Its sequencer is owned by its forever "
                         f"responder sequence — a second sequence there would clobber "
                         f"the computed responses with this one's items, and the device "
-                        f"would answer garbage while the bench reported PASS."
+                        f"would answer garbage while the bench reported PASS. (A "
+                        f"`proactive: true` hybrid is exempt: its proactive items are "
+                        f"meaningful, not garbage.)"
                     )
                 valid_seqs = {s.name for s in ag_obj.sequences} | {
                     ag_obj.default_seq_name
@@ -3826,13 +3871,17 @@ class ProjectConfig(BaseModel):
             if t_.sequence is None:
                 continue
             resp_ag = agents_by_name.get(t_.sequence.agent)
-            if resp_ag is not None and resp_ag.is_responder:
+            if (
+                resp_ag is not None
+                and resp_ag.is_responder
+                and not resp_ag.is_proactive
+            ):
                 raise ValueError(
                     f"test '{t_.name}': `sequence` targets RESPONDER agent "
                     f"'{t_.sequence.agent}'. Its sequencer is owned by its forever "
                     f"responder sequence — a second sequence there would clobber the "
                     f"computed responses, and the device would answer garbage while "
-                    f"the bench reported PASS."
+                    f"the bench reported PASS. (A `proactive: true` hybrid is exempt.)"
                 )
         # A test may name an explicit vsequence or the auto-default (<project>_vseq).
         valid_vseqs = vseq_names | ({self.auto_vseq_name} - {None})
@@ -4020,9 +4069,12 @@ class ProjectConfig(BaseModel):
         A responder's sequencer is OWNED by its forever responder sequence. If the test
         also started a stimulus sequence there, both would feed the same driver and the
         random items would clobber the computed responses — a bench that looks like it
-        passes while the device answers garbage. So responders are excluded.
+        passes while the device answers garbage. So responders are excluded — EXCEPT a
+        HYBRID (`proactive: true`), whose proactive items are meaningful (an
+        alert-sender raising alerts), not garbage: it serves the DUT AND initiates, and
+        UVM arbitrates its responder sequence against the test's proactive one.
         """
-        return [a for a in self.active_agents if not a.is_responder]
+        return [a for a in self.active_agents if (not a.is_responder) or a.is_proactive]
 
     @property
     def stimulus_primary(self) -> AgentConfig | None:

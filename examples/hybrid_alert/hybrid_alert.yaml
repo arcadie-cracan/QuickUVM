@@ -1,0 +1,72 @@
+# hybrid_alert — a HYBRID (initiator + responder) agent (docs/hybrid_agent_assessment.md).
+#
+# THE QUESTION THIS BENCH EXISTS TO ANSWER:
+#   OpenTitan's alert-sender does two things at once: it ANSWERS the receiver's pings
+#   (reactive) AND spontaneously RAISES alerts (proactive). QuickUVM's `mode` was
+#   initiator XOR responder — no single agent could do both.
+#
+#   `proactive: true` makes a responder ALSO accept TB stimulus on its sequencer: the env
+#   still forks its responder sequence (which answers pings), and the test starts a
+#   proactive sequence (which raises alerts) on the same sequencer — UVM arbitrates them.
+#
+#   The subtlety it closes: the driver's DEAD_RESPONDER counts DRIVES, and the proactive
+#   alerts inflate that count — so a dead ping-responder would be MASKED. A proactive
+#   responder instead gets an un-maskable request-FIFO-drain liveness (proactive stimulus
+#   never touches the request FIFO). See MUTATIONS.md: killing the responder while the
+#   alerts keep flowing is caught here, and would NOT be by a drive count.
+
+project:
+  name: hybrid_alert_tb
+  author: qa@example.com
+
+dut:
+  name: hybrid_alert
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: sndr
+    interface: sndr_if
+    sequence_item: sndr_item
+    seq_item_style: manual
+    active: true
+
+    mode: responder        # we answer the DUT's pings...
+    request_valid: ping     # ...qualified by the DUT's ping pulse
+    respond: on_request
+    proactive: true         # ...AND we spontaneously raise alerts (the hybrid)
+
+    ports:
+      inputs:               # what WE drive
+        - {name: resp,  width: 1}
+        - {name: alert, width: 1}
+        - {name: adata, width: 8, randomize: true}
+      outputs:              # what WE sample (the DUT's outputs)
+        - {name: ping,       width: 1}
+        - {name: resp_cnt,   width: 8}
+        - {name: last_adata, width: 8}
+        - {name: alert_cnt,  width: 16}
+
+    sequences:
+      # The PROACTIVE stimulus: raise alerts with varying payloads. Runs on the same
+      # sequencer as the (env-forked) responder sequence; UVM arbitrates the two.
+      - {name: alert_raise_seq, kind: directed}
+
+analysis:
+  coverage: [sndr]
+  scoreboards:
+    # Single-stream: checks the DUT latched the payload of each raised alert. The reactive
+    # path's liveness is the request-FIFO drain (generated on the sequencer), not here.
+    - {name: sb, source: sndr}
+
+tests:
+  - {name: hybrid_test, sequence: {agent: sndr, name: alert_raise_seq}}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f

@@ -798,8 +798,18 @@ and is the long pole for campaign target **T2** (`spi_host`).
   id) and round_robin (fair rotation, a `m_last_id` cursor); random matches `axi_rand_slave`.
   Built + mutation-proved on `examples/axi_reorder/` (round_robin `[0 1 0 1 0 1]` vs priority
   `[0 0 0 1 1 1]` from the same backlog).
-- *Deferred:* the `mem_model` primitive; an `if_mode`-style host/device driver swap within one
-  agent; the full 5-channel AXI VIP (AR+AW / R+B, atomics) — gap-by-design.
+- *Hybrid (initiator + responder) `proactive: true` — DONE* (the alert_handler I-7 gap). A
+  responder that ALSO accepts proactive TB stimulus: an alert-sender answers the DUT's pings AND
+  spontaneously raises alerts. The agent stays a responder (the env forks its responder sequence)
+  but also joins the stimulus agents, so the test starts a proactive sequence on the same sequencer
+  — UVM arbitrates the two. The subtlety it closes: the driver's `DEAD_RESPONDER` counts DRIVES,
+  which proactive stimulus inflates, so a dead responder would be MASKED; a proactive responder
+  gets an un-maskable **request-FIFO-drain** liveness instead (the on_request analog of pipelined's
+  `STRANDED_REQUESTS`). Built + mutation-proved on `examples/hybrid_alert/` — killing the responder
+  while the alerts flow fails via the drain (129 unanswered pings) while the comparator still says
+  PASSED and the drive-count check stays green (masked). See [`hybrid_agent_assessment.md`](hybrid_agent_assessment.md).
+- *Deferred:* the `mem_model` primitive; the full 5-channel AXI VIP (AR+AW / R+B, atomics) —
+  gap-by-design.
 - **alert_handler — a CONFIRMED ceiling** *(scout-slate probe, [not built](alert_handler_assessment.md))*.
   The first slate target to confirm a hard gap (AHB and CDC both *refuted* their pessimistic
   prediction; this one does not). OpenTitan's security-alert aggregator needs three things the
