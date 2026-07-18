@@ -71,3 +71,21 @@ xrun -f xrun.f +UVM_TESTNAME=regfile_csr_bit_bash_test
 xrun -f xrun.f +UVM_TESTNAME=regfile_csr_rw_test
 ```
 All four are GREEN on Xcelium (0 UVM_WARNING / 0 UVM_ERROR / 0 UVM_FATAL).
+
+## V2 — register functional coverage from the RAL
+
+`register_model.coverage: true` generates a coverage collector (`regfile_reg_cov`) that installs a
+`uvm_reg_cbs` on every field, so each predicted access reports its exact register + read/write kind.
+It tracks per-register read/write access — from the RAL's own register list at run time, so it needs
+no covergroups in the RAL — plus a per-register covergroup, and reports at end of test, naming any
+un-exercised register. It is **access-aware** (a read-only register is never expected to be written,
+so it is not reported as a gap), counts RAL-predicted front-door accesses, and measures access — not
+field values. It differentiates the CSR tests, which is how you know it has teeth:
+
+```
+regfile_csr_rw_test        [REG_COV] register access coverage: 4/4 read, 4/4 written
+regfile_csr_bit_bash_test  [REG_COV] register access coverage: 4/4 read, 4/4 written
+regfile_csr_hw_reset_test  [REG_COV] register access coverage: 4/4 read, 0/4 written
+                           [REG_COV] never written: reg_model.ctrl   (cfg, scratch, status)
+```
+

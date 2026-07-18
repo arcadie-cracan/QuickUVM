@@ -1941,6 +1941,17 @@ class RegisterModelConfig(BaseModel):
     csr_tests: list[Literal["hw_reset", "bit_bash", "rw", "mem_walk", "shared"]] = (
         Field(default_factory=list)
     )
+    # V2 — register ACCESS coverage from the RAL. Opt-in; byte-identical when False.
+    # Generates a coverage collector: a uvm_reg_cbs on every field, so each PREDICTED
+    # access reports its exact register + read/write kind (no address decode). It tracks
+    # per-register read/write from the RAL's OWN register list at run time (so it works
+    # with any external RAL, built with UVM_CVR covergroups or not) plus a per-register
+    # covergroup, and at end of test reports "N/M read, N/M written" — access-aware (a
+    # read-only register is not expected to be written, so 100% is reachable and a
+    # `never written` line is a real hole). Scope: it counts PREDICTED accesses, i.e.
+    # RAL-initiated (reg.read/write) front-door traffic; raw bus sequences bypassing the
+    # RAL are not counted. It is access coverage, not field-VALUE (UVM_CVR_FIELD_VALS).
+    coverage: bool = False
     backdoor_root: str | None = None  # absolute HDL path to the regfile instance;
     # set to enable backdoor (model.add_hdl_path)
     reg_test_door: Literal["frontdoor", "backdoor"] = "frontdoor"

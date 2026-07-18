@@ -322,3 +322,35 @@ def test_class_name_colliding_with_env_handle_rejected(field, value):
     # A user class name equal to a generated env handle would shadow its own type.
     with pytest.raises(Exception, match="collides with a generated env handle"):
         _rm(**{field: value})
+
+
+# ---- V2: register functional coverage from the RAL ------------------------
+
+
+def test_reg_coverage_off_by_default(tmp_path):
+    """`coverage` defaults False — no collector, no wiring (byte-identical)."""
+    Generator(_cfg(_rm())).generate_all(tmp_path)
+    assert not (tmp_path / "d_reg_cov.svh").exists()
+    assert "reg_cov" not in (tmp_path / "d_env.svh").read_text()
+    assert "d_reg_cov.svh" not in (tmp_path / "d_tb_pkg.sv").read_text()
+
+
+def test_reg_coverage_generates_collector_and_wiring(tmp_path):
+    """`coverage: true` emits the collector, wires it in the env, and packages it."""
+    Generator(_cfg(_rm(coverage=True))).generate_all(tmp_path)
+    cov = tmp_path / "d_reg_cov.svh"
+    assert cov.exists()
+    txt = cov.read_text()
+    # a uvm_reg_cbs callback + the collector + a per-register covergroup
+    assert "extends uvm_reg_cbs" in txt
+    assert "function void post_predict" in txt
+    assert "covergroup cg" in txt
+    assert "uvm_reg_field_cb::add" in txt
+    assert 'uvm_info("REG_COV"' in txt
+    # env: declared, built, and installed after the reg model is wired
+    env = (tmp_path / "d_env.svh").read_text()
+    assert "d_reg_cov reg_cov_h;" in env
+    assert 'reg_cov_h = d_reg_cov::type_id::create("reg_cov_h", this);' in env
+    assert "reg_cov_h.install(env_cfg.reg_model);" in env
+    # packaged
+    assert "d_reg_cov.svh" in (tmp_path / "d_tb_pkg.sv").read_text()

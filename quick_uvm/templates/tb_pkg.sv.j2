@@ -72,6 +72,9 @@ package {{ dut.name }}_tb_pkg;
   `include "{{ dut.name }}_env_cfg.svh"
 {% if register_model %}
   `include "{{ register_model.adapter }}.svh"
+{% if register_model.coverage %}
+  `include "{{ dut.name }}_reg_cov.svh"
+{% endif %}
 {% if register_model.frontdoor %}
   `include "{{ register_model.frontdoor }}.svh"
 {% endif %}

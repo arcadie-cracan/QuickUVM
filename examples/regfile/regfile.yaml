@@ -39,6 +39,7 @@ register_model:
   package: regfile_ral_pkg
   block: regfile_reg_block
   bus_agent: host
+  coverage: true     # V2 — register access coverage from the RAL
   adapter: reg_adapter
   # Backdoor root: the model's HDL slices (regs[0..3], set in the ral pkg) hang off
   # the DUT instance. This gives the "rw" (uvm_reg_access_seq) test its frontdoor-
