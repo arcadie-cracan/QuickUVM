@@ -1,0 +1,85 @@
+# cdc_fifo — a CROSS-DOMAIN-INTEGRITY scoreboard. A dual-clock async FIFO carries data
+# from a WRITE clock domain to a READ clock domain (rtl/cdc_fifo.sv). The write agent runs
+# on wclk, the read agent on rclk (unrelated periods), and a two-stream IN-ORDER scoreboard
+# matches the pushed stream against the popped stream ACROSS the crossing — the test of
+# whether M1 (multi-clock) + A2 (two-stream matching) compose into a CDC check.
+project:
+  name: cdc_fifo
+  author: QuickUVM
+
+dut:
+  name: cdc_fifo
+  reset: wrst_n
+  external_reset: true
+
+clock:
+  - {name: wclk, period: 10, unit: ns}
+  - {name: rclk, period: 14, unit: ns}   # asynchronous: unrelated period
+
+resets:
+  - {name: wrst_n, active_low: true, clock: wclk}
+  - {name: rrst_n, active_low: true, clock: rclk}
+
+agents:
+  # WRITE domain: drives wvalid/wdata, a push completes when wxfer (wvalid && !full).
+  - name: wr
+    interface: wr_if
+    sequence_item: wr_item
+    seq_item_style: manual
+    active: true
+    clock: wclk
+    reset: wrst_n
+    emit_when: wxfer
+    constraints:
+      - "wvalid == 1"
+    sequences:
+      - {name: wr_push, kind: random, count: 16}   # push exactly 16 words (wvalid pulses)
+    ports:
+      inputs:
+        - {name: wvalid, width: 1}
+        - {name: wdata,  width: 8}
+      outputs:
+        - {name: wready, width: 1}
+        - {name: wxfer,  width: 1}
+
+  # READ domain: drives rready, a pop completes when rxfer, rdata is the popped word.
+  - name: rd
+    interface: rd_if
+    sequence_item: rd_item
+    seq_item_style: manual
+    active: true
+    clock: rclk
+    reset: rrst_n
+    emit_when: rxfer
+    constraints:
+      - "rready == 1"
+    sequences:
+      - {name: rd_drain, kind: random, count: 40}  # pop 40x: drains all 16 pushes + idle pops
+    ports:
+      inputs:
+        - {name: rready, width: 1}
+      outputs:
+        - {name: rvalid, width: 1}
+        - {name: rdata,  width: 8}
+        - {name: rxfer,  width: 1}
+
+virtual_sequences:
+  - name: cdc_vseq
+    mode: parallel      # push and drain concurrently across the two clock domains
+    body:
+      - {agent: wr, sequence: wr_push}
+      - {agent: rd, sequence: rd_drain}
+
+tests:
+  - {name: rand_test, vseq: cdc_vseq}
+
+analysis:
+  coverage: []
+  scoreboards:
+    # in-order: the Nth word pushed (source=wr) is the Nth word popped (monitor=rd),
+    # across the clock crossing. predict(wr) is identity: rdata == wdata.
+    - {name: cdc, source: wr, monitor: rd}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f
