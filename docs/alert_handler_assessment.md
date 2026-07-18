@@ -68,7 +68,14 @@ the [Theory of Operation](https://opentitan.org/book/hw/top_earlgrey/ip_autogen/
 
 The three **[I]** rows are the finding; the rest is context.
 
-### [I]-7 — the hybrid alert-sender has no first-class shape
+### [I]-7 — the hybrid alert-sender has no first-class shape  — NOW CLOSED (`proactive: true`)
+
+> **Update:** built as the `proactive: true` hybrid agent — see
+> [`hybrid_agent_assessment.md`](hybrid_agent_assessment.md) and `examples/hybrid_alert`. The
+> analysis below is what motivated it; the [P] workaround became a first-class feature, with an
+> un-maskable request-drain liveness (the driver's DEAD_RESPONDER is inflated by the proactive
+> stimulus). I-8 → the windowed scoreboard; only I-9 (the ~63× agent array) remains.
+
 
 An alert-sender does two unrelated things: it **spontaneously raises alerts** (a peripheral event,
 no incoming request) *and* it **answers pings** (a reaction to a DUT toggle). QuickUVM's
