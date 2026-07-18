@@ -761,6 +761,18 @@ and is the long pole for campaign target **T2** (`spi_host`).
   `[0 0 0 1 1 1]` from the same backlog).
 - *Deferred:* the `mem_model` primitive; an `if_mode`-style host/device driver swap within one
   agent; the full 5-channel AXI VIP (AR+AW / R+B, atomics) — gap-by-design.
+- **alert_handler — a CONFIRMED ceiling** *(scout-slate probe, [not built](alert_handler_assessment.md))*.
+  The first slate target to confirm a hard gap (AHB and CDC both *refuted* their pessimistic
+  prediction; this one does not). OpenTitan's security-alert aggregator needs three things the
+  generator can't carry, each schema-confirmed: a **hybrid alert-sender** (spontaneous alerts *and*
+  ping-replies in one agent — `mode` is initiator XOR responder), a **cycle-accurate escalation
+  reference model** (phase/ping timers checked to the exact cycle — the K0 `predict(txn)→txn` seam
+  has no clock handle), and **one agent instantiated ~63× into one DUT** (C3 `instances` gives each
+  its own DUT; the reuse-array topology is the T3 VIP gap at scale). The dual-rail signals,
+  handshake, async crossing, FSM *state*, and RAL are all expressible (mostly via seams the fairness
+  rule permits) — the block breaks not on *can't-express* but on the generator's leverage collapsing
+  toward zero. Names a new roadmap axis: **cycle-accurate temporal checking** (a clock-referenced
+  checker seam, distinct from the transaction-level predictor).
 
 ### Reactive / responder agent — the original investigation
 A per-agent **reactive** mode: the driver responds to DUT-initiated transfers (a
