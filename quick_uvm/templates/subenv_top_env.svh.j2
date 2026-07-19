@@ -17,6 +17,13 @@ class {{ dut.name }}_env extends uvm_env;
 {% for sv in subenvs %}
   {{ sv.env_class }} {{ sv.inst }};
 {% endfor %}
+{% if boundary_agents %}
+
+  // H2 — boundary (top-level) agents: the subsystem's own bus/pin agents
+{% for agent in boundary_agents %}
+  {{ agent.name }}_agent {{ agent.name }}_agnt;
+{% endfor %}
+{% endif %}
 
   // Top virtual sequencer (coordinates the composed blocks)
   {{ dut.name }}_virtual_sequencer vsqr;
@@ -44,6 +51,10 @@ class {{ dut.name }}_env extends uvm_env;
 {% for sv in subenvs %}
     {{ sv.inst }} = {{ sv.env_class }}::type_id::create("{{ sv.inst }}", this);
 {% endfor %}
+{% for agent in boundary_agents %}
+    uvm_config_db#({{ agent.name }}_cfg)::set(this, "{{ agent.name }}_agnt", "cfg", env_cfg.{{ agent.name }}_cfg_h);
+    {{ agent.name }}_agnt = {{ agent.name }}_agent::type_id::create("{{ agent.name }}_agnt", this);
+{% endfor %}
     vsqr = {{ dut.name }}_virtual_sequencer::type_id::create("vsqr", this);
 {% for xsb in subenv_scoreboards %}
     {{ xsb.name }} = {{ xsb.cls }}::type_id::create("{{ xsb.name }}", this);
@@ -64,15 +75,41 @@ class {{ dut.name }}_env extends uvm_env;
 {% endfor %}
 {% endif %}
 {% endfor %}
+{% for agent in boundary_agents if agent.active %}
+    vsqr.{{ agent.name }}_sqr = {{ agent.name }}_agnt.sqr;
+{% endfor %}
 {% if subenv_scoreboards %}
     // Cross-block scoreboards: source block stream -> predictor, monitor -> comparator
 {% for xsb in subenv_scoreboards %}
+{% if xsb.src_handle %}
     {{ xsb.src_handle }}.{{ xsb.src_agent }}_agnt.ap.connect({{ xsb.name }}.src_axp);
+{% else %}
+    {{ xsb.src_agent }}_agnt.ap.connect({{ xsb.name }}.src_axp);
+{% endif %}
+{% if xsb.mon_handle %}
     {{ xsb.mon_handle }}.{{ xsb.mon_agent }}_agnt.ap.connect({{ xsb.name }}.mon_axp);
+{% else %}
+    {{ xsb.mon_agent }}_agnt.ap.connect({{ xsb.name }}.mon_axp);
+{% endif %}
 {% endfor %}
 {% endif %}
     // pragma quickuvm custom connect_phase_additional begin
     // pragma quickuvm custom connect_phase_additional end
   endfunction
+{% if unchecked_boundary %}
+
+  function void end_of_elaboration_phase(uvm_phase phase);
+    super.end_of_elaboration_phase(phase);
+    // Checking has not scaled with stimulus: these boundary agents are driven by
+    // the top virtual sequence but no cross-block scoreboard references them —
+    // their streams are driven and never checked. Add a `subenv_scoreboards:`
+    // entry using the bare agent name as source (or monitor) to silence this.
+{% for ag in unchecked_boundary %}
+    `uvm_warning("UNCHECKED_AGENT",
+                 {"boundary agent '{{ ag }}' is driven by the top vseq ",
+                  "but no cross-block scoreboard checks its stream"})
+{% endfor %}
+  endfunction
+{% endif %}
 
 endclass

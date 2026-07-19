@@ -57,6 +57,13 @@ module {{ top_name }};
   clkgen ck (clk);
 {% endif %}
 
+{% if boundary_agents %}
+  // H2 — boundary (top-level) agent interfaces
+{% for agent in boundary_agents %}
+  {{ agent.interface }} {{ agent.interface }}_inst (clk);
+{% endfor %}
+
+{% endif %}
   // Instantiate each block's interfaces
 {% for lv in leaf_views %}
 {% for agent in lv.agents %}
@@ -94,6 +101,9 @@ module {{ top_name }};
 {% endif %}
 
   initial begin
+{% for agent in boundary_agents %}
+    uvm_config_db#(virtual {{ agent.interface }})::set(null, "*", "{{ agent.interface }}_vif", {{ agent.interface }}_inst);
+{% endfor %}
 {% for lv in leaf_views %}
 {% for agent in lv.agents %}
 {% set vset %}    uvm_config_db#(virtual {{ agent.interface }}{{ agent.param_args_values }})::set(null, "*", "{{ lv.pathname }}_{{ agent.interface }}_vif", {{ lv.pathname }}_{{ agent.interface }}_inst);{% endset %}

@@ -144,13 +144,13 @@ class Generator:
             "sb_window": None,  # C3 instances are never windowed
         }
 
-    def files_to_generate(self, subenv: bool = False) -> list[FileSpec]:
+    def _flat_base_ctx(self) -> dict:
+        """The flat-bench render context. Extracted so the subsystem path can
+        reuse it for BOUNDARY agents: their packages are generated exactly like
+        a flat packaged bench's, so an agent's files are byte-identical however
+        it is hosted."""
         cfg = self.config
-        # H1 — a subsystem (top) bench composes child block envs; it has no agents
-        # of its own, so it takes a dedicated composition path.
-        if cfg.subenvs:
-            return self._subenv_composition_files()
-        base_ctx = {
+        return {
             "project": cfg.project,
             "dut": cfg.dut,
             "clock": cfg.clock,
@@ -219,6 +219,14 @@ class Generator:
             # `analysis:` block — byte-identical for every committed example).
             "unchecked_agents": cfg.unchecked_stimulus_agents,
         }
+
+    def files_to_generate(self, subenv: bool = False) -> list[FileSpec]:
+        cfg = self.config
+        # H1 — a subsystem (top) bench composes child block envs (plus optional
+        # top-level BOUNDARY agents), so it takes a dedicated composition path.
+        if cfg.subenvs:
+            return self._subenv_composition_files()
+        base_ctx = self._flat_base_ctx()
 
         # A2 — scoreboard stream types. Single-stream (default): predict(pa) -> pa
         # (sb_in_item == sb_out_item == primary agent, byte-identical). Two-stream:
@@ -644,6 +652,23 @@ class Generator:
             "top_name": cfg.top_name,
             "connections": cfg.resolved_connections,
             "subenv_scoreboards": xsbs,
+            # H2 — boundary agents (the top's own): wired at the top alongside the
+            # composed blocks. Empty for every existing example (byte-identical).
+            "boundary_agents": cfg.agents,
+            # Boundary stimulus agents no cross-block scoreboard touches: the
+            # driven-but-unchecked shape — the env raises UNCHECKED_AGENT for each.
+            "unchecked_boundary": [
+                a.name
+                for a in cfg.agents
+                if a.active
+                and not any(
+                    x["src_agent"] == a.name
+                    and not x["src_handle"]
+                    or x["mon_agent"] == a.name
+                    and not x["mon_handle"]
+                    for x in xsbs
+                )
+            ],
             # env_vseq_base.svh.j2 (reused) reads these; a top vseq is virtual-only.
             "virtual_sequences": [],
             "auto_vseq": f"{name}_vseq",
@@ -717,6 +742,18 @@ class Generator:
             specs.extend(self._subenv_env_classes(c))
 
         walk(cfg)
+
+        # 1b. H2 — BOUNDARY agents: the top's own agents, generated exactly like a
+        # flat packaged bench's (same specs, same ctx builder), so an agent's files
+        # are byte-identical whether it lives on a flat bench or a subsystem top.
+        if cfg.agents:
+            flat_ctx = self._flat_base_ctx()
+            for agent in cfg.agents:
+                specs.extend(self._agent_source_specs(agent, flat_ctx))
+                specs.extend(self._agent_seq_specs(agent, flat_ctx))
+                actx = {**flat_ctx, "agent": agent}
+                specs.append(FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx))
+                specs.append(FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx))
 
         # 2. The top-only bench layer (walks the whole tree via the model helpers).
         top = cfg.dut.name

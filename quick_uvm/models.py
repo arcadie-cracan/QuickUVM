@@ -3143,6 +3143,18 @@ class ProjectConfig(_SchemaModel):
         """All leaf blocks' agent VIP packages (flattened)."""
         return [f"{a.name}_pkg" for lv in self.leaf_views for a in lv.agents]
 
+    def _boundary_endpoint(self, ref: str) -> tuple[AgentConfig, str] | None:
+        """H2 — `<agent>.<port>` where `<agent>` names one of THIS level's own
+        (boundary) agents: the endpoint is the agent's interface at the top, not a
+        composed block. Returns (agent, port) or None if the first segment is not a
+        boundary agent (block resolution then applies)."""
+        parts = ref.split(".")
+        if len(parts) == 2:
+            ag = next((a for a in self.agents if a.name == parts[0]), None)
+            if ag is not None:
+                return ag, parts[1]
+        return None
+
     def _resolve_endpoint(
         self, ref: str, what: str
     ) -> tuple[list[str], str, ProjectConfig]:
@@ -3196,6 +3208,12 @@ class ProjectConfig(_SchemaModel):
         level's path from the top) joined with the endpoint's own block path. At the
         top with a flat `<block>.<port>` this is `<block>_<iface>_inst.<port>`
         (byte-identical). `prefix` is empty for a top-declared wire."""
+        be = self._boundary_endpoint(ref)
+        if be is not None:
+            # A boundary agent's interface is instantiated un-prefixed at the top
+            # (the flat naming), so its signal is `<iface>_inst.<port>`.
+            ag, port = be
+            return f"{ag.interface}_inst.{port}"
         blk_path, port, cfg = self._resolve_endpoint(ref, "connection")
         full = list(prefix) + blk_path
         for a in cfg.agents:
@@ -3244,15 +3262,24 @@ class ProjectConfig(_SchemaModel):
         dotted path of child-env handles from this level's env down to the leaf
         (e.g. 'stg1.add'); the scoreboard's connect_phase reaches the leaf agent's
         analysis port through it. Flat same-level → a single handle (byte-identical)."""
-        spath, sag, scfg = self._resolve_endpoint(sb.source, "cross-block scoreboard")
-        mpath, mag, mcfg = self._resolve_endpoint(sb.monitor, "cross-block scoreboard")
-        sagent = _leaf_agent(scfg, sag)
-        magent = _leaf_agent(mcfg, mag)
-        if sagent is None or magent is None:  # pragma: no cover
-            # unreachable: validate_subenv_composition rejects a missing agent (with a
-            # clear message) before generation ever calls this.
-            raise AssertionError("unvalidated cross-block scoreboard endpoint")
-        return ".".join(spath), sagent, ".".join(mpath), magent
+
+        def one(ref: str) -> tuple[str, AgentConfig]:
+            # H2 — a BARE name (no dot) is a boundary agent of THIS level: its
+            # analysis port lives on the level's own env (empty handle chain).
+            if "." not in ref:
+                ag = next((a for a in self.agents if a.name == ref), None)
+                if ag is None:  # pragma: no cover — validated before generation
+                    raise AssertionError("unvalidated boundary scoreboard endpoint")
+                return "", ag
+            path, aname, cfg = self._resolve_endpoint(ref, "cross-block scoreboard")
+            agent = _leaf_agent(cfg, aname)
+            if agent is None:  # pragma: no cover — validated before generation
+                raise AssertionError("unvalidated cross-block scoreboard endpoint")
+            return ".".join(path), agent
+
+        shandle, sagent = one(sb.source)
+        mhandle, magent = one(sb.monitor)
+        return shandle, sagent, mhandle, magent
 
     def validate_subenv_composition(self) -> None:
         """Cross-child checks run by the loader once child configs are loaded.
@@ -3264,6 +3291,14 @@ class ProjectConfig(_SchemaModel):
         items: set[str] = set()
         anames: set[str] = set()
         seqs: set[str] = set()
+        # H2 — boundary agents share the flattened namespace: seed the collision
+        # sets with the top's own agents so a leaf clash is caught symmetrically.
+        for a in self.agents:
+            anames.add(a.name)
+            ifaces.add(a.interface)
+            items.add(a.sequence_item)
+            for sq in a.sequences:
+                seqs.add(sq.name)
         for s in self.subenvs:
             child = self.subenv_configs.get(s.name)
             if child is None:
@@ -3277,6 +3312,11 @@ class ProjectConfig(_SchemaModel):
                 raise ValueError(
                     f"subenv '{s.name}': a child block with a register_model is not "
                     f"supported in a subsystem yet."
+                )
+            if child.subenvs and child.agents:
+                raise ValueError(
+                    f"subenv '{s.name}': a NESTED subsystem may not declare "
+                    f"boundary agents (this slice) — only the top level may."
                 )
             if not child.dut.combinational:
                 # Clocked child (a registered, typically external-reset block): the
@@ -3390,35 +3430,62 @@ class ProjectConfig(_SchemaModel):
         # leaf block (cross-level); _resolve_endpoint fails closed on a bad path.
         seen_dst: set[str] = set()
         for c in self.connections:
-            spath, sport, scfg = self._resolve_endpoint(c.src, "connection 'from'")
-            dpath, dport, dcfg = self._resolve_endpoint(c.dst, "connection 'to'")
-            sblk, dblk = spath[-1], dpath[-1]
-            sportc = next(
-                (p for a in scfg.agents for p in a.output_ports if p.name == sport),
-                None,
-            )
-            if sportc is None:
-                raise ValueError(
-                    f"connection 'from' '{c.src}': '{sport}' is not an output port "
-                    f"of block '{sblk}'."
+            # H2 — either endpoint may be a BOUNDARY agent (`<agent>.<port>`).
+            # NB the direction convention flips at the boundary: a BLOCK drives the
+            # wire from its DUT's outputs (the leaf agent's SAMPLED `outputs`),
+            # while a boundary AGENT drives the wire from the ports it drives (its
+            # `inputs` — the house convention: inputs are what the agent drives).
+            sbe = self._boundary_endpoint(c.src)
+            dbe = self._boundary_endpoint(c.dst)
+            if sbe is not None:
+                sag, sport = sbe
+                sportc = next((p for p in sag.input_ports if p.name == sport), None)
+                if sportc is None:
+                    raise ValueError(
+                        f"connection 'from' '{c.src}': '{sport}' is not a DRIVEN "
+                        f"port of boundary agent '{sag.name}' (its `inputs`)."
+                    )
+            else:
+                spath, sport, scfg = self._resolve_endpoint(c.src, "connection 'from'")
+                sblk = spath[-1]
+                sportc = next(
+                    (p for a in scfg.agents for p in a.output_ports if p.name == sport),
+                    None,
                 )
-            dagent = next(
-                (a for a in dcfg.agents for p in a.input_ports if p.name == dport),
-                None,
-            )
-            if dagent is None:
-                raise ValueError(
-                    f"connection 'to' '{c.dst}': '{dport}' is not an input port of "
-                    f"block '{dblk}'."
+                if sportc is None:
+                    raise ValueError(
+                        f"connection 'from' '{c.src}': '{sport}' is not an output "
+                        f"port of block '{sblk}'."
+                    )
+            if dbe is not None:
+                dag, dport = dbe
+                dportc = next((p for p in dag.output_ports if p.name == dport), None)
+                if dportc is None:
+                    raise ValueError(
+                        f"connection 'to' '{c.dst}': '{dport}' is not a SAMPLED "
+                        f"port of boundary agent '{dag.name}' (its `outputs`)."
+                    )
+                dpath = [dag.name]
+            else:
+                dpath, dport, dcfg = self._resolve_endpoint(c.dst, "connection 'to'")
+                dblk = dpath[-1]
+                dagent = next(
+                    (a for a in dcfg.agents for p in a.input_ports if p.name == dport),
+                    None,
                 )
-            if dagent.active:
-                raise ValueError(
-                    f"connection 'to' '{c.dst}': block '{dblk}' agent "
-                    f"'{dagent.name}' is active and would drive '{dport}', "
-                    f"conflicting with the connection — make it passive "
-                    f"(active: false)."
-                )
-            dportc = next(p for p in dagent.input_ports if p.name == dport)
+                if dagent is None:
+                    raise ValueError(
+                        f"connection 'to' '{c.dst}': '{dport}' is not an input port "
+                        f"of block '{dblk}'."
+                    )
+                if dagent.active:
+                    raise ValueError(
+                        f"connection 'to' '{c.dst}': block '{dblk}' agent "
+                        f"'{dagent.name}' is active and would drive '{dport}', "
+                        f"conflicting with the connection — make it passive "
+                        f"(active: false)."
+                    )
+                dportc = next(p for p in dagent.input_ports if p.name == dport)
             if sportc.bit_width != dportc.bit_width:
                 raise ValueError(
                     f"connection '{c.src}' -> '{c.dst}': width mismatch "
@@ -3457,6 +3524,15 @@ class ProjectConfig(_SchemaModel):
             raise ValueError("cross-block scoreboard names must be unique.")
         for sb in self.subenv_scoreboards:
             for role, ref in (("source", sb.source), ("monitor", sb.monitor)):
+                # H2 — a bare name is a boundary agent of this level.
+                if "." not in ref:
+                    if not any(a.name == ref for a in self.agents):
+                        raise ValueError(
+                            f"cross-block scoreboard '{sb.name}' {role} '{ref}': "
+                            f"no boundary agent of that name (declare it under "
+                            f"`agents:`, or use '<block>.<agent>' for a leaf)."
+                        )
+                    continue
                 blk_path, agent, cfg = self._resolve_endpoint(
                     ref, f"cross-block scoreboard '{sb.name}' {role}"
                 )
@@ -3628,11 +3704,22 @@ class ProjectConfig(_SchemaModel):
                 "bench (they wire/scoreboard composed `subenvs`)."
             )
         if self.subenvs:
-            if self.agents:
-                raise ValueError(
-                    "a bench with `subenvs` composes child block envs and must not "
-                    "define its own `agents` (this slice)."
-                )
+            # H2 — BOUNDARY agents: a subsystem top MAY declare its own agents (the
+            # chip-level shape: block envs inside, chip-boundary agents outside).
+            # They are wired at the top (interface + connections + top vseq), so
+            # the flat-only machinery is fenced off fail-closed for this slice.
+            for a in self.agents:
+                if a.is_responder:
+                    raise ValueError(
+                        f"boundary agent '{a.name}': `mode: responder` is not "
+                        f"supported at a subsystem top yet (this slice) — put the "
+                        f"responder in a leaf block."
+                    )
+                if a.parameters or a.instances or a.replicas > 1:
+                    raise ValueError(
+                        f"boundary agent '{a.name}': parameters/instances/replicas "
+                        f"are not supported at a subsystem top yet (this slice)."
+                    )
             if self.layout != "packaged":
                 raise ValueError(
                     "`subenvs` require `layout: packaged` (each child block is a "

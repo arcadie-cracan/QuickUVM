@@ -174,30 +174,44 @@ def test_subenvs_require_packaged_layout():
         _top(layout="flat")
 
 
-def test_subenvs_reject_own_agents():
-    with pytest.raises(Exception, match="must not define its own `agents`"):
-        ProjectConfig(
+def test_subenvs_allow_boundary_agents_but_fence_the_shapes():
+    """H2 — a subsystem top MAY declare its own (boundary) agents; the flat-only
+    shapes (responder / parameterized / replicated) stay fenced this slice."""
+    from quick_uvm.models import SubenvConfig
+
+    def _cfg(**agent_over):
+        a = dict(
+            name="x",
+            interface="xi",
+            sequence_item="xt",
+            ports={"inputs": [PortConfig(name="din", width=8)]},
+        )
+        a.update(agent_over)
+        return ProjectConfig(
             project=ProjectMeta(name="soc"),
             dut=DutConfig(name="soc", combinational=True, reset=""),
             layout="packaged",
-            agents=[
-                AgentConfig(
-                    name="x",
-                    interface="xi",
-                    sequence_item="xt",
-                    ports={"inputs": [PortConfig(name="din", width=8)]},
-                )
-            ],
+            agents=[AgentConfig(**a)],
             subenvs=[
-                __import__("quick_uvm.models", fromlist=["SubenvConfig"]).SubenvConfig(
-                    name="a", config="a.yaml"
-                ),
-                __import__("quick_uvm.models", fromlist=["SubenvConfig"]).SubenvConfig(
-                    name="b", config="b.yaml"
-                ),
+                SubenvConfig(name="a", config="a.yaml"),
+                SubenvConfig(name="b", config="b.yaml"),
             ],
             tests=[TConf(name="t")],
         )
+
+    _cfg()  # a plain boundary agent is now legal
+    with pytest.raises(Exception, match="not supported at a subsystem top"):
+        _cfg(
+            mode="responder",
+            request_valid="req",
+            ports={
+                "inputs": [PortConfig(name="gnt", width=1)],
+                "outputs": [PortConfig(name="req", width=1)],
+            },
+        )
+    # replicas on a boundary agent: rejected (whichever replicas wall fires first)
+    with pytest.raises(Exception, match="replicas"):
+        _cfg(replicas=3)
 
 
 def test_subenvs_require_at_least_two():
