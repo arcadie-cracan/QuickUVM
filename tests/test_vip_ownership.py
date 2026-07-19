@@ -78,7 +78,7 @@ def test_kind_requires_packaged_layout():
 
 
 def test_vip_forbids_bench_only_features():
-    with pytest.raises(ValidationError, match="must not set"):
+    with pytest.raises(ValidationError, match="silently dropped"):
         ProjectConfig.model_validate(
             {
                 **_VIP,
