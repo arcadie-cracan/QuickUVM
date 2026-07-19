@@ -13,7 +13,7 @@ It **compiles on its own**: `cd gen && xrun -uvm -compile -F io_pkg.f`.
 ## Who consumes it
 
 - [`../f2_con`](../f2_con/) — a normal bench that wires the `io` agent in **by reference**
-  (`agent_refs:`), without regenerating its source.
+  (a `{name, from_vip}` entry in `agents:`), without regenerating its source.
 - [`../f2_selftest`](../f2_selftest/) — a **DUT-less** self-test of this VIP.
 
 Both point at `gen/f2_iovip.qvip`; edit this VIP once and both see it.

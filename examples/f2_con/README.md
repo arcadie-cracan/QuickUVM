@@ -3,8 +3,8 @@
 A normal bench that wires the `io` agent from [`../f2_iovip`](../f2_iovip/) **by reference**:
 
 ```yaml
-agent_refs:
-  - {name: io, manifest: ../f2_iovip/gen/f2_iovip.qvip}
+agents:
+  - {name: io, from_vip: ../f2_iovip/gen/f2_iovip.qvip}
 ```
 
 The loader reads the manifest, reconstructs the `io` agent, and appends it to the env — so this

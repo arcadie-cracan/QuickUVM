@@ -140,12 +140,15 @@ def _make_vip_and_consumer(tmp_path, consumer_extra=None):
         tmp_path / "iovip" / "gen", backup=False
     )
     (tmp_path / "con").mkdir()
+    extra = dict(consumer_extra or {})
+    own_agents = extra.pop("agents", [])
     con = {
         "project": {"name": "con"},
         "layout": "packaged",
         "dut": {"name": "con", "clock": "clk", "reset": "", "combinational": True},
-        "agent_refs": [{"name": "io", "manifest": "../iovip/gen/iovip.qvip"}],
-        **(consumer_extra or {}),
+        # declared agents first, then the reference entry — one list, two kinds
+        "agents": own_agents + [{"name": "io", "from_vip": "../iovip/gen/iovip.qvip"}],
+        **extra,
     }
     p = tmp_path / "con" / "con.yaml"
     p.write_text(yaml.safe_dump(con))
@@ -204,7 +207,7 @@ def test_missing_manifest_is_a_clear_error(tmp_path):
                     "reset": "",
                     "combinational": True,
                 },
-                "agent_refs": [{"name": "io", "manifest": "../nope/gen/nope.qvip"}],
+                "agents": [{"name": "io", "from_vip": "../nope/gen/nope.qvip"}],
             }
         )
     )
@@ -213,7 +216,8 @@ def test_missing_manifest_is_a_clear_error(tmp_path):
 
 
 def test_by_reference_requires_packaged(tmp_path):
-    with pytest.raises(ValidationError, match="requires.*packaged"):
+    # raised by the from_yaml loader (which is where refs are resolved)
+    with pytest.raises(Exception, match="requires.*packaged"):
         _make_vip_and_consumer(tmp_path, {"layout": "flat"})
 
 
@@ -233,7 +237,7 @@ def test_selftest_emits_loopback_top_and_no_dut(tmp_path):
                 "kind": "selftest",
                 "layout": "packaged",
                 "clock": {"period": 10, "unit": "ns"},
-                "agent_refs": [{"name": "io", "manifest": "../iovip/gen/iovip.qvip"}],
+                "agents": [{"name": "io", "from_vip": "../iovip/gen/iovip.qvip"}],
             }
         )
     )
@@ -305,7 +309,7 @@ def test_ref_name_is_authoritative_over_a_corrupt_manifest_key(tmp_path):
                     "reset": "",
                     "combinational": True,
                 },
-                "agent_refs": [{"name": "io", "manifest": "../iovip/gen/iovip.qvip"}],
+                "agents": [{"name": "io", "from_vip": "../iovip/gen/iovip.qvip"}],
             }
         )
     )
@@ -334,7 +338,7 @@ def test_corrupt_manifest_missing_filelist_is_a_clear_error(tmp_path):
                     "reset": "",
                     "combinational": True,
                 },
-                "agent_refs": [{"name": "io", "manifest": "../iovip/gen/iovip.qvip"}],
+                "agents": [{"name": "io", "from_vip": "../iovip/gen/iovip.qvip"}],
             }
         )
     )
@@ -342,17 +346,29 @@ def test_corrupt_manifest_missing_filelist_is_a_clear_error(tmp_path):
         ProjectConfig.from_yaml(p)
 
 
-def test_unresolved_agent_refs_fail_loudly():
-    """agent_refs must be resolved by from_yaml; a bare model_validate cannot do the file
-    I/O, and silently generating nothing for them would be a footgun — reject it. (Uses an
-    own agent so the ≥1-agent check doesn't fire first.)"""
-    with pytest.raises(ValidationError, match="were not resolved"):
+def test_unresolved_from_vip_entry_fails_loudly():
+    """`from_vip` entries are resolved by from_yaml; a bare model_validate cannot
+    do the file I/O, and silently generating nothing for them would be a footgun —
+    reject with the from_yaml hint."""
+    with pytest.raises(ValidationError, match="from_yaml"):
+        ProjectConfig.model_validate(
+            {
+                "project": {"name": "con"},
+                "layout": "packaged",
+                "dut": {"name": "con", "clock": "clk", "reset": ""},
+                "agents": [{"name": "other", "from_vip": "x.qvip"}],
+            }
+        )
+
+
+def test_old_agent_refs_key_errors_with_move_hint():
+    with pytest.raises(ValidationError, match="moved INTO `agents:`"):
         ProjectConfig.model_validate(
             {
                 "project": {"name": "con"},
                 "layout": "packaged",
                 "dut": {"name": "con", "clock": "clk", "reset": ""},
                 "agents": _VIP["agents"],
-                "agent_refs": [{"name": "other", "manifest": "x.qvip"}],
+                "agent_refs": [{"name": "io", "manifest": "x.qvip"}],
             }
         )
