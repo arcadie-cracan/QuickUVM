@@ -32,8 +32,8 @@ The two transaction types decompose cleanly into a **read agent** (`AR → R`, o
 | — | Reorder policy (priority / round-robin) | [`axi_reorder`](../examples/axi_reorder/) | ✅ green | `reorder_policy` |
 | 1 | **Write channel `AW + W → B`**, OoO by id | [`axi_write`](../examples/axi_write/) | ✅ green | **monitor AW→W order-correlation seam** (no framework change) |
 | 2 | **Bursts (`ARLEN > 0`, multi-beat `R`, `RLAST`)** | [`axi_read_burst`](../examples/axi_read_burst/) | ✅ green | **driver-seam multi-beat drive** (no framework change) |
-| 3 | Ready-handshake backpressure (`AxREADY`/`xREADY`) | — | ○ next | a driven+sampled handshake per channel — **needs study** |
-| 4 | Unified read **and** write in one `axi` agent | — | ○ | **the deep gap** — two request streams (`AR`+`AW`) in one agent |
+| 3 | **Ready-handshake (`AxREADY`/`xREADY`), back-to-back** | [`axi_handshake`](../examples/axi_handshake/) | ✅ green | **`request_ready:` level-capture feature** (the T6 gap closed) + driver-seam R-hold |
+| 4 | Unified read **and** write in one `axi` agent | — | ○ next | **the deep gap** — two request streams (`AR`+`AW`) in one agent |
 | 5 | Bursts × out-of-order (interleaved `R`/`B` beats), exclusive/atomic access | — | ○ | two-agent build + glue (full VIP) |
 
 ## The write channel (slice 1) — the finding that matters
@@ -97,7 +97,20 @@ mutation flips the automated verdict to FAIL. The recurring lesson: a passing te
 if the thing that would fail is visible to the *automated gate*, not just to a human reading the
 log.
 
-## Where the real framework gap still is (slices 3–5)
+## The ready handshake (slice 3) — the first framework feature, closing the T6 gap
+
+Slices 1–2 were pure examples; slice 3 is the first that needed the **generic framework** to
+change — and it closes the one concrete gap the whole T6/AXI campaign named. Real AXI holds
+`valid` until `ready` and issues requests **back-to-back**, so the monitor's edge-detect
+under-counts (it sees only the first of a held-valid burst). The opt-in **`request_ready:`**
+feature switches the monitor to a **level capture** (`valid && ready`, one publish per accepted
+cycle); byte-identical when absent. [`axi_handshake`](../examples/axi_handshake/) drives 4
+back-to-back requests plus `rready` response backpressure, mutation-proved via a UVM oracle that
+counts AR vs R transfers (revert to edge-detect → the four collapse to one → `UVM_ERROR`). Two
+seams carry the protocol: co-sampling the qualifiers at one edge (the clocking-block split means
+a driven signal is sampled a cycle early), and the driver holding `rvalid` until `rready`.
+
+## Where the real framework gap still is (slices 4–5)
 
 Slice 1 moved the boundary, it did not erase it. The genuine open questions:
 
@@ -118,9 +131,9 @@ Slice 1 moved the boundary, it did not erase it. The genuine open questions:
 
 ## Verdict
 
-The epic is **buildable slice-by-slice as runnable examples**, and the two hardest-looking
-slices — out-of-order responses (slice 0) and the AW+W coupling (slice 1) — are **done and
-green** using only existing features plus seams. The remaining gap is not "can AXI be
-expressed" but "should the *unified* multi-channel agent be a first-class QuickUVM shape, or is
+Slices 0–3 are **done and green**: out-of-order responses (0), the AW+W coupling (1), and
+bursts (2) as pure examples, and the valid/ready handshake (3) as the epic's one framework
+feature — the concrete T6 gap, now closed. The remaining gap is not "can AXI be expressed" but
+"should the *unified* multi-channel agent be a first-class QuickUVM shape, or is
 two-agents-sharing-an-interface the right decomposition." That is a design question for slice 4,
 and it is the correct place to stop and decide rather than build speculatively.

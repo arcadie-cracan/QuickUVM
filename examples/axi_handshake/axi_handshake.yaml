@@ -1,0 +1,58 @@
+# HANDSHAKE responder — the AXI epic, slice 3: the valid/ready handshake (AR/R).
+#
+# The DUT master HOLDS arvalid and issues its requests BACK-TO-BACK (a new arid every cycle the
+# slave accepts). An edge-detect monitor would capture only the first; `request_ready: arready`
+# makes the monitor capture on the HANDSHAKE (level, one per accepted cycle) — the T6 gap closed
+# (docs/t6_axi_outstanding_assessment.md §4). The response side has backpressure: the master
+# drops rready every third cycle, so the driver seam HOLDS rvalid until rready (the R handshake).
+
+project:
+  name: axi_handshake_tb
+  author: qa@example.com
+
+dut:
+  name: axi_handshake
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: rd
+    interface: rd_if
+    sequence_item: rd_item
+    seq_item_style: manual
+    active: true
+
+    mode: responder
+    request_valid: arvalid      # sampled: the DUT asserts a read-address request
+    request_ready: arready      # driven: the slave's accept — capture on valid && ready
+    respond: on_request
+
+    ports:
+      # inputs = what the agent DRIVES: the response (R) channel + the slave's arready
+      inputs:
+        - {name: rvalid,  width: 1,  randomize: true}
+        - {name: rid,     width: 4,  randomize: true}
+        - {name: rdata,   width: 32, randomize: true}
+        - {name: arready, width: 1,  randomize: true}
+      # outputs = what the agent SAMPLES: the request (AR) channel + the master's rready
+      outputs:
+        - {name: arvalid, width: 1}
+        - {name: arid,    width: 4}
+        - {name: araddr,  width: 32}
+        - {name: rready,  width: 1}
+
+analysis:
+  coverage: []
+  scoreboards: []
+
+tests:
+  - {name: rand_test, num_items: 120}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f
