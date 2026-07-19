@@ -33,8 +33,8 @@ The two transaction types decompose cleanly into a **read agent** (`AR → R`, o
 | 1 | **Write channel `AW + W → B`**, OoO by id | [`axi_write`](../examples/axi_write/) | ✅ green | **monitor AW→W order-correlation seam** (no framework change) |
 | 2 | **Bursts (`ARLEN > 0`, multi-beat `R`, `RLAST`)** | [`axi_read_burst`](../examples/axi_read_burst/) | ✅ green | **driver-seam multi-beat drive** (no framework change) |
 | 3 | **Ready-handshake (`AxREADY`/`xREADY`), back-to-back** | [`axi_handshake`](../examples/axi_handshake/) | ✅ green | **`request_ready:` level-capture feature** (the T6 gap closed) + driver-seam R-hold |
-| 4 | Unified read **and** write in one `axi` agent | — | ○ next | **the deep gap** — two request streams (`AR`+`AW`) in one agent |
-| 5 | Bursts × out-of-order (interleaved `R`/`B` beats), exclusive/atomic access | — | ○ | two-agent build + glue (full VIP) |
+| 4 | **Full AXI slave — read agent + write agent on one DUT** | [`axi_slave`](../examples/axi_slave/) | ✅ green | **composition** of slices 0+1, two agents (no framework change) |
+| 5 | Bursts × out-of-order (interleaved `R`/`B` beats), exclusive/atomic access | — | ○ | protocol depth in seams (out of scope by design) |
 
 ## The write channel (slice 1) — the finding that matters
 
@@ -110,7 +110,21 @@ counts AR vs R transfers (revert to edge-detect → the four collapse to one →
 seams carry the protocol: co-sampling the qualifiers at one edge (the clocking-block split means
 a driven signal is sampled a cycle early), and the driver holding `rvalid` until `rready`.
 
-## Where the real framework gap still is (slices 4–5)
+## The full slave (slice 4) — the decomposition was the answer
+
+The "deep gap" — a *unified* multi-channel agent sampling two request streams (`AR`+`AW`) — turned
+out to be a **non-gap**: a full AXI slave is the **composition** of the read agent (slice 0) and
+the write agent (slice 1) as two independent responders on one DUT, which is the decomposition T6
+named. [`axi_slave`](../examples/axi_slave/) is exactly that, and it is a **pure example** — the
+YAML is two agent stanzas, QuickUVM auto-wires both interfaces (`rd_if`→AR/R, `wr_if`→AW/W/B) to
+the one DUT with no `tb_top` glue, and each agent reuses its slice's seams unchanged. Both channels
+run green concurrently (reads 3/3 + writes 3/3, a cross-id reorder on each), and the capstone claim
+— **independence** — is mutation-proved: break one channel and only that channel fails, the other
+stays green. So the decision the epic deferred ("first-class unified agent vs two agents sharing a
+bus") resolves in favour of **two agents**: it needs no new shape, and the two-agent form is the
+honest AXI structure anyway (five independent channels, two transaction types).
+
+## Where the real framework gap still is (slice 5)
 
 Slice 1 moved the boundary, it did not erase it. The genuine open questions:
 
@@ -131,9 +145,12 @@ Slice 1 moved the boundary, it did not erase it. The genuine open questions:
 
 ## Verdict
 
-Slices 0–3 are **done and green**: out-of-order responses (0), the AW+W coupling (1), and
-bursts (2) as pure examples, and the valid/ready handshake (3) as the epic's one framework
-feature — the concrete T6 gap, now closed. The remaining gap is not "can AXI be expressed" but
-"should the *unified* multi-channel agent be a first-class QuickUVM shape, or is
-two-agents-sharing-an-interface the right decomposition." That is a design question for slice 4,
-and it is the correct place to stop and decide rather than build speculatively.
+Slices 0–4 are **done and green**: out-of-order responses (0), the AW+W coupling (1), bursts (2),
+and the full-slave composition (4) as pure examples, plus the valid/ready handshake (3) as the
+epic's one framework feature — the concrete T6 gap, closed. The architectural question the epic
+deferred — unified multi-channel agent vs two agents on a bus — is **answered**: the full slave is
+a composition of two independent agents (slice 4), needing no new shape. So of the whole epic, the
+generic machinery covered every slice with only **one** targeted feature (`request_ready:`); the
+rest is examples + seams. What remains (slice 5 — burst×OoO beat interleaving, exclusive/atomic
+access) is protocol depth that lives in seams, out of QuickUVM's generic single-block scope by
+design — the honest boundary the campaign set out to find, now drawn by construction.

@@ -1,0 +1,76 @@
+# FULL AXI SLAVE — the AXI epic, slice 4 (capstone): a read agent + a write agent on one DUT.
+#
+# A full AXI slave is not a new agent shape — it is the COMPOSITION of the read channel
+# (AR -> R, out-of-order) and the write channel (AW + W -> B, out-of-order) as two INDEPENDENT
+# responder agents on one DUT. Each reuses a prior slice unchanged (axi_read / axi_write). This
+# validates T6's decomposition end-to-end: two agents, one bus, both green, per-channel liveness.
+
+project:
+  name: axi_slave_tb
+  author: qa@example.com
+
+dut:
+  name: axi_slave
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  # READ channel — out-of-order by arid (examples/axi_read).
+  - name: rd
+    interface: rd_if
+    sequence_item: rd_item
+    seq_item_style: manual
+    active: true
+    mode: responder
+    request_valid: arvalid
+    respond: pipelined
+    reorder_by: arid
+    ports:
+      inputs:
+        - {name: rvalid, width: 1,  randomize: true}
+        - {name: rid,    width: 4,  randomize: true}
+        - {name: rdata,  width: 32, randomize: true}
+        - {name: rlast,  width: 1,  randomize: true}
+      outputs:
+        - {name: arvalid, width: 1}
+        - {name: arid,    width: 4}
+        - {name: araddr,  width: 32}
+
+  # WRITE channel — AW/W order-correlation, out-of-order by awid (examples/axi_write).
+  - name: wr
+    interface: wr_if
+    sequence_item: wr_item
+    seq_item_style: manual
+    active: true
+    mode: responder
+    request_valid: wlast
+    respond: pipelined
+    reorder_by: awid
+    ports:
+      inputs:
+        - {name: bvalid, width: 1, randomize: true}
+        - {name: bid,    width: 4, randomize: true}
+        - {name: bresp,  width: 2, randomize: true}
+      outputs:
+        - {name: awvalid, width: 1}
+        - {name: awid,    width: 4}
+        - {name: awaddr,  width: 32}
+        - {name: wvalid,  width: 1}
+        - {name: wdata,   width: 32}
+        - {name: wlast,   width: 1}
+
+analysis:
+  coverage: []
+  scoreboards: []
+
+tests:
+  - {name: rand_test, num_items: 60}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f

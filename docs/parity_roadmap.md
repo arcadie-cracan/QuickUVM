@@ -841,6 +841,15 @@ and is the long pole for campaign target **T2** (`spi_host`).
   Built + mutation-proved on `examples/axi_handshake/` (4 back-to-back requests + `rready`
   response backpressure; a UVM oracle counts AR vs R transfers — revert to edge-detect → the four
   collapse to one → `UVM_ERROR`).
+- *Full AXI slave (read agent + write agent) — DONE as an example* (the AXI epic, slice 4 capstone):
+  the "deep gap" (a unified multi-channel agent) turned out to be a NON-gap — a full AXI slave is the
+  COMPOSITION of the read agent (slice 0) and write agent (slice 1) as two independent responders on
+  one DUT (T6's decomposition). A pure example: two agent stanzas, both interfaces auto-wired to the
+  one DUT, each agent reusing its slice's seams unchanged. Built + mutation-proved on
+  `examples/axi_slave/` for per-channel INDEPENDENCE (break one channel → only it fails). Resolves
+  the deferred design question in favour of two-agents-on-a-bus (no new shape). **The AXI epic is
+  complete** — every slice covered by the generic machinery + one feature (`request_ready:`); see
+  [`axi_epic_assessment.md`](axi_epic_assessment.md).
 - *Hybrid (initiator + responder) `proactive: true` — DONE* (the alert_handler I-7 gap). A
   responder that ALSO accepts proactive TB stimulus: an alert-sender answers the DUT's pings AND
   spontaneously raises alerts. The agent stays a responder (the env forks its responder sequence)
