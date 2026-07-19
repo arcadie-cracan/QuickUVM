@@ -2274,6 +2274,9 @@ class SubenvConnection(_SchemaModel):
 
 
 class SubenvScoreboard(_SchemaModel):
+    # NB internal since the analysis unification: populated by the router in
+    # validate_agents from `analysis.scoreboards` entries on a composition — the
+    # user-facing key `subenv_scoreboards:` is rejected with a move hint.
     """H1 — a cross-block scoreboard: predict the monitor block's output from the
     source block's transaction and compare (reusing the A2 two-stream, in-order
     comparator). Each of `source`/`monitor` is a dotted path `<block>.<agent>`, or
@@ -2783,7 +2786,9 @@ class ProjectConfig(_SchemaModel):
     # -> destination block input) and cross-block scoreboards (predict the monitor
     # block's output from the source block's stream). Only valid with `subenvs`.
     connections: list[SubenvConnection] = Field(default_factory=list)
-    subenv_scoreboards: list[SubenvScoreboard] = Field(default_factory=list)
+    subenv_scoreboards: list[SubenvScoreboard] = Field(
+        default_factory=list, exclude=True, repr=False
+    )
     # Runtime: the loaded child ProjectConfigs, keyed by subenv name. Populated by
     # the loader (which resolves `subenv.config` relative to the top file); not
     # part of the serialized config.
@@ -2834,6 +2839,11 @@ class ProjectConfig(_SchemaModel):
                 "subenv_configs": "child configs are loaded from `subenvs:` entries",
                 "subenv_namespaces": "namespaces are derived from `subenvs:` reuse",
                 "original_dut_name": "set internally by H1 namespacing",
+                "subenv_scoreboards": (
+                    "cross-block scoreboards moved under `analysis.scoreboards` "
+                    "(same {name, source, monitor} shape; endpoints may be dotted "
+                    "leaf paths or a bare boundary-agent name)"
+                ),
             }
             for k, hint in runtime.items():
                 if k in data:
@@ -3733,15 +3743,49 @@ class ProjectConfig(_SchemaModel):
                     "a subsystem bench composes >=2 child block envs "
                     "(declare at least two `subenvs`)."
                 )
-            if (
-                self.analysis is not None
-                or self.register_model is not None
-                or self.coverage_models
-            ):
+            if self.register_model is not None or self.coverage_models:
                 raise ValueError(
-                    "a `subenvs` top must not set analysis/register_model/"
-                    "coverage_models (this slice) — those belong on the child blocks."
+                    "a `subenvs` top must not set register_model/coverage_models "
+                    "(this slice) — those belong on the child blocks."
                 )
+            # Cross-block scoreboards live under `analysis.scoreboards` (ONE section
+            # for checking, whatever the bench shape): on a composition each entry
+            # is routed to the cross-block machinery. Endpoints are dotted leaf
+            # paths (`<block>.<agent>`) or a bare boundary-agent name; the entry
+            # shape is the flat one DEGENERATED — the extra knobs (match/window/...)
+            # are fenced fail-closed until cross-block sets support them.
+            if self.analysis is not None:
+                if self.analysis.coverage:
+                    raise ValueError(
+                        "a `subenvs` top does not wire `analysis.coverage` (this "
+                        "slice) — coverage belongs on the child blocks."
+                    )
+                routed: list[SubenvScoreboard] = []
+                for sb in self.analysis.scoreboards:
+                    if sb.monitor is None:
+                        raise ValueError(
+                            f"analysis.scoreboards '{sb.name}': a composition "
+                            f"scoreboard is two-stream — name a `monitor:` endpoint "
+                            f"(the block/agent whose output it checks)."
+                        )
+                    if (
+                        sb.match != "in_order"
+                        or sb.match_key
+                        or sb.max_latency
+                        or sb.window
+                    ):
+                        raise ValueError(
+                            f"analysis.scoreboards '{sb.name}': match/match_key/"
+                            f"max_latency/window are not supported on a composition "
+                            f"scoreboard yet (cross-block sets are in-order "
+                            f"two-stream this slice)."
+                        )
+                    routed.append(
+                        SubenvScoreboard(
+                            name=sb.name, source=sb.source, monitor=sb.monitor
+                        )
+                    )
+                self.subenv_scoreboards = routed
         elif not self.agents:
             raise ValueError("At least one agent must be defined.")
         # F2' — VIP / self-test / by-reference need the packaged layout: a VIP is
@@ -3798,7 +3842,7 @@ class ProjectConfig(_SchemaModel):
                     f"or the selftest (`kind: selftest`)."
                 )
         agent_name_set = set(names)
-        if self.analysis is not None:
+        if self.analysis is not None and not self.subenvs:
             agent_names = set(names)
             for ag in self.analysis.coverage:
                 if ag not in agent_names:

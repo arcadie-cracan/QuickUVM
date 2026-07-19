@@ -538,7 +538,7 @@ A subsystem top may declare its own `agents:` alongside `subenvs:` — the chip-
 UVM shape (block envs inside, chip-boundary agents outside; OpenTitan's `chip_env`
 topology). The agent is a first-class endpoint: `connections:` wire it in either
 direction (`from: <agent>.<port>` = a port it DRIVES, its `inputs`; `to:` = a port it
-SAMPLES), and `subenv_scoreboards:` accept the BARE agent name as source/monitor (the
+SAMPLES), and composition scoreboards accept the BARE agent name as source/monitor (the
 agent's analysis port lives on the top env — empty handle chain). The top vseq drives
 active boundary agents concurrently with the blocks; the boundary agent's package is
 generated exactly like a flat packaged bench's (same specs + ctx, byte-identical
@@ -549,6 +549,17 @@ may declare them (a nested subsystem may not). Built + mutation-proved on
 `examples/chip/` (host → add → inv → host.resp, e2e scoreboard sourced from the
 boundary stream): wrong e2e model → only e2e fails; corrupt `add` → add's sb + e2e
 fail while inv's stays green.
+
+### Analysis unification — composition scoreboards under `analysis.scoreboards` — DONE
+`subenv_scoreboards:` folded into `analysis.scoreboards` — ONE section answers "where do I
+declare scoreboards?" whatever the bench shape. On a composition each entry routes to the
+cross-block machinery (endpoints: dotted leaf paths or a bare boundary-agent name); the flat
+entry shape is the same `{name, source, monitor}` DEGENERATED, per the house
+overlap-by-principled-degeneration pattern. The flat-only knobs (match/match_key/max_latency/
+window) and `analysis.coverage` are fenced fail-closed on a composition (cross-block sets are
+in-order two-stream this slice — the fence is the lift path for OoO/windowed cross-block
+checking later). The old key errors with a move hint; generated output is BYTE-IDENTICAL
+(the internal machinery is unchanged — the router populates it from the new spelling).
 
 ### H1 — Sub-environments — DONE (first slice)
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.
@@ -596,11 +607,11 @@ fail while inv's stays green.
   (a source block's output drives a destination block's input); the destination
   block's agent is passive on that port (its input is a monitored, externally-driven
   signal — QuickUVM emits it as a sampled clockvar and the passive driver drives
-  nothing, byte-identical for existing benches). `subenv_scoreboards: [{name: chk,
-  source: add.a, monitor: inv.b}]` generates a cross-block scoreboard reusing the A2
+  nothing, byte-identical for existing benches). `analysis: {scoreboards: [{name: chk,
+  source: add.a, monitor: inv.b}]}` generates a cross-block scoreboard reusing the A2
   two-stream in-order predictor/comparator, sourced from two different blocks: it
   predicts the monitor block's output from the source block's stream and compares.
-- Fail-closed: `connections`/`subenv_scoreboards` are subsystem-only; endpoints must
+- Fail-closed: `connections`/composition scoreboards are subsystem-only; endpoints must
   resolve (`block.port` / `block.agent`); a connection's destination-block agent must
   be passive; a scoreboard's source and monitor must differ; scoreboard names unique.
 - Validated on `examples/pipe/`: a two-stage pipeline — add (dout=din+1) feeds inv

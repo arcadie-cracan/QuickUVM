@@ -6,7 +6,7 @@ outside (`agents:` on the same config). The agent becomes a first-class endpoint
 * `connections:` may wire it in either direction — `from: <agent>.<port>` uses a
   port the agent DRIVES (its `inputs`, the house convention), `to: <agent>.<port>`
   a port it SAMPLES (its `outputs`);
-* `subenv_scoreboards:` may use the BARE agent name as source/monitor;
+* composition scoreboards (`analysis.scoreboards`) may use the BARE agent name;
 * the top vseq drives active boundary agents alongside the composed blocks;
 * a boundary stimulus agent no cross-block scoreboard touches raises the
   UNCHECKED_AGENT warning (checking scales with stimulus).
@@ -100,7 +100,9 @@ def test_boundary_agent_composes_and_generates(tmp_path):
 
 
 def test_bare_scoreboard_endpoint_silences_the_warning(tmp_path):
-    sb = "subenv_scoreboards:\n  - {name: e2e, source: host, monitor: blkb.pb}\n"
+    sb = (
+        "analysis:\n  scoreboards:\n    - {name: e2e, source: host, monitor: blkb.pb}\n"
+    )
     cfg = ProjectConfig.from_yaml(_top_yaml(tmp_path, sb=sb))
     Generator(cfg).generate_all(tmp_path / "gen", backup=False)
     env = (tmp_path / "gen" / "soc_env.svh").read_text()
@@ -125,7 +127,7 @@ def test_connection_to_must_be_agent_sampled_port(tmp_path):
 
 
 def test_bare_scoreboard_endpoint_must_name_a_boundary_agent(tmp_path):
-    sb = "subenv_scoreboards:\n  - {name: e2e, source: ghost, monitor: blkb.pb}\n"
+    sb = "analysis:\n  scoreboards:\n    - {name: e2e, source: ghost, monitor: blkb.pb}\n"
     with pytest.raises(Exception, match="no boundary agent of that name"):
         ProjectConfig.from_yaml(_top_yaml(tmp_path, sb=sb))
 

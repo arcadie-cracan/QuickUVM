@@ -4,7 +4,7 @@ Builds on [soc](../soc) (sub-environment composition). Here the composed blocks
 form a **pipeline** — stage 1 feeds stage 2 — and a **cross-block scoreboard**
 checks the end-to-end behavior across the block boundary.
 
-## `connections:` + `subenv_scoreboards:`
+## `connections:` + composition scoreboards (`analysis.scoreboards`)
 ```yaml
 # pipe.yaml
 subenvs:
@@ -12,8 +12,9 @@ subenvs:
   - {name: inv, config: inv/inv.yaml}   # stage 2: dout = ~din  (passive agent)
 connections:
   - {from: add.dout, to: inv.din}       # stage 1 output drives stage 2 input
-subenv_scoreboards:
-  - {name: chk, source: add.a, monitor: inv.b}
+analysis:
+  scoreboards:
+    - {name: chk, source: add.a, monitor: inv.b}
 ```
 
 - **`connections:`** — QuickUVM emits the top-level wire in `tb_top`
@@ -21,7 +22,7 @@ subenv_scoreboards:
   driven by the connection (not by its agent), stage 2's agent is **passive**
   (`active: false`); QuickUVM emits its input as a monitored (sampled) clockvar and
   its driver drives nothing.
-- **`subenv_scoreboards:`** — a cross-block scoreboard `chk` reusing the A2
+- **`analysis.scoreboards`** — a cross-block scoreboard `chk` reusing the A2
   two-stream, in-order comparator: it subscribes to stage 1's agent (`source`) and
   stage 2's agent (`monitor`), predicts stage 2's expected output from stage 1's
   stream, and compares. Fill the predict (`pipe_chk_reference_model.svh`):
@@ -42,7 +43,7 @@ checks and the cross-block `chk` verifying the composed pipeline `inv.dout ==
 ## Scope of this slice
 - A `connections:` wire drives a destination block's input from a source block's
   output; the destination block's agent on that port must be **passive**.
-- A `subenv_scoreboards:` entry is A2 two-stream, **in-order** (a same-cycle /
+- A composition scoreboard entry is A2 two-stream, **in-order** (a same-cycle /
   combinational pipeline). Out-of-order / latency-windowed cross-block matching and
   the same block reused at N widths are later slices.
-- Opt-in: a subsystem with no `connections` / `subenv_scoreboards` is unchanged.
+- Opt-in: a subsystem with no `connections` / composition scoreboards is unchanged.
