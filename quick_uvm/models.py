@@ -856,6 +856,17 @@ class AgentConfig(BaseModel):
         return self.is_responder and self.respond in ("on_request", "pipelined")
 
     @property
+    def request_ready_driven(self) -> bool:
+        """True when `request_ready` names a port the agent itself DRIVES (a slave's own
+        ready). The default input-sampling reads it a cycle BEFORE the DUT-output
+        `request_valid`, so the monitor re-samples it raw with the outputs to co-observe
+        the handshake at one edge (the fix inouts already get). A sampled ready (a DUT
+        output) is already co-observed, so no re-sample is needed."""
+        if self.request_ready is None:
+            return False
+        return any(p.name == self.request_ready for p in self.input_ports)
+
+    @property
     def is_continuous(self) -> bool:
         """The CONTINUOUS responder shape — non-blocking driver + drive-idle-on-miss."""
         return self.is_responder and bool(self.idle) and self.respond == "on_request"

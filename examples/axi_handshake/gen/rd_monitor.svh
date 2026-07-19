@@ -59,12 +59,8 @@ class rd_monitor extends uvm_monitor;
       // HANDSHAKE capture: `arvalid` is HELD until `arready`,
       // and EACH cycle both are high is a DISTINCT transfer (back-to-back requests under a held
       // valid). So publish on the LEVEL of valid && ready, once per handshake cycle — an
-      // edge-detect would see only the first of a back-to-back burst.
-      //
-      // NB valid & ready must be CO-SAMPLED at the same edge. If they straddle the driven/
-      // sampled boundary (e.g. a slave-driven ready vs a DUT-driven valid), the default split
-      // sampling reads one a cycle before the other — re-align them in sample_dut_additional
-      // (see examples/axi_handshake/gen/rd_monitor.svh).
+      // edge-detect would see only the first of a back-to-back burst. (valid & ready are
+      // co-observed at one edge: sample_dut re-samples a driven ready with the outputs.)
       if (tr.arvalid && tr.arready) request_ap.write(tr);
       ap.write(tr);
     end
@@ -94,18 +90,19 @@ class rd_monitor extends uvm_monitor;
     t.arid = vif.cb1.arid;
     t.araddr = vif.cb1.araddr;
     t.rready = vif.cb1.rready;
+    // request_ready is a line WE drive (a slave's own ready), but the handshake capture ANDs
+    // it with the DUT-output request_valid. Re-sample it HERE (raw net, with the outputs) so
+    // both qualifiers are co-observed at THIS edge — otherwise the split sampling reads it a
+    // cycle early and a back-to-back transfer is dropped.
+    t.arready = vif.arready;
 
     // pragma quickuvm custom sample_dut_additional begin
-    // A handshake needs valid & ready CO-sampled at the same clock edge. The default split
-    // sampling reads arready at the PREVIOUS posedge but arvalid at THIS one — a 1-cycle skew
-    // that drops the first back-to-back transfer. Re-sample the RAW arready here, after the
-    // @cb1 (arready is a clocking-block OUTPUT, so vif.cb1.arready returns the driven value,
-    // not a sample — read the net directly), aligning it with arvalid at this posedge.
-    t.arready = vif.arready;
-    // Same alignment for the R handshake: rready is the cb1-sampled line, rvalid is DRIVEN, so
-    // re-sample rvalid raw here to co-observe both at this posedge.
+    // The AR handshake qualifiers are already co-observed: request_valid (arvalid) with the
+    // outputs, and the driven request_ready (arready) re-sampled alongside them above. The R
+    // handshake needs the same: rready is cb1-sampled but rvalid is DRIVEN, so re-sample rvalid
+    // raw here to co-observe both at this posedge.
     t.rvalid = vif.rvalid;
-    // Oracle counts (see class_item_additional), both qualifiers now aligned at this posedge.
+    // UVM oracle counts (see class_item_additional), all qualifiers aligned at this posedge.
     if (t.arvalid && t.arready) m_ar_xfer++;
     if (t.rvalid && t.rready) m_r_xfer++;
     // pragma quickuvm custom sample_dut_additional end

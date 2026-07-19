@@ -24,7 +24,11 @@ request_ready: arready     # capture on the handshake, not the edge
 if (tr.arvalid && tr.arready) request_ap.write(tr);   // one publish per accepted cycle
 ```
 
-Opt-in and byte-identical when absent (the edge-detect is unchanged).
+Opt-in and byte-identical when absent (the edge-detect is unchanged). A handshake needs `valid`
+and `ready` **co-observed at one edge**; when `request_ready` is a line the slave itself drives
+(the default split-sampling would read it a cycle early), the generated monitor re-samples it raw
+with the DUT outputs automatically — the same fix inouts already get, so the feature works from
+generated code with no hand seam.
 
 ## What runs
 
@@ -40,15 +44,16 @@ R  accept #0..3 rid=1,2,3,4     (spaced by the rready backpressure)
 
 Green on Xcelium: `0 UVM_WARNING / 0 UVM_ERROR / 0 UVM_FATAL`.
 
-## Two seams the handshake needs
+## The seams the handshake needs
 
-- **Co-sampling the qualifiers** (`rd_monitor.svh`). A handshake is `valid && ready` at one
-  edge, but the default split-sampling reads a driven signal one edge before a sampled one.
-  `arready`/`rvalid` are clocking-block *outputs*, so `vif.cb1.X` returns the driven value, not
-  a sample — the seam re-samples the **raw** nets after `@cb1` so both qualifiers align at the
-  same posedge.
+The AR request-capture co-sampling is automatic (above). Two things stay in seams — protocol
+precision, which QuickUVM never generates:
+
 - **The R-channel hold** (`rd_driver.svh`). `while (!vif.cb1.rready) @vif.cb1;` keeps `rvalid`
   asserted until the master accepts, then drops it — the response-side backpressure.
+- **The oracle's R co-sampling** (`rd_monitor.svh`). The oracle also watches the *R* handshake
+  (`rvalid && rready`); `rvalid` is driven, so it re-samples it raw with the outputs — the same
+  alignment the feature does for the request, done by hand for this bench-specific check.
 
 ## The verdict is carried by a UVM oracle
 

@@ -128,6 +128,18 @@ def test_request_ready_emits_handshake_capture(tmp_path):
     assert "m_req_seen" not in mon
 
 
+def test_request_ready_driven_is_auto_co_sampled(tmp_path):
+    """A driven ready (the slave's own gnt) is sampled a cycle before the DUT-output valid;
+    the monitor auto-re-samples it raw with the outputs so the handshake AND is co-observed
+    at one edge — no hand seam needed (the fix inouts already get)."""
+    a = {**_BASE["agents"][0], "request_ready": "gnt"}  # gnt is a driven input
+    _gen(tmp_path, agents=[a])
+    mon = (tmp_path / "mem_monitor.svh").read_text()
+    # the raw re-sample sits with the DUT-output sampling, after @vif.cb1
+    after_cb1 = mon.split("@vif.cb1;", 1)[1]
+    assert "t.gnt = vif.gnt;" in after_cb1
+
+
 def test_request_ready_absent_keeps_edge_detect(tmp_path):
     """Opt-in: without `request_ready` the monitor is byte-identically the edge-detect."""
     _gen(tmp_path)  # _BASE has no request_ready
