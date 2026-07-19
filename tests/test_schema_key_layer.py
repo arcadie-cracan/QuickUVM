@@ -159,7 +159,7 @@ def test_agent_refs_path_still_marks_references(tmp_path):
     con = {
         **_BASE,
         "layout": "packaged",
-        "agent_refs": [{"name": "io", "manifest": "vip/v.qvip"}],
+        "agents": [{"name": "io", "from_vip": "vip/v.qvip"}],
     }
     p = tmp_path / "con.yaml"
     p.write_text(yaml.safe_dump(con))

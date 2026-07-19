@@ -6,8 +6,8 @@ project: {name: f2_con, author: QuickUVM}
 layout: packaged
 dut: {name: f2_con, clock: clk, reset: '', combinational: true}
 clock: {period: 10, unit: ns}
-agent_refs:
-  - {name: io, manifest: ../f2_iovip/gen/f2_iovip.qvip}
+agents:
+  - {name: io, from_vip: ../f2_iovip/gen/f2_iovip.qvip}
 analysis:
   coverage: [io]
   scoreboards: [{name: sb, source: io}]

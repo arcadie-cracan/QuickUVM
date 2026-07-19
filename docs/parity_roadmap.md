@@ -432,10 +432,12 @@ two byte-identical copies). F2' adds the ownership model:
 
 - **`kind: vip`** emits ONLY the reusable agent package(s) + a `.qvip` manifest (identity, version,
   package, types, filelist) — no DUT/env/test. Compiles standalone on Xcelium.
-- **`agent_refs: [{name, manifest}]`** consumes an agent BY REFERENCE: the loader reconstructs it
-  from the manifest, marks it `is_reference`, and appends it to `agents` so the env wires it for
-  free, while the generator's per-agent source loops (`generated_agents`) skip it and its filelist
-  is chained with Cadence `-F`. `project.version` stamps the VIP's identity.
+- **a `{name, from_vip: <.qvip path>}` entry in `agents:`** consumes an agent BY REFERENCE: the
+  loader reconstructs it from the manifest in place, marks it `is_reference`, and the env wires it
+  for free, while the generator's per-agent source loops (`generated_agents`) skip it and its
+  filelist is chained with Cadence `-F`. `project.version` stamps the VIP's identity. *(Shipped as
+  a separate top-level `agent_refs:` list; folded into `agents:` post-audit — an entry that IS an
+  agent belongs in the agents list. The old key errors with a move hint.)*
 - **`kind: selftest`** exercises the VIP with NO DUT (a loopback top).
 
 Mutation-proved on `examples/f2_iovip` + `f2_con` + `f2_selftest`: two generated benches share one

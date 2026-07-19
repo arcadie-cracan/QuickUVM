@@ -706,7 +706,7 @@ class AgentConfig(_SchemaModel):
     # F2' — consume-by-reference. A referenced agent is wired into the env (its
     # <name>_pkg is imported and its classes instantiated) but its SOURCE is NOT
     # regenerated — it comes from an external, separately-generated VIP. The loader
-    # (from_yaml) sets these from a VIP manifest when the bench declares `agent_refs:`;
+    # (from_yaml) sets these when an `agents:` entry is a `from_vip` reference;
     # a normally-declared agent has is_reference=False (byte-identical). `ref_filelist`
     # is the path to the VIP's <name>_pkg.f, chained with Cadence `-F` (relative to the
     # file), captured absolute at load and rewritten relative to the output dir on emit.
@@ -1025,7 +1025,7 @@ class AgentConfig(_SchemaModel):
         anyone pasting an old config. And the runtime-only fields (set by the
         loader AFTER validation) must never be accepted from user YAML: plain-yaml
         `is_reference: true` would fabricate a reference to a VIP that does not
-        exist. (The agent_refs loader sets these post-validation, so rejecting
+        exist. (The from_vip loader sets these post-validation, so rejecting
         them here cannot break the F2' path.)
         """
         if isinstance(data, dict):
@@ -1040,12 +1040,20 @@ class AgentConfig(_SchemaModel):
                         f"agent key '{old}:' was renamed to '{new}:' — update the "
                         f"config (the old key would otherwise be silently ignored)."
                     )
+            if "from_vip" in data:
+                raise ValueError(
+                    "`from_vip` reference entries are resolved by "
+                    "ProjectConfig.from_yaml (it reads the VIP manifest relative "
+                    "to the config file); a bare model_validate cannot resolve "
+                    "them."
+                )
             runtime = {"original_name", "is_reference", "ref_filelist"}
             for k in runtime & set(data):
                 raise ValueError(
                     f"agent key '{k}:' is internal (set by the loader for H1/F2' "
                     f"machinery) and is not valid user configuration. To consume a "
-                    f"VIP agent by reference, declare it under `agent_refs:`."
+                    f"VIP agent by reference, use a {{name, from_vip}} entry in "
+                    f"`agents:`."
                 )
         return data
 
@@ -2705,65 +2713,67 @@ class RegressConfig(_SchemaModel):
         return self
 
 
-class AgentRef(_SchemaModel):
-    """F2' — a reference to an agent inside an external, separately-generated VIP. The
-    loader resolves `manifest` relative to the consuming config file, reads the named
-    agent's spec + the VIP's package filelist, and reconstructs a referenced AgentConfig
-    (is_reference=True) that is wired into the env but never regenerated."""
+def _resolve_vip_refs(raw: dict, cfg_dir: Path) -> dict[str, str]:
+    """F2' — resolve `agents:` REFERENCE entries (`{name, from_vip}`) in place.
 
-    name: str  # the agent's name inside the VIP (and the local handle prefix)
-    manifest: str  # path to the VIP's .qvip manifest, relative to this config file
-
-    @model_validator(mode="after")
-    def _check_name(self) -> AgentRef:
-        _check_sv_identifier(self.name, "agent_ref name")
-        return self
-
-
-def _resolve_agent_refs(raw: dict, cfg_dir: Path) -> dict[str, str]:
-    """F2' — expand `agent_refs:` into referenced agents appended to `agents:`.
-
-    Each ref names an agent inside a VIP manifest (.qvip). This reads the manifest
-    (relative to the consuming config file), reconstructs the agent's config, and
-    returns {agent name: absolute path to the VIP's package filelist} so from_yaml
-    can mark the agents is_reference=True AFTER validation (the generator then
-    skips their source and chains the filelist with Cadence `-F`). The runtime
-    fields are set post-validation — never via the input dict — so user YAML
-    supplying them is rejected fail-closed. Mutates `raw` in place.
+    An agent may be DECLARED (the ordinary full entry) or REFERENCED from an
+    external, separately-generated VIP: `{name: io, from_vip: <path to .qvip>}`.
+    This reads each manifest (relative to the consuming config file), REPLACES
+    the reference entry with the reconstructed agent config, and returns
+    {agent name: absolute path to the VIP's package filelist} so from_yaml can
+    mark the agents is_reference=True AFTER validation (the generator then skips
+    their source and chains the filelist with Cadence `-F`). The runtime fields
+    are set post-validation — never via the input dict — so user YAML supplying
+    them is rejected fail-closed. Mutates `raw` in place.
     """
     resolved: dict[str, str] = {}
-    for ref in raw.get("agent_refs", []):
-        name = ref.get("name") if isinstance(ref, dict) else None
-        man_rel = ref.get("manifest") if isinstance(ref, dict) else None
+    agents = raw.get("agents")
+    if not isinstance(agents, list):
+        return resolved
+    for i, ref in enumerate(agents):
+        if not isinstance(ref, dict) or "from_vip" not in ref:
+            continue
+        name = ref.get("name")
+        man_rel = ref.get("from_vip")
         if not name or not man_rel:
-            raise ValueError("agent_ref requires both `name` and `manifest`.")
+            raise ValueError(
+                "a VIP reference entry requires both `name` and `from_vip` "
+                "(the path to the VIP's .qvip manifest)."
+            )
+        extra = set(ref) - {"name", "from_vip"}
+        if extra:
+            raise ValueError(
+                f"agent '{name}': a `from_vip` reference entry carries only "
+                f"`name` + `from_vip` — the agent's config comes from the "
+                f"manifest (found: {sorted(extra)})."
+            )
         man_path = (cfg_dir / man_rel).resolve()
         if not man_path.exists():
             raise ValueError(
-                f"agent_ref '{name}': VIP manifest not found: {man_path}. "
+                f"agent '{name}': VIP manifest not found: {man_path}. "
                 f"Generate the VIP first (kind: vip)."
             )
         with open(man_path) as fh:
             manifest = yaml.safe_load(fh) or {}
-        agents = manifest.get("agents", {})
-        if name not in agents:
+        magents = manifest.get("agents", {})
+        if name not in magents:
             raise ValueError(
-                f"agent_ref '{name}': no agent '{name}' in manifest {man_path} "
-                f"(has: {sorted(agents)})."
+                f"agent '{name}': no agent '{name}' in manifest {man_path} "
+                f"(has: {sorted(magents)})."
             )
-        entry = agents[name]
+        entry = magents[name]
         if "filelist" not in entry:
             raise ValueError(
-                f"agent_ref '{name}': manifest {man_path} entry has no `filelist` "
+                f"agent '{name}': manifest {man_path} entry has no `filelist` "
                 f"(a corrupt or hand-edited .qvip)."
             )
         agent_dict = dict(entry.get("config", {}))
-        # The consuming bench refers to the agent by the ref NAME (the manifest key), so
-        # that authoritative so a hand-edited manifest whose key != config.name still
+        # The consuming bench refers to the agent by the ENTRY name, so that is
+        # authoritative — a hand-edited manifest whose key != config.name still
         # wires the agent under the name the consumer (and env) uses.
         agent_dict["name"] = name
         resolved[name] = str((man_path.parent / entry["filelist"]).resolve())
-        raw.setdefault("agents", []).append(agent_dict)
+        agents[i] = agent_dict
     return resolved
 
 
@@ -2788,7 +2798,6 @@ class ProjectConfig(_SchemaModel):
     # agent, marks it is_reference=True, and appends it to `agents` — so it is wired
     # into the env (imported + instantiated) but its source is NOT regenerated. Opt-in,
     # empty ⇒ byte-identical. Requires `layout: packaged`.
-    agent_refs: list[AgentRef] = Field(default_factory=list)
     tests: list[TestConfig] = Field(default_factory=lambda: [TestConfig(name="test1")])
     analysis: AnalysisConfig | None = None
     register_model: RegisterModelConfig | None = None
@@ -2885,6 +2894,11 @@ class ProjectConfig(_SchemaModel):
                     "cross-block scoreboards moved under `analysis.scoreboards` "
                     "(same {name, source, monitor} shape; endpoints may be dotted "
                     "leaf paths or a bare boundary-agent name)"
+                ),
+                "agent_refs": (
+                    "moved INTO `agents:` as reference entries — "
+                    "{name: <agent>, from_vip: <path to .qvip>} (an agent is "
+                    "declared OR referenced, in one list)"
                 ),
                 "coverage_models": (
                     "moved INTO analysis.coverage — a rich entry {agent, "
@@ -3850,25 +3864,9 @@ class ProjectConfig(_SchemaModel):
                 f"`kind: {self.kind}` requires `layout: packaged` (a VIP is per-agent "
                 f"packages; flat has no package to reuse)."
             )
-        if (self.agent_refs or any(a.is_reference for a in self.agents)) and (
-            self.layout != "packaged"
-        ):
-            raise ValueError(
-                "consuming an agent by reference (`agent_refs`) requires "
-                "`layout: packaged` — the referenced VIP is an external package."
-            )
-        # `agent_refs` are resolved by from_yaml (which reads the manifest relative to
-        # the config file). A bare model_validate can't do that file I/O, so a config
-        # with unresolved refs would generate NOTHING for them — fail loudly instead.
-        # Detected by AGENT PRESENCE (the loader appends each referenced agent before
-        # validation; the is_reference mark itself is applied only after).
-        ref_names = {r.name for r in self.agent_refs}
-        if self.agent_refs and not ref_names <= {a.name for a in self.agents}:
-            raise ValueError(
-                "`agent_refs` were not resolved — load this config via "
-                "ProjectConfig.from_yaml (it reads each VIP manifest relative to "
-                "the config file); a bare model_validate cannot resolve them."
-            )
+        # (VIP `from_vip` reference entries are resolved by from_yaml, which also
+        # enforces the packaged layout for them; an unresolved entry reaching bare
+        # model_validate is rejected by AgentConfig with a from_yaml hint.)
         if self.is_vip:
             # The fence covers EVERY section the vip path drops (it emits only the
             # agent packages + manifest) — a section listed here would be validated
@@ -3905,7 +3903,7 @@ class ProjectConfig(_SchemaModel):
                 raise ValueError(
                     f"`kind: vip` emits only reusable agent packages + a manifest — "
                     f"these sections would be silently dropped from the output: "
-                    f"{offending}. Move them to the consuming bench (`agent_refs:`) "
+                    f"{offending}. Move them to the consuming bench "
                     f"or the selftest (`kind: selftest`)."
                 )
         agent_name_set = set(names)
@@ -4540,13 +4538,21 @@ class ProjectConfig(_SchemaModel):
         path = Path(path)
         with open(path) as fh:
             raw = yaml.safe_load(fh)
-        # F2' — resolve `agent_refs:` BEFORE validation so a referenced agent is an
-        # ordinary agent for every downstream validator (uniqueness, env wiring); the
-        # runtime marks (is_reference/ref_filelist, which make the generator SKIP its
-        # source) are applied AFTER validation, so they are never valid user input.
+        # F2' — resolve `from_vip` reference entries BEFORE validation so a
+        # referenced agent is an ordinary agent for every downstream validator
+        # (uniqueness, env wiring); the runtime marks (is_reference/ref_filelist,
+        # which make the generator SKIP its source) are applied AFTER validation,
+        # so they are never valid user input.
         ref_filelists: dict[str, str] = {}
-        if isinstance(raw, dict) and raw.get("agent_refs"):
-            ref_filelists = _resolve_agent_refs(raw, path.parent)
+        if isinstance(raw, dict):
+            ref_filelists = _resolve_vip_refs(raw, path.parent)
+        if ref_filelists and (
+            not isinstance(raw, dict) or raw.get("layout") != "packaged"
+        ):
+            raise ValueError(
+                "consuming an agent by reference (`from_vip`) requires "
+                "`layout: packaged` — the referenced VIP is an external package."
+            )
         cfg = cls.model_validate(raw)
         for a in cfg.agents:
             if a.name in ref_filelists:
