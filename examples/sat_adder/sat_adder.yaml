@@ -16,9 +16,6 @@ clock:
   period: 10
   unit: ns
 
-reference_model:
-  language: c
-
 agents:
   - name: add
     interface: add_if
@@ -32,6 +29,13 @@ agents:
       outputs:
         - {name: sum, width: 8}
         - {name: ovf, width: 1}
+
+# The reference model lives ON the scoreboard it configures: language: c makes
+# QuickUVM generate the DPI-C bridge + C stub for THIS scoreboard's predict().
+analysis:
+  coverage: [add]
+  scoreboards:
+    - {name: sbd, source: add, reference_model: {language: c}}
 
 tests:
   - name: rand_test

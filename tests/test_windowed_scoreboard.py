@@ -45,7 +45,13 @@ def _es_agent():
 
 
 def _cfg(window=WindowSpec(boundary="window_done", length=8), monitor=None, lang="sv"):
-    sb = ScoreboardSpec(name="sb", source="es", monitor=monitor, window=window)
+    sb = ScoreboardSpec(
+        reference_model=ReferenceModelConfig(language=lang),
+        name="sb",
+        source="es",
+        monitor=monitor,
+        window=window,
+    )
     agents = [_es_agent()]
     if monitor is not None:
         agents.append(
@@ -62,7 +68,6 @@ def _cfg(window=WindowSpec(boundary="window_done", length=8), monitor=None, lang
         agents=agents,
         tests=[TConf(name="t1")],
         analysis=AnalysisConfig(scoreboards=[sb]),
-        reference_model=ReferenceModelConfig(language=lang),
     )
 
 

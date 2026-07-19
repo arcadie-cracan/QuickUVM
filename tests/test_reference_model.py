@@ -12,11 +12,13 @@ import pytest
 from quick_uvm.generator import Generator
 from quick_uvm.models import (
     AgentConfig,
+    AnalysisConfig,
     DutConfig,
     PortConfig,
     ProjectConfig,
     ProjectMeta,
     ReferenceModelConfig,
+    ScoreboardSpec,
 )
 from quick_uvm.models import (
     TestConfig as TConf,
@@ -43,7 +45,17 @@ def _cfg(language="c", inputs=None, outputs=None):
             )
         ],
         tests=[TConf(name="t1")],
-        reference_model=ReferenceModelConfig(language=language),
+        # the knob lives ON the scoreboard it configures (the sole flat set)
+        analysis=AnalysisConfig(
+            coverage=["a"],
+            scoreboards=[
+                ScoreboardSpec(
+                    name="sbd",
+                    source="a",
+                    reference_model=ReferenceModelConfig(language=language),
+                )
+            ],
+        ),
     )
 
 
@@ -163,3 +175,65 @@ def test_wide_field_ok_when_sv():
         inputs=[PortConfig(name="wide", width=128)],
         outputs=[PortConfig(name="r", width=8)],
     )
+
+
+# ---- the per-scoreboard placement (the analysis unification, part 2) --------
+
+
+def test_top_level_reference_model_key_errors_with_move_hint():
+    with pytest.raises(Exception, match="moved ONTO the scoreboard"):
+        ProjectConfig.model_validate(
+            {
+                "project": {"name": "t"},
+                "dut": {"name": "d", "reset": "", "combinational": True},
+                "agents": [
+                    {
+                        "name": "a",
+                        "interface": "a_if",
+                        "sequence_item": "a_item",
+                        "ports": {"inputs": [{"name": "x", "width": 8}]},
+                    }
+                ],
+                "reference_model": {"language": "c"},
+                "tests": [{"name": "t1"}],
+            }
+        )
+
+
+def test_effective_reference_model_routes_from_the_sole_scoreboard():
+    cfg = _cfg(language="c")
+    assert cfg.reference_model.language == "c"
+    # implicit scoreboard (no analysis block) -> the default SV seam
+    bare = ProjectConfig(
+        project=ProjectMeta(name="t"),
+        dut=DutConfig(name="d", reset="", combinational=True),
+        agents=[
+            _agent([PortConfig(name="x", width=8)], [PortConfig(name="y", width=8)])
+        ],
+        tests=[TConf(name="t1")],
+    )
+    assert bare.reference_model.language == "sv"
+
+
+def test_dpi_c_requires_the_sole_scoreboard():
+    """multi-scoreboard benches emit one SV predict() per set — `c` on any entry
+    would be silently ignored, so it is rejected fail-closed."""
+    with pytest.raises(Exception, match="needs the SOLE scoreboard"):
+        ProjectConfig(
+            project=ProjectMeta(name="t"),
+            dut=DutConfig(name="d", reset="", combinational=True),
+            agents=[
+                _agent([PortConfig(name="x", width=8)], [PortConfig(name="y", width=8)])
+            ],
+            tests=[TConf(name="t1")],
+            analysis=AnalysisConfig(
+                scoreboards=[
+                    ScoreboardSpec(
+                        name="s1",
+                        source="a",
+                        reference_model=ReferenceModelConfig(language="c"),
+                    ),
+                    ScoreboardSpec(name="s2", source="a"),
+                ]
+            ),
+        )
