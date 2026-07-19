@@ -213,3 +213,21 @@ def test_reset_union_round_trips_through_model_dump():
     c = ProjectConfig.model_validate(_cfg(reset={"external": True}))
     reloaded = ProjectConfig.model_validate(c.model_dump())
     assert reloaded.dut.external_reset is True
+
+
+# --- tests[].seeds is a regress knob -----------------------------------------
+
+
+def test_seeds_without_regress_rejected():
+    """tests[].seeds is the per-test seed count in the regression matrix; without
+    a regress: block it renders nothing — a silently inert setting."""
+    with pytest.raises(ValidationError, match="no `regress:` block"):
+        ProjectConfig.model_validate(_cfg(tests=[{"name": "t1", "seeds": 5}]))
+
+
+def test_seeds_with_regress_fine():
+    cfg = _cfg(
+        tests=[{"name": "t1", "seeds": 5}],
+        regress={"seeds": 2, "filelist": "../sim/xrun.f"},
+    )
+    ProjectConfig.model_validate(cfg)

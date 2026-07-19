@@ -1823,7 +1823,8 @@ class ScoreboardSpec(_SchemaModel):
     # A2 — latency window: max request→response latency in CLOCK CYCLES. When set,
     # the comparator flags (SB_LATENCY) a response that matches its request but
     # arrived later than this; a response that never arrives is caught by
-    # SB_LEFTOVER. Out-of-order only (the pool it stamps lives there).
+    # SB_LEFTOVER. Works with both match modes: the OoO pool stamps each pooled
+    # expected; the in-order pair holds expected in a stamped local queue.
     max_latency: int | None = None
     # Windowed scoreboard (opt-in, single-stream only). None => the plain predictor
     # (byte-identical when unused).
@@ -1856,16 +1857,10 @@ class ScoreboardSpec(_SchemaModel):
                 f"scoreboard '{self.name}': match_key is only used with "
                 f"match='out_of_order'."
             )
-        if self.max_latency is not None:
-            if self.match != "out_of_order":
-                raise ValueError(
-                    f"scoreboard '{self.name}': max_latency is only supported with "
-                    f"match='out_of_order'."
-                )
-            if self.max_latency < 1:
-                raise ValueError(
-                    f"scoreboard '{self.name}': max_latency must be >= 1 cycle."
-                )
+        if self.max_latency is not None and self.max_latency < 1:
+            raise ValueError(
+                f"scoreboard '{self.name}': max_latency must be >= 1 cycle."
+            )
         return self
 
 
@@ -4338,6 +4333,16 @@ class ProjectConfig(_SchemaModel):
                         f"agent's parameters) — reorder it first, or use `instances` / "
                         f"`subenvs`."
                     )
+        # R1 — tests[].seeds is a REGRESS knob (per-test seed count in the matrix);
+        # without a regress: block it renders nothing — a silently inert setting.
+        if self.regress is None:
+            seedy = [t.name for t in self.tests if t.seeds is not None]
+            if seedy:
+                raise ValueError(
+                    f"tests {seedy} set `seeds`, but there is no `regress:` block — "
+                    f"seeds is the per-test seed count in the regression matrix and "
+                    f"renders nothing without one."
+                )
         seen_cov: set[str] = set()
         for cm in self.coverage_models:
             if cm.agent not in agent_name_set:

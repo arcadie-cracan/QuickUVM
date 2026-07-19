@@ -469,9 +469,29 @@ def test_no_max_latency_no_window_check(tmp_path):
     assert "SB_LATENCY" not in c
 
 
-def test_max_latency_requires_out_of_order():
-    with pytest.raises(Exception, match="max_latency is only supported with"):
-        ScoreboardSpec(name="s", source="a", monitor="b", max_latency=5)
+def test_max_latency_in_order_generates_stamped_pair(tmp_path):
+    """The audit's implementation-leak wall is LIFTED: max_latency now works with
+    the in-order pair too — expected are held in a local queue stamped at their
+    TRUE arrival (mirroring the OoO pool), so a too-late response fails even when
+    its data matches."""
+    ScoreboardSpec(name="s", source="a", monitor="b", max_latency=5)  # validates
+    cfg = _two_stream(max_latency=5)
+    Generator(cfg).generate_all(tmp_path, backup=False)
+    c = (tmp_path / "d_comparator.svh").read_text()
+    assert "SB_LATENCY" in c
+    assert "exp_age_q" in c  # the stamped local queue
+    assert "MaxLatency" in c
+    assert "exceeded the 5-cycle window" in c
+
+
+def test_no_max_latency_in_order_keeps_plain_pair(tmp_path):
+    """Byte-identity discipline: without max_latency the in-order comparator is
+    the plain get/get pair (no fork, no stamps)."""
+    cfg = _two_stream()
+    Generator(cfg).generate_all(tmp_path, backup=False)
+    c = (tmp_path / "d_comparator.svh").read_text()
+    assert "exp_age_q" not in c
+    assert "pending_exp" in c
 
 
 def test_max_latency_must_be_positive():
