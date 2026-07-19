@@ -63,6 +63,12 @@ instead:
   of a burst and stranded the tail. This is the check that makes the T6 gap impossible to ship
   silently. See [`MUTATIONS.md`](MUTATIONS.md).
 
+Those guard *delivery*. The **out-of-order** property (the point of this bench) is guarded by a
+**UVM oracle** in the monitor (`RD_CHK`): every `R` beat matches an outstanding id and a cross-id
+reorder actually occurred — so a degeneration to in-order (remove the drive latency) raises a
+`UVM_ERROR`. Without it the reorder is only in the DUT's `$error`/`$display`, invisible to the
+UVM-severity `make regress` verdict — the silent-pass this example was hardened against.
+
 ## Boundary
 
 This is the AXI **read** channel-pair (AR→R). A faithful full 5-channel AXI VIP (AR+AW, R+B, atomics)

@@ -21,6 +21,28 @@ class rd_monitor extends uvm_monitor;
   bit m_req_seen;
 
   // pragma quickuvm custom class_item_additional begin
+  // UVM ORACLE. The automated verdict is UVM-severity based, so the DUT master's $error checks
+  // are invisible to it — make the read channel's correctness verdict-carrying: every R beat has
+  // a matching outstanding id, all are delivered, and a cross-id REORDER actually occurred (the
+  // out-of-order property this bench exists to show; deterministic for this DUT + latency).
+  bit       m_r_out [16];
+  bit [3:0] m_r_issue [$];
+  bit [3:0] m_r_recv  [$];
+  int       m_r_got;
+
+  function void check_phase(uvm_phase phase);
+    int reorder = 0;
+    super.check_phase(phase);
+    foreach (m_r_recv[i])
+      if (i < m_r_issue.size() && m_r_recv[i] != m_r_issue[i]) reorder++;
+    if (m_r_got != m_r_issue.size())
+      `uvm_error("RD_CHK", $sformatf("read channel delivered %0d of %0d",
+                 m_r_got, m_r_issue.size()))
+    else if (m_r_got == 0)
+      `uvm_error("RD_CHK", "no R beats — vacuous")
+    else if (reorder == 0)
+      `uvm_error("RD_CHK", "reads returned IN ORDER — out-of-order was not exercised")
+  endfunction
   // pragma quickuvm custom class_item_additional end
 
   function new (string name, uvm_component parent);
@@ -79,6 +101,12 @@ class rd_monitor extends uvm_monitor;
     t.arlen = vif.cb1.arlen;
 
     // pragma quickuvm custom sample_dut_additional begin
+    if (t.arvalid) begin m_r_out[t.arid] = 1'b1; m_r_issue.push_back(t.arid); end
+    if (t.rvalid) begin
+      if (!m_r_out[t.rid])
+        `uvm_error("RD_CHK", $sformatf("R beat rid=%0d not outstanding", t.rid))
+      m_r_out[t.rid] = 1'b0; m_r_recv.push_back(t.rid); m_r_got++;
+    end
     // pragma quickuvm custom sample_dut_additional end
 
     tr = t;
