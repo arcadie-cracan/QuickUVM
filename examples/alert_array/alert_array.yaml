@@ -10,7 +10,7 @@ agents:
     sequence_item: sndr_item
     seq_item_style: manual
     active: true
-    count: 3                # 3 alert channels -> DUT ports vectored
+    replicas: 3                # 3 alert channels -> DUT ports vectored
     mode: responder         # answer the DUT's ping...
     request_valid: ping
     respond: on_request

@@ -8,7 +8,7 @@ agents:
     sequence_item: ch_item
     seq_item_style: manual
     active: true
-    count: 3            # 3 identical channels into one DUT (ports become [2:0])
+    replicas: 3            # 3 identical channels into one DUT (ports become [2:0])
     ports:
       inputs:
         - {name: d, width: 1, randomize: true}

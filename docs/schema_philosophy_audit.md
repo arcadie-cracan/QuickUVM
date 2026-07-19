@@ -158,6 +158,12 @@ with RAL+CSR+coverage+assertions): a healthy gradient whose entry point never mo
    `analysis: {scoreboards: []}` explicit opt-out the predictor fatal already models.
 6. **Decide `count` vs `instances` before the corridor calcifies**: fold `count` into
    `instances` as shared-DUT sugar, or commit to it and schedule the wall-lifts.
+   *RESOLVED — a third way: inspection showed they are not one axis but a topology ×
+   variation matrix (identical copies × one vectored DUT vs parameterized variants ×
+   per-instance DUTs; the parameterized-shared cell is impossible, so the mutual
+   exclusion is a theorem, not a pending unification). Both stay; `count:` renamed
+   `replicas:` so the names carry the separation — which also retires the schema's
+   last `count` homonym. The old key errors with a rename hint.*
 7. **Publish the composition matrix** (feature × feature: works / wall / untested) in
    `comparison.md` — the information already exists as error strings; surfacing it turns
    apparent limitation into stated scope.

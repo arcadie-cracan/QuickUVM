@@ -213,7 +213,7 @@ class Generator:
             "has_instances": bool(cfg.instance_views),
             # I-9 — `count` replicas share ONE vectored DUT (vs C3 per-instance DUTs).
             "shared_dut": cfg.shared_dut,
-            "count_agent": cfg.count_agent,
+            "replicas_agent": cfg.replicas_agent,
             # Checking-scales-with-stimulus guard: agents the auto vseq drives that
             # no scoreboard checks (empty unless >=2 stimulus agents AND no
             # `analysis:` block — byte-identical for every committed example).

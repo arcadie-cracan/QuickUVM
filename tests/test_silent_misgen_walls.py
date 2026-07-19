@@ -6,7 +6,7 @@ did something other than what the config said:
 * `register_model.bus_agent` naming a responder bound the RAL front door to a
   sequencer the forever responder sequence owns — the sequencer-clobber trap
   already walled (with the same prose) for tests[].sequence and vseq steps;
-* a test's `sequence:` selector on a `count`/`instances` bench was validated,
+* a test's `sequence:` selector on a `replicas`/`instances` bench was validated,
   then the per-replica test body started each replica's DEFAULT sequence — the
   test ran a different sequence than the one it named, and passed;
 * `kind: vip` rejected subenvs/register_model/connections but silently dropped
@@ -104,7 +104,7 @@ def test_sequence_selector_rejected_with_count():
                 "name": "ch",
                 "interface": "ch_if",
                 "sequence_item": "ch_item",
-                "count": 3,
+                "replicas": 3,
                 "sequences": [{"name": "burst", "kind": "random"}],
                 "ports": {
                     "inputs": [{"name": "a", "width": 1}],

@@ -1,15 +1,15 @@
-# nchan — the `count` feature: N agents into ONE vectored DUT (I-9)
+# nchan — the `replicas` feature: N agents into ONE vectored DUT (I-9)
 
 **Can one agent definition be replicated N times into a single DUT with vectored ports?** Yes
-— this is `count: N`, the last of `alert_handler`'s three gaps (I-9). OpenTitan's alert_handler
+— this is `replicas: N`, the last of `alert_handler`'s three gaps (I-9). OpenTitan's alert_handler
 instantiates *one* `alert_esc_agent` ~63 times, one per alert line, into one block. QuickUVM's C3
-`instances` gave each instance its own DUT; `count` shares **one** DUT, each replica bound to a
+`instances` gave each instance its own DUT; `replicas` shares **one** DUT, each replica bound to a
 slice of its vectored ports.
 
 ```yaml
 agents:
   - name: ch
-    count: 3            # 3 identical channels -> DUT ports become [2:0]
+    replicas: 3            # 3 identical channels -> DUT ports become [2:0]
     ports:
       inputs:  [{name: d, width: 1}, {name: v, width: 1}]
       outputs: [{name: q, width: 1}]
@@ -32,9 +32,9 @@ replica drives/samples its own channel; each per-channel scoreboard checks its o
 
 ## How it's built
 
-`count` reuses the C3 `instances` machinery — the env, config, per-instance agents, per-instance
+`replicas` reuses the C3 `instances` machinery — the env, config, per-instance agents, per-instance
 scoreboards, and per-instance sequences are all the C3 wiring. The one new piece is tb_top: instead
-of C3's *one DUT per instance*, `count` binds all N interfaces to **one** DUT via a concatenation
+of C3's *one DUT per instance*, `replicas` binds all N interfaces to **one** DUT via a concatenation
 (`{inst_{N-1}, .., inst_0}`), so replica *i* maps to bit *i* of each vector port.
 
 ## Mutation proof — per-channel independence + correct index mapping

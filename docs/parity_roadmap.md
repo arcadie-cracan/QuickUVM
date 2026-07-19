@@ -507,8 +507,13 @@ via Jinja macros.
 - *Landed in the next slice:* `instances:` — two instances of the VIP at different
   widths in **one** bench (see the multi-instantiation status block above).
 
-### `count` — N agents into ONE vectored DUT — DONE  *(the alert_handler I-9 gap)*
-Replicate one agent `count` times into **one** DUT with vectored ports (`[N-1:0]`), replica *i*
+### `replicas` — N agents into ONE vectored DUT — DONE  *(the alert_handler I-9 gap)*
+*(Shipped as `count:`; renamed `replicas:` after the schema audit — the name now says what it
+means (identical copies), separates it from C3 `instances` (parameterized variants, each its own
+DUT — a topology×variation matrix, whose mutual exclusion is a theorem: one vectored port cannot
+carry per-bit widths), and retires the schema's last `count` homonym. The old key errors with a
+rename hint.)*
+Replicate one agent `replicas` times into **one** DUT with vectored ports (`[N-1:0]`), replica *i*
 bound to bit *i* — the alert_handler topology (one `alert_esc_agent` reused ~63×, one per alert
 line). Distinct from C3 `instances` (different param values, each its **own** DUT). Reuses the C3
 `instance_views` machinery (per-instance agents/config/scoreboards/sequences); the one new piece is
