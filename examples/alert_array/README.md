@@ -1,7 +1,7 @@
-# alert_array — composing `count` + the hybrid agent (the alert_handler topology)
+# alert_array — composing `replicas` + the hybrid agent (the alert_handler topology)
 
 **Can the two alert_handler features compose — N hybrid alert-senders into one DUT?** Yes. This
-is the capstone: `count` (N replicas into one vectored DUT, I-9) + the hybrid agent
+is the capstone: `replicas` (N replicas into one vectored DUT, I-9) + the hybrid agent
 (`proactive: true`, I-7) together. Each of the N replicas **answers its own ping** (reactive) AND
 **raises its own alerts** (proactive), and each gets **its own** request-FIFO-drain liveness — the
 OpenTitan alert-sender array, built from generic primitives.
@@ -9,7 +9,7 @@ OpenTitan alert-sender array, built from generic primitives.
 ```yaml
 agents:
   - name: sndr
-    count: 3                # N replicas into one vectored DUT (I-9)
+    replicas: 3                # N replicas into one vectored DUT (I-9)
     mode: responder         # answer each channel's ping...
     request_valid: ping
     respond: on_request

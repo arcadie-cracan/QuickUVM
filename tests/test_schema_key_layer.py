@@ -83,6 +83,14 @@ def test_pre_rename_trans_style_key_errors_with_hint():
         ProjectConfig.model_validate(_with_agent(trans_style="manual"))
 
 
+def test_pre_rename_count_key_errors_with_hint():
+    """Agent-level `count:` became `replicas:` (identical copies x one vectored
+    DUT — named for what it means, and no longer a homonym of the sequence/test
+    item counts, which keep their natural spelling)."""
+    with pytest.raises(ValidationError, match="renamed to 'replicas"):
+        ProjectConfig.model_validate(_with_agent(count=3))
+
+
 # --- runtime-only fields are not valid user input -----------------------------
 
 

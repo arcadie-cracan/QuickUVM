@@ -1,4 +1,4 @@
-"""I-9 — `count`: replicate one agent N times into ONE vectored DUT.
+"""I-9 — `replicas`: replicate one agent N times into ONE vectored DUT.
 
 The alert_handler topology (one agent definition reused ~63 times: N alert lines into one
 block). Distinct from C3 `instances` (different parameter values, each its own DUT): count
@@ -26,12 +26,12 @@ from quick_uvm.models import (
 )
 
 
-def _agent(count=3, **kw):
+def _agent(replicas=3, **kw):
     return AgentConfig(
         name="ch",
         interface="ch_if",
         sequence_item="ch_item",
-        count=count,
+        replicas=replicas,
         ports={
             "inputs": [PortConfig(name="d", width=1), PortConfig(name="v", width=1)],
             "outputs": [PortConfig(name="q", width=1, randomize=False)],
@@ -53,7 +53,7 @@ def _cfg(agent=None):
 # ---- wiring ----------------------------------------------------------------
 
 
-def test_count_makes_n_interfaces_one_vectored_dut(tmp_path):
+def test_replicas_makes_n_interfaces_one_vectored_dut(tmp_path):
     Generator(_cfg()).generate_all(tmp_path)
     top = (tmp_path / "tb_top.sv").read_text()
     # N interface instances
@@ -70,16 +70,16 @@ def test_count_makes_n_interfaces_one_vectored_dut(tmp_path):
     assert "ch_0_dut" not in top
 
 
-def test_count_makes_per_channel_scoreboards(tmp_path):
+def test_replicas_makes_per_channel_scoreboards(tmp_path):
     Generator(_cfg()).generate_all(tmp_path)
     for i in range(3):
         assert (tmp_path / f"nchan_ch_{i}_scoreboard.svh").exists()
         assert (tmp_path / f"nchan_ch_{i}_reference_model.svh").exists()
 
 
-def test_count_1_is_single_agent(tmp_path):
+def test_replicas_1_is_single_agent(tmp_path):
     """count: 1 (default) is the plain single-agent wiring — byte-identical elsewhere."""
-    Generator(_cfg(_agent(count=1))).generate_all(tmp_path)
+    Generator(_cfg(_agent(replicas=1))).generate_all(tmp_path)
     top = (tmp_path / "tb_top.sv").read_text()
     assert "ch_if_inst" in top  # the single, unindexed interface
     assert "ch_0_if_inst" not in top
@@ -89,27 +89,27 @@ def test_count_1_is_single_agent(tmp_path):
 # ---- validation ------------------------------------------------------------
 
 
-def test_count_zero_rejected():
-    with pytest.raises(Exception, match="`count` must be >= 1"):
-        _agent(count=0)
+def test_replicas_zero_rejected():
+    with pytest.raises(Exception, match="`replicas` must be >= 1"):
+        _agent(replicas=0)
 
 
-def test_count_with_instances_rejected():
+def test_replicas_with_instances_rejected():
     with pytest.raises(Exception, match="mutually exclusive with C3 `instances`"):
         _agent(
-            count=3,
+            replicas=3,
             parameters=[ParamConfig(name="W", default=8)],
             instances=[InstanceConfig(name="a", values={"W": 8})],
         )
 
 
-def test_count_with_pure_responder_rejected():
-    with pytest.raises(Exception, match="`count` is not yet supported with a PURE"):
+def test_replicas_with_pure_responder_rejected():
+    with pytest.raises(Exception, match="`replicas` is not yet supported with a PURE"):
         AgentConfig(
             name="ch",
             interface="ch_if",
             sequence_item="ch_item",
-            count=3,
+            replicas=3,
             mode="responder",
             request_valid="req",
             ports={
@@ -119,13 +119,13 @@ def test_count_with_pure_responder_rejected():
         )
 
 
-def _hybrid_count_agent():
+def _hybrid_replicas_agent():
     """count + a HYBRID (proactive responder) — the alert_handler alert-sender array."""
     return AgentConfig(
         name="sndr",
         interface="sndr_if",
         sequence_item="sndr_item",
-        count=3,
+        replicas=3,
         mode="responder",
         request_valid="ping",
         respond="on_request",
@@ -140,14 +140,14 @@ def _hybrid_count_agent():
     )
 
 
-def test_count_plus_hybrid_accepted_and_per_replica_liveness(tmp_path):
+def test_replicas_plus_hybrid_accepted_and_per_replica_liveness(tmp_path):
     """A HYBRID (proactive responder) IS allowed with count: N hybrid alert-senders into
     one DUT. Each replica gets its own responder sequencer with the request-drain liveness,
     so a dead responder in one channel is caught independently of the others."""
     cfg = ProjectConfig(
         project=ProjectMeta(name="aa"),
         dut=DutConfig(name="aa", external_reset=True),
-        agents=[_hybrid_count_agent()],
+        agents=[_hybrid_replicas_agent()],
         tests=[TConf(name="t1", num_items=20)],
     )
     Generator(cfg).generate_all(tmp_path)
@@ -176,28 +176,28 @@ def _proj(**kw):
     return ProjectConfig(**base)
 
 
-def test_count_requires_external_reset():
-    with pytest.raises(Exception, match="requires `dut.external_reset: true`"):
+def test_replicas_requires_external_reset():
+    with pytest.raises(Exception, match="needs `dut.external_reset: true`"):
         _proj(dut=DutConfig(name="n", external_reset=False))
 
 
-def test_count_rejects_second_agent():
+def test_replicas_rejects_second_agent():
     other = AgentConfig(
         name="b",
         interface="b_if",
         sequence_item="b_item",
         ports={"inputs": [PortConfig(name="x", width=1)]},
     )
-    with pytest.raises(Exception, match="requires it be the SOLE agent"):
+    with pytest.raises(Exception, match="must be the SOLE agent"):
         _proj(agents=[_agent(), other])
 
 
-def test_count_rejects_coverage():
+def test_replicas_rejects_coverage():
     with pytest.raises(Exception, match="does not yet wire coverage"):
         _proj(analysis=AnalysisConfig(coverage=["ch"]))
 
 
-def test_count_rejects_windowed_scoreboard():
+def test_replicas_rejects_windowed_scoreboard():
     from quick_uvm.models import WindowSpec
 
     sb = ScoreboardSpec(

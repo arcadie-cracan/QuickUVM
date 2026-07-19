@@ -689,10 +689,15 @@ class AgentConfig(_SchemaModel):
     instances: list[InstanceConfig] = Field(default_factory=list)
     # I-9 — replicate this agent COUNT times into ONE DUT with vectored ports (N alert
     # lines, N interrupt channels): the alert_handler topology (one agent def, ~63x).
-    # Distinct from C3 `instances` (different param values, each its own DUT): count
-    # replicas are IDENTICAL and share one DUT, each bound to a slice of the vectors.
+    # I-9 — N IDENTICAL replicas of this agent into ONE vectored DUT (replica i binds
+    # bit i of each port). NOT the same axis as C3 `instances`: the two are different
+    # cells of a topology x variation matrix —
+    #   replicas  = identical copies      x ONE shared vectored DUT
+    #   instances = parameterized variants x per-instance DUTs
+    # (parameterized x shared is impossible — one vectored port cannot carry per-bit
+    # widths — so their mutual exclusion is a theorem, not a pending unification.)
     # Opt-in; 1 (default) is the single-agent wiring, byte-identical.
-    count: int = 1
+    replicas: int = 1
     # Runtime: the agent's ORIGINAL name, captured before any H1 namespace prefix is
     # applied (like ProjectConfig.original_dut_name). So a cross-level endpoint into a
     # reused subtree can name the agent as originally declared (`g`, not `left_g`) and
@@ -1024,7 +1029,11 @@ class AgentConfig(_SchemaModel):
         them here cannot break the F2' path.)
         """
         if isinstance(data, dict):
-            renames = {"transaction": "sequence_item", "trans_style": "seq_item_style"}
+            renames = {
+                "transaction": "sequence_item",
+                "trans_style": "seq_item_style",
+                "count": "replicas",
+            }
             for old, new in renames.items():
                 if old in data:
                     raise ValueError(
@@ -1471,18 +1480,19 @@ class AgentConfig(_SchemaModel):
                             f"parameter '{k}' (parameters: {pnames})."
                         )
         # I-9 — count: N identical replicas sharing one vectored DUT.
-        if self.count < 1:
-            raise ValueError(f"agent '{self.name}': `count` must be >= 1.")
-        if self.count > 1:
+        if self.replicas < 1:
+            raise ValueError(f"agent '{self.name}': `replicas` must be >= 1.")
+        if self.replicas > 1:
             if self.instances or self.parameters:
                 raise ValueError(
-                    f"agent '{self.name}': `count` (identical replicas into one "
+                    f"agent '{self.name}': `replicas` (identical copies into one "
                     f"vectored DUT) is mutually exclusive with C3 `instances`/"
-                    f"`parameters` (those give each instance its own DUT at a width)."
+                    f"`parameters` (parameterized variants, each its own DUT) — a "
+                    f"vectored port cannot carry per-bit widths."
                 )
             if self.is_responder and not self.proactive:
                 raise ValueError(
-                    f"agent '{self.name}': `count` is not yet supported with a PURE "
+                    f"agent '{self.name}': `replicas` is not yet supported with a PURE "
                     f"`mode: responder` — a proactive HYBRID (`proactive: true`) IS "
                     f"supported (N hybrid alert-senders into one DUT: the "
                     f"alert_handler topology), but a pure responder's shared-DUT "
@@ -3549,43 +3559,43 @@ class ProjectConfig(_SchemaModel):
         return self
 
     @model_validator(mode="after")
-    def validate_count(self) -> ProjectConfig:
-        """I-9 — `count` is a focused first slice (a single-agent, single-clock,
+    def validate_replicas(self) -> ProjectConfig:
+        """I-9 — `replicas` is a focused first slice (a single-agent, single-clock,
         external-reset, initiator array with plain single-stream scoreboards). The
         shared-DUT wiring reuses the C3 per-instance env path, which does NOT wire a
         second agent, coverage, inouts, multi-clock, or a customized scoreboard — so
         REJECT those combinations LOUDLY here rather than silently mis-generate."""
-        count_agents = [a for a in self.agents if a.count > 1]
-        if not count_agents:
+        replica_agents = [a for a in self.agents if a.replicas > 1]
+        if not replica_agents:
             return self
-        if len(count_agents) > 1:
-            raise ValueError("at most one agent may use `count` per bench.")
-        ca = count_agents[0]
+        if len(replica_agents) > 1:
+            raise ValueError("at most one agent may use `replicas` per bench.")
+        ca = replica_agents[0]
         if len(self.agents) != 1:
             raise ValueError(
-                f"`count` (agent '{ca.name}') requires it be the SOLE agent for now — "
-                f"the shared-vectored-DUT wiring does not yet compose a count array "
+                f"`replicas` (agent '{ca.name}') must be the SOLE agent for now — "
+                f"the shared-vectored-DUT wiring does not yet compose a replica array "
                 f"with other agents (alert_handler's N alerts + tl_agent: follow-up)."
             )
         if self.clocks or self.resets:
             raise ValueError(
-                f"`count` (agent '{ca.name}') is not yet supported with multi-clock/"
+                f"`replicas` (agent '{ca.name}') is not yet supported with multi-clock/"
                 f"reset (`clock:`/`resets:` lists) — the shared-DUT array is 1-domain."
             )
         if not self.dut.external_reset:
             raise ValueError(
-                f"`count` (agent '{ca.name}') requires `dut.external_reset: true` — a "
+                f"`replicas` (agent '{ca.name}') needs `dut.external_reset: true` — a "
                 f"shared vectored DUT binds the top-level reset net."
             )
         if ca.inout_ports:
             raise ValueError(
-                f"`count` (agent '{ca.name}') does not yet support `inouts` — the "
+                f"`replicas` (agent '{ca.name}') does not yet support `inouts` — the "
                 f"shared-DUT wiring vectors inputs/outputs only."
             )
         _cov = self.analysis is not None and self.analysis.coverage
         if _cov or self.coverage_models:
             raise ValueError(
-                f"`count` (agent '{ca.name}') does not yet wire coverage — the "
+                f"`replicas` (agent '{ca.name}') does not yet wire coverage — the "
                 f"per-instance env path omits the collectors (declare it on a "
                 f"non-count bench for now)."
             )
@@ -3599,8 +3609,9 @@ class ProjectConfig(_SchemaModel):
                     or s.max_latency
                 ):
                     raise ValueError(
-                        f"`count` (agent '{ca.name}'): scoreboard '{s.name}' must be a "
-                        f"plain single-stream scoreboard — a windowed/two-stream/"
+                        f"`replicas` (agent '{ca.name}'): scoreboard "
+                        f"'{s.name}' must be "
+                        f"a plain single-stream scoreboard — a windowed/two-stream/"
                         f"out-of-order one is flattened per-instance, dropping its "
                         f"customization."
                     )
@@ -4152,11 +4163,11 @@ class ProjectConfig(_SchemaModel):
             # selector would be validated and then silently dropped (the test would
             # run a different sequence than the one it names, and pass). Fail closed
             # until per-replica selection is a real feature.
-            if sel_agent.instances or sel_agent.count > 1:
+            if sel_agent.instances or sel_agent.replicas > 1:
                 raise ValueError(
                     f"test '{t.name}': a `sequence` selector is not supported on a "
                     f"multi-instance agent ('{sel.agent}' has "
-                    f"{'`instances`' if sel_agent.instances else '`count` > 1'}) — "
+                    f"{'`instances`' if sel_agent.instances else '`replicas` > 1'}) — "
                     f"the per-replica test body starts each replica's default "
                     f"sequence and would silently ignore the selector."
                 )
@@ -4479,9 +4490,9 @@ class ProjectConfig(_SchemaModel):
         used, byte-identical)."""
         views: list[InstanceView] = []
         for a in self.agents:
-            if a.count > 1:
+            if a.replicas > 1:
                 # I-9 — N identical replicas sharing one vectored DUT.
-                for i in range(a.count):
+                for i in range(a.replicas):
                     views.append(
                         InstanceView(a, f"{a.name}_{i}", "", shared=True, index=i)
                     )
@@ -4493,14 +4504,14 @@ class ProjectConfig(_SchemaModel):
 
     @property
     def shared_dut(self) -> bool:
-        """I-9 — the bench replicates an agent with `count` into ONE vectored DUT (as
+        """I-9 — the bench replicates an agent with `replicas` into ONE vectored DUT (as
         opposed to C3 `instances`, which give each instance its own DUT)."""
-        return any(a.count > 1 for a in self.agents)
+        return any(a.replicas > 1 for a in self.agents)
 
     @property
-    def count_agent(self) -> AgentConfig | None:
-        """The agent replicated by `count` (I-9), or None."""
-        return next((a for a in self.agents if a.count > 1), None)
+    def replicas_agent(self) -> AgentConfig | None:
+        """The agent replicated by `replicas` (I-9), or None."""
+        return next((a for a in self.agents if a.replicas > 1), None)
 
     @property
     def effective_virtual_sequences(self) -> list[VseqConfig]:
