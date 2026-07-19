@@ -131,8 +131,8 @@ clock:
 agents:
   - name: reg
     interface: reg_if
-    transaction: reg_seq_item
-    trans_style: manual   # or field_macros
+    sequence_item: reg_seq_item
+    seq_item_style: manual   # or field_macros
     active: true
     ports:
       inputs:
@@ -192,17 +192,19 @@ See [`examples/simple_reg/`](examples/simple_reg/) (RAL) and [`examples/wbx/`](e
 
 ## Generated file set
 
-For each agent `<ag>` and test `<t>`, QuickUVM generates:
+For a DUT `<dut>`, agent `<ag>` (whose transaction class is the `sequence_item:` name,
+e.g. `<ag>_seq_item`), and test `<t>`, QuickUVM generates:
 
 ```
-clkgen.sv         <dut>.sv (stub)
-<ag>_if.sv        <ag>_seq_item.svh <ag>_sequencer.svh
-<ag>_driver.svh   <ag>_monitor.svh  <ag>_agent.svh
-<ag>_cover.svh    <ag>_sequence.svh
-sb_predictor.svh  sb_comparator.svh tb_scoreboard.svh
-sb_calc_exp.svh   env.svh           test_base.svh
-<t>.svh           top.sv            tb_pkg.sv
-pkg.f             run.f
+clkgen.sv             <dut>.sv (stub)       <ag>_if.sv
+<ag>_seq_item.svh     <ag>_cfg.svh          <ag>_sequencer.svh
+<ag>_driver.svh       <ag>_monitor.svh      <ag>_agent.svh
+<ag>_cov.svh          <ag>_seq.svh
+<dut>_predictor.svh   <dut>_comparator.svh  <dut>_scoreboard.svh
+<dut>_reference_model.svh
+<dut>_env_cfg.svh     <dut>_env.svh         <dut>_base_test.svh
+<t>.svh               tb_top.sv             <dut>_tb_pkg.sv
+pkg.f                 run.f                 (+ Makefile with `regress:`)
 ```
 
 ---

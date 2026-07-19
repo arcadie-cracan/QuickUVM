@@ -91,7 +91,21 @@ def _check_sv_identifier(name: str, what: str) -> None:
         )
 
 
-class StructMember(BaseModel):
+class _SchemaModel(BaseModel):
+    """Shared base for every YAML-facing config class: unknown keys are REJECTED.
+
+    Fail-closed at the KEY layer, matching the value-layer validators. Without
+    this, a typo'd or stale key (a pre-rename `trans_style:`, a misspelled
+    `analyses:`) validates silently and the config it carried simply vanishes
+    from the generated bench — the schema-lies anti-pattern, one level up.
+    (Subclass model_config MERGES with this, so a class may add its own keys —
+    e.g. populate_by_name — without losing the forbid.)
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class StructMember(_SchemaModel):
     """One field of a packed struct (S1).
 
     A plain integral member (`width`), a packed array (`packed_dims`), a NESTED
@@ -230,7 +244,7 @@ def _collect_struct_typedefs(members: list[StructMember], prefix: str) -> list[d
     return out
 
 
-class PortConfig(BaseModel):
+class PortConfig(_SchemaModel):
     name: str
     width: int = 1
     # C3 — parameterized width: this scalar port's width is the named agent parameter
@@ -444,7 +458,7 @@ class PortConfig(BaseModel):
         )
 
 
-class FieldConfig(BaseModel):
+class FieldConfig(_SchemaModel):
     """A transaction-only field (S1): variable-length data that is NOT an
     interface wire — a dynamic array or queue serialized by user pragma code in
     the driver/monitor. QuickUVM owns its declaration, randomization, field
@@ -505,7 +519,7 @@ def _default_ports() -> PortMap:
     return {"inputs": [], "outputs": []}
 
 
-class SequenceConfig(BaseModel):
+class SequenceConfig(_SchemaModel):
     """One generated sequence in an agent's library (S2).
 
     Opt-in: an agent with no `sequences` keeps only the legacy `<agent>_sequence`
@@ -558,7 +572,7 @@ class SequenceConfig(BaseModel):
         return self
 
 
-class TestSeqSel(BaseModel):
+class TestSeqSel(_SchemaModel):
     """A test's selection of a single agent-library sequence to run (S2).
 
     `count` (optional) overrides the selected sequence's item count for this test
@@ -579,14 +593,14 @@ class TestSeqSel(BaseModel):
         return self
 
 
-class VseqStep(BaseModel):
+class VseqStep(_SchemaModel):
     """One sub-sequence start inside a virtual sequence (C2)."""
 
     agent: str
     sequence: str  # a library sequence of `agent`, or its default <agent>_sequence
 
 
-class VseqConfig(BaseModel):
+class VseqConfig(_SchemaModel):
     """A virtual sequence: coordinates per-agent sub-sequences via the vsqr (C2).
 
     `mode: sequential` starts the steps in order; `parallel` starts them in a
@@ -614,7 +628,7 @@ class VseqConfig(BaseModel):
         return self
 
 
-class ParamConfig(BaseModel):
+class ParamConfig(_SchemaModel):
     """C3 — a SystemVerilog parameter on an agent VIP (e.g. a data width).
 
     Makes the agent's interface AND all its UVM classes parameterized `#(...)`, so
@@ -632,7 +646,7 @@ class ParamConfig(BaseModel):
         return self
 
 
-class InstanceConfig(BaseModel):
+class InstanceConfig(_SchemaModel):
     """C3 — one concrete instantiation of a parameterized agent VIP.
 
     Lets the SAME parameterized VIP be instantiated more than once in one bench
@@ -651,7 +665,7 @@ class InstanceConfig(BaseModel):
         return self
 
 
-class AgentConfig(BaseModel):
+class AgentConfig(_SchemaModel):
     name: str
     interface: str
     sequence_item: str
@@ -995,6 +1009,36 @@ class AgentConfig(BaseModel):
         for p in self.inout_ports:
             result.append(("inout", p))
         return result
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_stale_and_runtime_keys(cls, data: object) -> object:
+        """Fail-closed at the KEY layer, with teaching errors for the known renames.
+
+        Without the rename hints, `extra="forbid"` would reject the pre-rename keys
+        with a bare "extra inputs are not permitted" — correct but unhelpful to
+        anyone pasting an old config. And the runtime-only fields (set by the
+        loader AFTER validation) must never be accepted from user YAML: plain-yaml
+        `is_reference: true` would fabricate a reference to a VIP that does not
+        exist. (The agent_refs loader sets these post-validation, so rejecting
+        them here cannot break the F2' path.)
+        """
+        if isinstance(data, dict):
+            renames = {"transaction": "sequence_item", "trans_style": "seq_item_style"}
+            for old, new in renames.items():
+                if old in data:
+                    raise ValueError(
+                        f"agent key '{old}:' was renamed to '{new}:' — update the "
+                        f"config (the old key would otherwise be silently ignored)."
+                    )
+            runtime = {"original_name", "is_reference", "ref_filelist"}
+            for k in runtime & set(data):
+                raise ValueError(
+                    f"agent key '{k}:' is internal (set by the loader for H1/F2' "
+                    f"machinery) and is not valid user configuration. To consume a "
+                    f"VIP agent by reference, declare it under `agent_refs:`."
+                )
+        return data
 
     @field_validator("name", "interface", "sequence_item")
     @classmethod
@@ -1477,7 +1521,7 @@ class InstanceView:
         return f"{self.name}_sb"
 
 
-class DutConfig(BaseModel):
+class DutConfig(_SchemaModel):
     name: str
     clock: str = "clk"
     reset: str = "rst_n"
@@ -1522,7 +1566,7 @@ _UNIT_MAG = {
 }
 
 
-class ClockConfig(BaseModel):
+class ClockConfig(_SchemaModel):
     # M1 — multi-clock: `name` is the clock NET name in tb_top (and the DUT's clock
     # port). Default "clk" so a single-clock bench is byte-identical. `clock:` in the
     # YAML accepts one ClockConfig (today) or a LIST of them (a domain each).
@@ -1569,7 +1613,7 @@ class DrivenReset(NamedTuple):
     active_low: bool
 
 
-class ResetConfig(BaseModel):
+class ResetConfig(_SchemaModel):
     """M1 — one externally-generated reset domain. `clock` names the ClockConfig whose
     posedge the deassert synchronizes to (sync reset); None ⇒ asynchronous (deassert
     after a fixed delay). A single-reset bench is synthesized from `dut.reset` /
@@ -1586,7 +1630,7 @@ class ResetConfig(BaseModel):
         return v
 
 
-class TestConfig(BaseModel):
+class TestConfig(_SchemaModel):
     name: str
     num_items: int = 100
     # S2 — run a selected agent-library sequence instead of the default
@@ -1619,7 +1663,7 @@ class TestConfig(BaseModel):
         return self
 
 
-class WindowSpec(BaseModel):
+class WindowSpec(_SchemaModel):
     """A WINDOWED scoreboard (opt-in). A health-test / statistics block accumulates N
     raw samples and emits ONE verdict per window (an N:1 statistic), keyed off a DUT
     boundary strobe. The generated predictor carries the sample counter, the boundary
@@ -1648,7 +1692,7 @@ class WindowSpec(BaseModel):
         return self
 
 
-class ScoreboardSpec(BaseModel):
+class ScoreboardSpec(_SchemaModel):
     name: str = "sbd"
     source: str  # input/stimulus stream agent → predictor
     # A2 — two-stream topology: when set, this is the OUTPUT/response stream agent
@@ -1710,7 +1754,7 @@ class ScoreboardSpec(BaseModel):
         return self
 
 
-class AnalysisConfig(BaseModel):
+class AnalysisConfig(_SchemaModel):
     """Opt-in declarative analysis connectivity (C1, MVP per-agent routing).
 
     When omitted, the environment keeps the legacy single-stream wiring
@@ -1721,7 +1765,7 @@ class AnalysisConfig(BaseModel):
     scoreboards: list[ScoreboardSpec] = Field(default_factory=list)
 
 
-class CoverageBin(BaseModel):
+class CoverageBin(_SchemaModel):
     """One named bin of a coverpoint — exactly one of value/range/values."""
 
     name: str
@@ -1765,7 +1809,7 @@ class CoverageBin(BaseModel):
         return "{" + ", ".join(str(v) for v in (self.values or [])) + "}"
 
 
-class TransitionBin(BaseModel):
+class TransitionBin(_SchemaModel):
     """A transition (temporal) bin — `bins <name> = (<seq>);` where `<seq>` is a
     SystemVerilog transition like `IDLE => BUSY` or `0 => 1 => 2`. The sequence is
     a light-validated raw expression (enum labels or integer values); QuickUVM only
@@ -1798,7 +1842,7 @@ class TransitionBin(BaseModel):
         return [int(tok) for tok in re.findall(r"\b\d+\b", self.seq)]
 
 
-class Coverpoint(BaseModel):
+class Coverpoint(_SchemaModel):
     field: str  # must name a port on the covered agent
     bins: list[CoverageBin] = Field(default_factory=list)
     # V1 closure — illegal_bins flag a hit as an error; ignore_bins exclude values
@@ -1855,7 +1899,7 @@ class Coverpoint(BaseModel):
         return self
 
 
-class CrossBin(BaseModel):
+class CrossBin(_SchemaModel):
     """A `binsof`-based selection bin inside a cross (V1 closure).
 
     `select` is a raw SystemVerilog cross-bin select expression — e.g.
@@ -1877,7 +1921,7 @@ class CrossBin(BaseModel):
         return self
 
 
-class CrossSpec(BaseModel):
+class CrossSpec(_SchemaModel):
     """A cross of >=2 coverpoints with optional `binsof` bin selection (V1).
 
     The plain `crosses: [[a, b]]` list form is still accepted (no selection); use
@@ -1902,7 +1946,7 @@ class CrossSpec(BaseModel):
         return self.name or "_x_".join(self.fields)
 
 
-class CoverageModel(BaseModel):
+class CoverageModel(_SchemaModel):
     """Opt-in functional coverage model for one agent (V1).
 
     Generates a real covergroup (config-driven coverpoints + bins + crosses) in
@@ -1976,7 +2020,7 @@ class CoverageModel(BaseModel):
         return self
 
 
-class RegisterModelConfig(BaseModel):
+class RegisterModelConfig(_SchemaModel):
     """Opt-in front-door register-model (RAL) integration (C4a).
 
     The uvm_reg_block itself is generated externally (e.g. by reggen/SystemRDL)
@@ -2058,7 +2102,7 @@ class RegisterModelConfig(BaseModel):
         return [{"kind": k, "seq": seqs[k]} for k in self.csr_tests]
 
 
-class ReferenceModelConfig(BaseModel):
+class ReferenceModelConfig(_SchemaModel):
     """Configures the scoreboard's reference model / predictor (K0).
 
     `language: sv` (default) keeps the `predict()` body in
@@ -2088,7 +2132,7 @@ class ReferenceModelConfig(BaseModel):
     language: Literal["sv", "c"] = "sv"
 
 
-class ProjectMeta(BaseModel):
+class ProjectMeta(_SchemaModel):
     name: str
     author: str = ""
     year: int = 2026
@@ -2103,7 +2147,7 @@ class ProjectMeta(BaseModel):
     imports: list[str] = Field(default_factory=list)
 
 
-class SubenvConfig(BaseModel):
+class SubenvConfig(_SchemaModel):
     """H1 — one child block environment composed into a subsystem (top) bench.
 
     `config` is the path to the child block's own QuickUVM config (resolved
@@ -2148,7 +2192,7 @@ class SubenvConfig(BaseModel):
         return self
 
 
-class SubenvConnection(BaseModel):
+class SubenvConnection(_SchemaModel):
     """H1 — a wire between two composed blocks: the source block's output port
     drives the destination block's input port (a pipeline). Each endpoint is a
     dotted path `<block>.<port>`, or `<sub>...<block>.<port>` to reach a LEAF block
@@ -2162,7 +2206,7 @@ class SubenvConnection(BaseModel):
     dst: str = Field(alias="to")  # <block>.<port>, or <sub>...<block>.<port>
 
 
-class SubenvScoreboard(BaseModel):
+class SubenvScoreboard(_SchemaModel):
     """H1 — a cross-block scoreboard: predict the monitor block's output from the
     source block's transaction and compare (reusing the A2 two-stream, in-order
     comparator). Each of `source`/`monitor` is a dotted path `<block>.<agent>`, or
@@ -2395,7 +2439,7 @@ def _leaf_agent(cfg: ProjectConfig, token: str) -> AgentConfig | None:
     return next((a for a in cfg.agents if (a.original_name or a.name) == token), None)
 
 
-class ProbeConfig(BaseModel):
+class ProbeConfig(_SchemaModel):
     """K2 — a whitebox PROBE: passively OBSERVE (never drive) one INTERNAL DUT signal
     via a hierarchical reference (XMR), republished on a generated probe interface for
     coverage / checkers / debug.
@@ -2410,8 +2454,6 @@ class ProbeConfig(BaseModel):
     Observe-only by construction: the generated code READS the signal (a continuous
     `assign` into an interface INPUT) — it never `force`/`deposit`s. Driving internals
     stays out of scope (it would make the TB, not the DUT, the source of truth)."""
-
-    model_config = ConfigDict(extra="forbid")
 
     name: str
     path: str
@@ -2512,15 +2554,13 @@ class ProbeConfig(BaseModel):
         return [] if self.real else self._as_port.struct_typedefs
 
 
-class RegressConfig(BaseModel):
+class RegressConfig(_SchemaModel):
     """R1 — regression + coverage-closure infrastructure (opt-in).
 
     Emits a ``Makefile`` next to the generated sources: elaborate once, then run
     the (test x seed) matrix, verdict each run, and merge + report coverage.
     Absent ⇒ nothing emitted (byte-identical).
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     # Xcelium only, deliberately. It is the simulator every QuickUVM example is
     # validated on, and the coverage merge/report recipe (imc) is tool-specific.
@@ -2551,7 +2591,7 @@ class RegressConfig(BaseModel):
         return self
 
 
-class AgentRef(BaseModel):
+class AgentRef(_SchemaModel):
     """F2' — a reference to an agent inside an external, separately-generated VIP. The
     loader resolves `manifest` relative to the consuming config file, reads the named
     agent's spec + the VIP's package filelist, and reconstructs a referenced AgentConfig
@@ -2566,14 +2606,18 @@ class AgentRef(BaseModel):
         return self
 
 
-def _resolve_agent_refs(raw: dict, cfg_dir: Path) -> None:
+def _resolve_agent_refs(raw: dict, cfg_dir: Path) -> dict[str, str]:
     """F2' — expand `agent_refs:` into referenced agents appended to `agents:`.
 
     Each ref names an agent inside a VIP manifest (.qvip). This reads the manifest
-    (relative to the consuming config file), reconstructs the agent's config, marks it
-    is_reference=True, and records the ABSOLUTE path to the VIP's package filelist so
-    the generator can chain it with Cadence `-F`. Mutates `raw` in place.
+    (relative to the consuming config file), reconstructs the agent's config, and
+    returns {agent name: absolute path to the VIP's package filelist} so from_yaml
+    can mark the agents is_reference=True AFTER validation (the generator then
+    skips their source and chains the filelist with Cadence `-F`). The runtime
+    fields are set post-validation — never via the input dict — so user YAML
+    supplying them is rejected fail-closed. Mutates `raw` in place.
     """
+    resolved: dict[str, str] = {}
     for ref in raw.get("agent_refs", []):
         name = ref.get("name") if isinstance(ref, dict) else None
         man_rel = ref.get("manifest") if isinstance(ref, dict) else None
@@ -2604,14 +2648,12 @@ def _resolve_agent_refs(raw: dict, cfg_dir: Path) -> None:
         # that authoritative so a hand-edited manifest whose key != config.name still
         # wires the agent under the name the consumer (and env) uses.
         agent_dict["name"] = name
-        agent_dict["is_reference"] = True
-        agent_dict["ref_filelist"] = str(
-            (man_path.parent / entry["filelist"]).resolve()
-        )
+        resolved[name] = str((man_path.parent / entry["filelist"]).resolve())
         raw.setdefault("agents", []).append(agent_dict)
+    return resolved
 
 
-class ProjectConfig(BaseModel):
+class ProjectConfig(_SchemaModel):
     project: ProjectMeta
     # F2' — required for an ordinary bench; SYNTHESIZED (name = project name, no RTL
     # emitted) by a before-validator when `vip`/`selftest` is set and no dut given, so
@@ -2713,10 +2755,32 @@ class ProjectConfig(BaseModel):
         """M1 — accept `clock:` as either a single mapping (today) or a LIST of them.
         A list is split into `clocks` (the full domain list) + `clock` (the primary /
         first, for every legacy single-clock read). A scalar leaves `clocks` empty, so a
-        single-clock bench is byte-identical."""
-        if isinstance(data, dict) and isinstance(data.get("clock"), list):
-            clocks = data["clock"]
-            data = {**data, "clocks": clocks, "clock": (clocks[0] if clocks else {})}
+        single-clock bench is byte-identical.
+
+        Also rejects the runtime-only fields in user input BEFORE the split writes
+        `clocks` internally: user-supplied `clocks:` would act as a broken alias of
+        the `clock:` list (leaving cfg.clock at its default), and the subenv/H1
+        fields are populated by from_yaml after validation."""
+        if isinstance(data, dict):
+            runtime = {
+                "clocks": "declare multiple clocks as a LIST under `clock:`",
+                "subenv_configs": "child configs are loaded from `subenvs:` entries",
+                "subenv_namespaces": "namespaces are derived from `subenvs:` reuse",
+                "original_dut_name": "set internally by H1 namespacing",
+            }
+            for k, hint in runtime.items():
+                if k in data:
+                    raise ValueError(
+                        f"top-level key '{k}:' is internal (set by the loader) and "
+                        f"is not valid user configuration — {hint}."
+                    )
+            if isinstance(data.get("clock"), list):
+                clocks = data["clock"]
+                data = {
+                    **data,
+                    "clocks": clocks,
+                    "clock": (clocks[0] if clocks else {}),
+                }
         return data
 
     @field_serializer("clock")
@@ -3543,7 +3607,10 @@ class ProjectConfig(BaseModel):
         # `agent_refs` are resolved by from_yaml (which reads the manifest relative to
         # the config file). A bare model_validate can't do that file I/O, so a config
         # with unresolved refs would generate NOTHING for them — fail loudly instead.
-        if self.agent_refs and not any(a.is_reference for a in self.agents):
+        # Detected by AGENT PRESENCE (the loader appends each referenced agent before
+        # validation; the is_reference mark itself is applied only after).
+        ref_names = {r.name for r in self.agent_refs}
+        if self.agent_refs and not ref_names <= {a.name for a in self.agents}:
             raise ValueError(
                 "`agent_refs` were not resolved — load this config via "
                 "ProjectConfig.from_yaml (it reads each VIP manifest relative to "
@@ -4148,11 +4215,17 @@ class ProjectConfig(BaseModel):
         with open(path) as fh:
             raw = yaml.safe_load(fh)
         # F2' — resolve `agent_refs:` BEFORE validation so a referenced agent is an
-        # ordinary agent for every downstream validator (uniqueness, env wiring) — it
-        # differs only in is_reference=True, which makes the generator SKIP its source.
+        # ordinary agent for every downstream validator (uniqueness, env wiring); the
+        # runtime marks (is_reference/ref_filelist, which make the generator SKIP its
+        # source) are applied AFTER validation, so they are never valid user input.
+        ref_filelists: dict[str, str] = {}
         if isinstance(raw, dict) and raw.get("agent_refs"):
-            _resolve_agent_refs(raw, path.parent)
+            ref_filelists = _resolve_agent_refs(raw, path.parent)
         cfg = cls.model_validate(raw)
+        for a in cfg.agents:
+            if a.name in ref_filelists:
+                a.is_reference = True
+                a.ref_filelist = ref_filelists[a.name]
         # H1 — resolve each child block config relative to this (top) file, then
         # cross-check the composition once all children are loaded.
         if cfg.subenvs:
