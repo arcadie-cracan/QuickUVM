@@ -2,7 +2,8 @@
 # external reset. Composed into the csoc subsystem; the subsystem tb_top generates
 # acc's clock (acc_clk) + reset (acc_rst_n) — nets pathname-prefixed by the subenv.
 project: {name: acc, author: QuickUVM, year: 2026}
-dut: {name: acc, clock: clk, reset: rst_n, external_reset: true}
+dut: {name: acc, clock: clk, reset: rst_n}
+reset: {external: true}
 clock: {period: 10, unit: ns}
 agents:
   - name: a

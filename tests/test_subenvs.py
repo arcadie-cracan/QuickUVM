@@ -327,10 +327,12 @@ _PORTS = "ports: {inputs: [{name: din, width: 8}], outputs: [{name: dout, width:
 
 
 def _clk_leaf(name, ag, reset=True, clock_block="clock: {period: 10, unit: ns}"):
-    r = ", reset: rst_n, external_reset: true" if reset else ", reset: ''"
+    r = ", reset: rst_n" if reset else ", reset: ''"
+    rr = "reset: {external: true}\n" if reset else ""
     return (
         f"project: {{name: {name}}}\n"
         f"dut: {{name: {name}, clock: clk{r}}}\n"
+        f"{rr}"
         f"{clock_block}\n"
         "agents:\n"
         f"  - {{name: {ag}, interface: {ag}_if, sequence_item: {ag}_it, {_PORTS}}}\n"

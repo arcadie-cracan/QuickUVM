@@ -20,13 +20,12 @@ _BASE = {
         "name": "spi_host",
         "clock": "clk",
         "reset": "rst_n",
-        "external_reset": True,
     },
     "clock": [
         {"name": "clk", "period": 10, "unit": "ns"},
         {"name": "sck", "period": 40, "unit": "ns", "source": "dut"},
     ],
-    "resets": [{"name": "rst_n", "active_low": True, "clock": "clk"}],
+    "reset": [{"name": "rst_n", "active_low": True, "clock": "clk"}],
     "agents": [
         {
             "name": "spi",
@@ -155,7 +154,7 @@ def test_rejects_observing_the_duts_own_clock_input():
 def test_rejects_a_reset_synced_to_an_observed_clock():
     """The DUT only starts driving sck once it is OUT of reset. Deasserting reset
     synchronously to sck is a deadlock."""
-    d = {**_BASE, "resets": [{"name": "rst_n", "active_low": True, "clock": "sck"}]}
+    d = {**_BASE, "reset": [{"name": "rst_n", "active_low": True, "clock": "sck"}]}
     with pytest.raises(ValidationError, match="deadlock"):
         ProjectConfig.model_validate(d)
 

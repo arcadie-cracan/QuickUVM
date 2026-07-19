@@ -15,7 +15,7 @@ dut:
   name: memslave
   clock: clk
   reset: rst_n
-  external_reset: true
+reset: {external: true}
 
 clock:
   period: 10

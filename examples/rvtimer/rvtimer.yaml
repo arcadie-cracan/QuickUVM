@@ -20,7 +20,7 @@ project:
 dut:
   name: rvtimer
   reset: rst_n
-  external_reset: true        # reset driven by the generated reset_generator in top
+reset: {external: true}   # reset driven by the generated reset_generator in top
 
 clock:
   period: 10

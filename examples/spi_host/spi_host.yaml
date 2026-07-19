@@ -22,14 +22,14 @@
 # responder-timing slice: `mode: responder` computed its driven set from `inputs` alone.
 project: {name: spi_host_tb, author: QuickUVM, year: 2026}
 
-dut: {name: spi_host_ot, clock: clk, reset: rst_n, external_reset: true}
+dut: {name: spi_host_ot, clock: clk, reset: rst_n}
 
 clock:
   - {name: clk, period: 10, unit: ns}
   # The DUT drives this one. `period` never makes an edge — it is only a timeout hint.
   - {name: sck, period: 100, unit: ns, source: dut}
 
-resets:
+reset:
   - {name: rst_n, active_low: true, clock: clk}
 
 agents:

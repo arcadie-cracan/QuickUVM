@@ -10,7 +10,7 @@
 # its own single-stream scoreboard.
 project: {name: mclk, author: QuickUVM, year: 2026}
 
-dut: {name: mclk, reset: rst_sys_n, external_reset: true}
+dut: {name: mclk, reset: rst_sys_n}
 
 # Two clock domains (the `clock:` key accepts a list).
 clock:
@@ -18,7 +18,7 @@ clock:
   - {name: clk_io,  period: 6,  unit: ns}
 
 # One external reset per domain, each deasserted synchronously to its clock.
-resets:
+reset:
   - {name: rst_sys_n, active_low: true, clock: clk_sys}
   - {name: rst_io_n,  active_low: true, clock: clk_io}
 

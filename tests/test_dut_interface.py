@@ -14,12 +14,13 @@ from quick_uvm.generator import Generator
 from quick_uvm.models import ProjectConfig
 
 
-def _bench(tmp_path, agents_yaml, dut="clk, reset: rst_n, external_reset: true"):
+def _bench(
+    tmp_path, agents_yaml, dut="clk, reset: rst_n", reset="reset: {external: true}\n"
+):
     p = tmp_path / "m.yaml"
     p.write_text(
         "project: {name: b}\n"
-        f"dut: {{name: b, clock: {dut}}}\n"
-        "clock: {period: 10}\n"
+        f"dut: {{name: b, clock: {dut}}}\n" + reset + "clock: {period: 10}\n"
         "agents:\n" + agents_yaml + "tests: [{name: t}]\n"
     )
     return p
@@ -111,7 +112,8 @@ def test_non_primary_parameterized_agent_rejected(tmp_path):
     p = tmp_path / "m.yaml"
     p.write_text(
         "project: {name: b}\n"
-        "dut: {name: b, clock: clk, reset: rst_n, external_reset: true}\n"
+        "dut: {name: b, clock: clk, reset: rst_n}\n"
+        "reset: {external: true}\n"
         "clock: {period: 10}\n"
         "auto_virtual_sequences: false\n"
         "agents:\n"

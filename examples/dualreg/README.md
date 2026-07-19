@@ -6,7 +6,8 @@ agent's sequences** (agent-driven, not a top-generated external reset) — and a
 
 ```
 dualreg.yaml
-  dut: {reset: a_rst_n, reset_active_low: true}   # global default
+  dut: {reset: a_rst_n}          # the default reset PORT
+  reset: {active_low: true}      # its polarity (the reset: mapping)
   agents:
     - {name: a, ...}                               # drives a_rst_n (active-low, implicit)
     - {name: b, reset_port: b_rst,
@@ -20,7 +21,7 @@ stimulus, and the monitor re-samples it. Two knobs make this per-agent:
 - **`reset_port`** names which of the agent's own input ports is its reset. Omitted
   ⇒ falls back to the port named `dut.reset` (so a single-reset bench like
   [`simple_reg`](../simple_reg/) is byte-identical).
-- **`reset_port_active_low`** overrides the global `dut.reset_active_low` for that
+- **`reset_port_active_low`** overrides the global `reset: {active_low}` for that
   agent — here agent `b` is active-high.
 
 QuickUVM emits each agent's reset at its own polarity:
@@ -45,5 +46,5 @@ Both lane scoreboards (`a_sb`, `b_sb`), each reset-aware at its own polarity, pa
 
 ## Scope / notes
 - Fail-closed: a `reset_port` that isn't the agent's own input port; combined with
-  `dut.external_reset`; or combined with M1 `clock:`/`resets:` lists.
+  `reset: {external: true}`; or combined with M1 `clock:`/`reset:` lists.
 - Deferred: agent-driven resets combined with M1 multi-clock domains.

@@ -2,7 +2,8 @@
 # external reset (a DIFFERENT clock domain than acc). The subsystem tb_top gives it
 # its own clkgen (mul_clk @8ns) + reset generator (mul_rst_n), independent of acc.
 project: {name: mul, author: QuickUVM, year: 2026}
-dut: {name: mul, clock: clk, reset: rst_n, external_reset: true}
+dut: {name: mul, clock: clk, reset: rst_n}
+reset: {external: true}
 clock: {period: 8, unit: ns}
 agents:
   - name: m

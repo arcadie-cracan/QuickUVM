@@ -19,7 +19,8 @@ def _dual(tmp_path, a_extra="", b_extra="", dut_extra=""):
     p = tmp_path / "m.yaml"
     p.write_text(
         "project: {name: dr}\n"
-        f"dut: {{name: dr, clock: clk, reset: a_rst_n, reset_active_low: true{dut_extra}}}\n"
+        f"dut: {{name: dr, clock: clk, reset: a_rst_n{dut_extra}}}\n"
+        "reset: {active_low: true}\n"
         "clock: {period: 10}\n"
         "agents:\n"
         f"  - {{name: a, interface: a_if, sequence_item: a_it,{a_extra}\n"
@@ -108,7 +109,8 @@ def test_reset_port_with_external_reset_rejected(tmp_path):
     p = tmp_path / "m.yaml"
     p.write_text(
         "project: {name: dr}\n"
-        "dut: {name: dr, clock: clk, reset: sys_rst_n, external_reset: true}\n"
+        "dut: {name: dr, clock: clk, reset: sys_rst_n}\n"
+        "reset: {external: true}\n"
         "clock: {period: 10}\n"
         "agents:\n"
         "  - {name: a, interface: a_if, sequence_item: a_it, reset_port: a_rst_n,\n"
@@ -118,7 +120,7 @@ def test_reset_port_with_external_reset_rejected(tmp_path):
         "     ports: {inputs: [{name: bdin, width: 8}], outputs: [{name: bdout, width: 8}]}}\n"
         "tests: [{name: t}]\n"
     )
-    with pytest.raises(Exception, match="cannot be combined with dut.external_reset"):
+    with pytest.raises(Exception, match="cannot be combined with `reset:"):
         ProjectConfig.from_yaml(p)
 
 

@@ -1,6 +1,7 @@
 # nchan — the I-9 `count` feature: one agent replicated N times into ONE vectored DUT.
 project: {name: nchan_tb, author: qa@example.com}
-dut: {name: nchan, clock: clk, reset: rst_n, external_reset: true}
+dut: {name: nchan, clock: clk, reset: rst_n}
+reset: {external: true}
 clock: {period: 10, unit: ns}
 agents:
   - name: ch

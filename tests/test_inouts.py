@@ -17,7 +17,8 @@ from quick_uvm.models import ProjectConfig
 
 _BASE = {
     "project": {"name": "od_tb", "author": "a@b.c"},
-    "dut": {"name": "od", "clock": "clk", "reset": "rst_n", "external_reset": True},
+    "dut": {"name": "od", "clock": "clk", "reset": "rst_n"},
+    "reset": {"external": True},
     "agents": [
         {
             "name": "bus",

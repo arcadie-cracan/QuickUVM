@@ -14,7 +14,8 @@
 # for lane b — plus a `sva_properties` pragma region for your own protocol checks.
 project: {name: dualreg, author: QuickUVM, year: 2026}
 
-dut: {name: dualreg, clock: clk, reset: a_rst_n, reset_active_low: true}
+dut: {name: dualreg, clock: clk, reset: a_rst_n}
+reset: {active_low: true}
 
 clock: {period: 10, unit: ns}
 

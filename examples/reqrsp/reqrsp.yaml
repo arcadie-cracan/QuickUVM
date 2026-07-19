@@ -16,7 +16,7 @@ project:
 dut:
   name: reqrsp
   reset: rst_n
-  external_reset: true
+reset: {external: true}
 
 clock:
   period: 10

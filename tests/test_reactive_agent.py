@@ -21,7 +21,8 @@ from quick_uvm.models import ProjectConfig
 # NB the port-direction model is unchanged — `inputs` are still what the agent drives.
 _BASE = {
     "project": {"name": "d_tb", "author": "a@b.c"},
-    "dut": {"name": "d", "clock": "clk", "reset": "rst_n", "external_reset": True},
+    "dut": {"name": "d", "clock": "clk", "reset": "rst_n"},
+    "reset": {"external": True},
     "agents": [
         {
             "name": "mem",
@@ -294,7 +295,8 @@ def test_rejects_multibit_request_valid():
 
 _MIXED = {
     "project": {"name": "mx_tb", "author": "a@b.c"},
-    "dut": {"name": "mx", "clock": "clk", "reset": "rst_n", "external_reset": True},
+    "dut": {"name": "mx", "clock": "clk", "reset": "rst_n"},
+    "reset": {"external": True},
     "agents": [
         # agents[0] is deliberately the RESPONDER — the trap.
         {
@@ -617,7 +619,7 @@ def test_a_responder_on_a_dut_driven_clock_burns_no_edges_at_startup(tmp_path):
         {
             **_BASE,
             "clock": [{"name": "clk"}, {"name": "sck", "source": "dut"}],
-            "resets": [{"name": "rst_n", "active_low": True, "clock": "clk"}],
+            "reset": [{"name": "rst_n", "active_low": True, "clock": "clk"}],
             "agents": [{**_BASE["agents"][0], "respond": "prefetch", "clock": "sck"}],
         }
     )

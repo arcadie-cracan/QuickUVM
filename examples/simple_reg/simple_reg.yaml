@@ -7,7 +7,7 @@ dut:
   name: simple_reg
   clock: clk
   reset: rst_n
-  reset_active_low: true
+reset: {active_low: true}
 
 clock:
   period: 10

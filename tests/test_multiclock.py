@@ -16,7 +16,7 @@ def _two_clock_yaml(tmp_path, **overrides):
     body = {
         "clocks": "clock:\n  - {name: clk_sys, period: 10}\n  - {name: clk_io, period: 6}\n",
         "resets": (
-            "resets:\n  - {name: rst_sys_n, clock: clk_sys}\n"
+            "reset:\n  - {name: rst_sys_n, clock: clk_sys}\n"
             "  - {name: rst_io_n, clock: clk_io}\n"
         ),
         "agents": (
@@ -33,7 +33,8 @@ def _two_clock_yaml(tmp_path, **overrides):
     p = tmp_path / "m.yaml"
     p.write_text(
         "project: {name: m}\n"
-        "dut: {name: m, reset: rst_sys_n, external_reset: true}\n"
+        "dut: {name: m, reset: rst_sys_n}\n"
+        "reset: {external: true}\n"
         + body["clocks"]
         + body["resets"]
         + body["agents"]
@@ -75,7 +76,8 @@ def test_effective_resets_synthesizes_single_external():
     # no `resets:` but an external dut.reset → one synthesized reset bound to the clock.
     cfg = ProjectConfig(
         project={"name": "p"},
-        dut={"name": "p", "reset": "rst_n", "external_reset": True},
+        dut={"name": "p", "reset": "rst_n"},
+        reset={"external": True},
         clock={"period": 10},
         agents=[_AGENT],
     )
@@ -169,7 +171,7 @@ def test_agent_unknown_reset_rejected(tmp_path):
 def test_reset_names_unknown_clock_rejected(tmp_path):
     p = _two_clock_yaml(
         tmp_path,
-        resets="resets:\n  - {name: rst_sys_n, clock: ghost}\n  - {name: rst_io_n, clock: clk_io}\n",
+        resets="reset:\n  - {name: rst_sys_n, clock: ghost}\n  - {name: rst_io_n, clock: clk_io}\n",
     )
     with pytest.raises(Exception, match="reset 'rst_sys_n' names clock 'ghost'"):
         ProjectConfig.from_yaml(p)
@@ -179,7 +181,7 @@ def test_reset_clock_name_collision_rejected(tmp_path):
     # a reset whose name equals a clock name (shared tb_top net namespace)
     p = _two_clock_yaml(
         tmp_path,
-        resets="resets:\n  - {name: clk_sys, clock: clk_sys}\n  - {name: rst_io_n, clock: clk_io}\n",
+        resets="reset:\n  - {name: clk_sys, clock: clk_sys}\n  - {name: rst_io_n, clock: clk_io}\n",
     )
     with pytest.raises(Exception, match="collides with a clock name"):
         ProjectConfig.from_yaml(p)
@@ -197,7 +199,7 @@ def test_single_clock_explicit_resets_uses_parameterized_multi_path(tmp_path):
         "project: {name: sr}\n"
         "dut: {name: sr, reset: rst_n}\n"
         "clock: {name: clk, period: 10}\n"
-        "resets:\n  - {name: rst_n, clock: clk}\n"
+        "reset:\n  - {name: rst_n, clock: clk}\n"
         "agents:\n"
         "  - {name: a, interface: a_if, sequence_item: a_item, reset: rst_n,\n"
         "     ports: {inputs: [{name: din, width: 8}], outputs: [{name: dout, width: 8}]}}\n"
@@ -217,7 +219,8 @@ def test_agent_reset_naming_synthesized_reset_accepted(tmp_path):
     p = tmp_path / "s.yaml"
     p.write_text(
         "project: {name: s}\n"
-        "dut: {name: s, reset: rst_n, external_reset: true}\n"
+        "dut: {name: s, reset: rst_n}\n"
+        "reset: {external: true}\n"
         "clock: {period: 10}\n"
         "agents:\n"
         "  - {name: a, interface: a_if, sequence_item: a_item, reset: rst_n,\n"
@@ -278,7 +281,7 @@ def test_large_scaled_period_and_skew_exact_no_overflow(tmp_path):
     p = _two_clock_yaml(
         tmp_path,
         clocks="clock:\n  - {name: clk_a, period: 3, unit: ms}\n  - {name: clk_b, period: 500, unit: ps}\n",
-        resets="resets:\n  - {name: rst_sys_n, clock: clk_a}\n  - {name: rst_io_n, clock: clk_b}\n",
+        resets="reset:\n  - {name: rst_sys_n, clock: clk_a}\n  - {name: rst_io_n, clock: clk_b}\n",
         agents=(
             "agents:\n"
             "  - {name: sys, interface: sys_if, sequence_item: sys_item,"
