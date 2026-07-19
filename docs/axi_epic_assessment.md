@@ -119,10 +119,13 @@ named. [`axi_slave`](../examples/axi_slave/) is exactly that, and it is a **pure
 YAML is two agent stanzas, QuickUVM auto-wires both interfaces (`rd_if`→AR/R, `wr_if`→AW/W/B) to
 the one DUT with no `tb_top` glue, and each agent reuses its slice's seams unchanged. Both channels
 run green concurrently (reads 3/3 + writes 3/3, a cross-id reorder on each), and the capstone claim
-— **independence** — is mutation-proved: break one channel and only that channel fails, the other
-stays green. So the decision the epic deferred ("first-class unified agent vs two agents sharing a
-bus") resolves in favour of **two agents**: it needs no new shape, and the two-agent form is the
-honest AXI structure anyway (five independent channels, two transaction types).
+— **independence** — is mutation-proved on the automated verdict: break one channel and only that
+channel's UVM oracle fails, the other stays green. (Adversarial review caught the first cut leaning
+on DUT `$error` for correctness, invisible to the UVM-severity gate — the recurring silent-pass;
+fixed with a per-channel monitor oracle that makes id-correctness, `SLVERR`, and the reorder
+verdict-carrying.) So the decision the epic deferred ("first-class unified agent vs two agents
+sharing a bus") resolves in favour of **two agents**: it needs no new shape, and the two-agent form
+is the honest AXI structure anyway (five independent channels, two transaction types).
 
 ## Where the real framework gap still is (slice 5)
 

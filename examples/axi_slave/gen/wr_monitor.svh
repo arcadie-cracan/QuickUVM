@@ -23,6 +23,26 @@ class wr_monitor extends uvm_monitor;
   // pragma quickuvm custom class_item_additional begin
   // AXI4 W data has no id: the k-th W burst pairs with the k-th AW BY ORDER (axi_write).
   bit [3:0] m_awid_q [$];
+  // UVM ORACLE (as rd): SLVERR (a mis-order), id-correctness, delivery, and a real REORDER are
+  // all made verdict-carrying — the DUT's $error checks are invisible to the UVM-severity gate.
+  bit       m_b_out [16];
+  bit [3:0] m_b_issue [$];
+  bit [3:0] m_b_recv  [$];
+  int       m_b_got;
+
+  function void check_phase(uvm_phase phase);
+    int reorder = 0;
+    super.check_phase(phase);
+    foreach (m_b_recv[i])
+      if (i < m_b_issue.size() && m_b_recv[i] != m_b_issue[i]) reorder++;
+    if (m_b_got != m_b_issue.size())
+      `uvm_error("WR_CHK", $sformatf("write channel delivered %0d of %0d",
+                 m_b_got, m_b_issue.size()))
+    else if (m_b_got == 0)
+      `uvm_error("WR_CHK", "no B beats — vacuous")
+    else if (reorder == 0)
+      `uvm_error("WR_CHK", "writes returned IN ORDER — out-of-order was not exercised")
+  endfunction
   // pragma quickuvm custom class_item_additional end
 
   function new (string name, uvm_component parent);
@@ -83,7 +103,17 @@ class wr_monitor extends uvm_monitor;
 
     // pragma quickuvm custom sample_dut_additional begin
     // Correlate AW+W into one completed write: enqueue each awid, pop the oldest on WLAST.
-    if (t.awvalid) m_awid_q.push_back(t.awid);
+    if (t.awvalid) begin
+      m_awid_q.push_back(t.awid);
+      m_b_out[t.awid] = 1'b1; m_b_issue.push_back(t.awid);
+    end
+    if (t.bvalid) begin
+      if (t.bresp != 2'b00)
+        `uvm_error("WR_CHK", $sformatf("B beat bid=%0d SLVERR (mis-ordered AW/W)", t.bid))
+      if (!m_b_out[t.bid])
+        `uvm_error("WR_CHK", $sformatf("B beat bid=%0d not outstanding", t.bid))
+      m_b_out[t.bid] = 1'b0; m_b_recv.push_back(t.bid); m_b_got++;
+    end
     if (t.wlast && !m_req_seen) begin
       if (m_awid_q.size() > 0) t.awid = m_awid_q.pop_front();
       else `uvm_error("AWID_UNDERFLOW", "WLAST with no outstanding AW: AW/W desync")

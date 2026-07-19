@@ -31,24 +31,29 @@ them, matches each by id, and checks each channel delivered all three with a cro
 
 Green on Xcelium: `0 UVM_WARNING / 0 UVM_ERROR / 0 UVM_FATAL`. Deterministic across seeds.
 
-## The verdict
+## The verdict is UVM-carried per channel (not the DUT `$error`)
 
-Each agent carries its own verdict, exactly as its source slice does:
+The regression verdict is UVM-severity based, so the DUT's `$error` self-checks are invisible to
+it (the [axi_read_burst](../axi_read_burst/) lesson — and a trap this bench first fell into). Each
+agent's monitor carries a **UVM oracle** that makes its channel's correctness verdict-visible:
 
-- **Delivery** (all `R`, all `B`) — the per-agent `STRANDED_REQUESTS` liveness (a genuine strand
-  raises a `UVM_ERROR` from that agent's sequencer, verdict-visible).
-- **Order / data** (reorder, the `SLVERR` mis-order check) — the DUT master's `$error`, the
-  human-readable corroboration the read/write slices already use.
+- **Delivery** — every request answered (also guarded by the `STRANDED_REQUESTS` liveness).
+- **Id-correctness** — every `R`/`B` beat matches an outstanding id; a write `SLVERR` (mis-order)
+  is a `UVM_ERROR`.
+- **Out-of-order** — a cross-id reorder actually occurred (else the OoO property is unexercised).
+
+The DUT master's `$error`s remain as human-readable corroboration.
 
 ## Proved it can fail — per-channel independence
 
 The capstone's claim is that the two channels are **independent**: a break in one fails only that
-channel. Mutation-proved:
+channel — and fails the *automated verdict*, via the UVM oracle above (not just a DUT `$error`):
 
-| Mutation | Effect |
+| Mutation | Verdict → FAIL via |
 |---|---|
-| strand a read (skip `arid=2`) | reads `2/3` (fail) — **writes stay `3/3`** |
-| break the write `AW→W` correlation | writes `SLVERR` + "not outstanding" (fail) — **reads stay `3/3`** |
+| strand a read | `RD_CHK` "delivered 2 of 3" (+ `STRANDED_REQUESTS`) — **WR_CHK silent** |
+| break the write `AW→W` correlation | `WR_CHK` "SLVERR / not outstanding" — **RD_CHK silent** |
+| remove the read latency (no backlog) | `RD_CHK` "reads returned IN ORDER" — reorder was not enforced without this |
 
 Neither break leaks across the channel boundary. (Plus each agent's own mutation coverage, proved
 in `axi_read` / `axi_write`.)
