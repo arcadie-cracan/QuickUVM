@@ -1,14 +1,14 @@
 # xpipe — cross-level connections & scoreboards (H1)
 
 A cross-level version of [`pipe`](../pipe/): the pipeline stages live *inside*
-nested subsystems, and a `connections:` wire plus a `subenv_scoreboards:` check
+nested subsystems, and a `connections:` wire plus a composition-scoreboard check
 reach across the hierarchy into their leaf blocks.
 
 ```
 xpipe.yaml                          # top
   subenvs: [stg1 -> stg1.yaml, stg2 -> stg2.yaml]
   connections:        [{from: stg1.add.dout, to: stg2.inv.din}]   # cross-level
-  subenv_scoreboards: [{name: xchk, source: stg1.add.a, monitor: stg2.inv.b}]
+  analysis: {scoreboards: [{name: xchk, source: stg1.add.a, monitor: stg2.inv.b}]}
 stg1.yaml   # cluster: add (dout=din+1) + dbl (dout=din<<1)
 stg2.yaml   # cluster: inv (dout=~din, PASSIVE) + xr (dout=din^A5)
 ```

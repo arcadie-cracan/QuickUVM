@@ -34,8 +34,9 @@ connections:
   - {from: add.dout,  to: inv.din}
   - {from: inv.dout,  to: host.resp}
 
-subenv_scoreboards:
-  - {name: e2e, source: host, monitor: inv.b}
+analysis:
+  scoreboards:
+    - {name: e2e, source: host, monitor: inv.b}
 
 tests:
   - {name: chip_test}

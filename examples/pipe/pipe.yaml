@@ -20,8 +20,9 @@ subenvs:
 connections:
   - {from: add.dout, to: inv.din}
 
-subenv_scoreboards:
-  - {name: chk, source: add.a, monitor: inv.b}
+analysis:
+  scoreboards:
+    - {name: chk, source: add.a, monitor: inv.b}
 
 tests:
   - {name: pipe_test}

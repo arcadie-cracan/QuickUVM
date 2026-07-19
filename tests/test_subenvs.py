@@ -484,11 +484,60 @@ def test_multi_agent_parameterized_child_rejected():
         top.validate_subenv_composition()
 
 
-def test_top_with_analysis_rejected():
-    from quick_uvm.models import AnalysisConfig
+def test_top_analysis_scoreboards_route_to_cross_block():
+    """The analysis unification: on a composition, `analysis.scoreboards` ARE the
+    cross-block scoreboards (routed to the same machinery); coverage stays fenced,
+    and the flat-only knobs are fenced per entry."""
+    from quick_uvm.models import AnalysisConfig, ScoreboardSpec
 
-    with pytest.raises(Exception, match="must not set analysis"):
-        _top(analysis=AnalysisConfig())
+    top = _top(
+        analysis=AnalysisConfig(
+            scoreboards=[
+                ScoreboardSpec(name="chk", source="adder.a", monitor="inverter.b")
+            ]
+        )
+    )
+    assert [(s.name, s.source, s.monitor) for s in top.subenv_scoreboards] == [
+        ("chk", "adder.a", "inverter.b")
+    ]
+    with pytest.raises(Exception, match="does not wire `analysis.coverage`"):
+        _top(analysis=AnalysisConfig(coverage=["a"]))
+    with pytest.raises(Exception, match="two-stream"):
+        _top(
+            analysis=AnalysisConfig(
+                scoreboards=[ScoreboardSpec(name="chk", source="adder.a")]
+            )
+        )
+    with pytest.raises(Exception, match="not supported on a composition"):
+        _top(
+            analysis=AnalysisConfig(
+                scoreboards=[
+                    ScoreboardSpec(
+                        name="chk",
+                        source="adder.a",
+                        monitor="inverter.b",
+                        match="out_of_order",
+                        match_key="id",
+                    )
+                ]
+            )
+        )
+
+
+def test_old_subenv_scoreboards_key_errors_with_move_hint(tmp_path):
+    p = tmp_path / "t.yaml"
+    p.write_text(
+        "project: {name: soc}\n"
+        "layout: packaged\n"
+        "dut: {name: soc, combinational: true, reset: ''}\n"
+        "subenvs:\n"
+        "  - {name: a, config: a.yaml}\n"
+        "  - {name: b, config: b.yaml}\n"
+        "subenv_scoreboards: [{name: c, source: a.x, monitor: b.y}]\n"
+        "tests: [{name: t}]\n"
+    )
+    with pytest.raises(Exception, match="moved under `analysis.scoreboards`"):
+        ProjectConfig.from_yaml(p)
 
 
 def test_generate_without_loaded_children_errors():
@@ -715,7 +764,7 @@ def test_scoreboard_declared_at_nested_cluster_emitted(tmp_path):
         "subenvs:\n"
         "  - {name: p, config: p.yaml}\n"
         "  - {name: q, config: q.yaml}\n"
-        "subenv_scoreboards: [{name: nsb, source: p.pa, monitor: q.qa}]\n"
+        "analysis: {scoreboards: [{name: nsb, source: p.pa, monitor: q.qa}]}\n"
         "tests: [{name: sub_t}]\n"
     )
     # a distinct second cluster (r + s, no scoreboard) so the top composes >=2
@@ -1044,7 +1093,7 @@ def test_reused_cross_level_unknown_original_agent_rejected(tmp_path):
         "  - {name: left, config: lane.yaml}\n"
         "  - {name: right, config: lane.yaml}\n"
         # 'nope' is neither the original (sa) nor the prefixed (left_sa) agent name
-        "subenv_scoreboards: [{name: b, source: left.src.nope, monitor: right.snk.ka}]\n"
+        "analysis: {scoreboards: [{name: b, source: left.src.nope, monitor: right.snk.ka}]}\n"
         "tests: [{name: dt_t}]\n"
     )
     with pytest.raises(Exception, match="has no agent 'nope'"):

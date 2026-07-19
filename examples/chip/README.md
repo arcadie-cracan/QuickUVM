@@ -21,8 +21,9 @@ connections:
   - {from: add.dout,  to: inv.din}    # block -> block (H1, unchanged)
   - {from: inv.dout,  to: host.resp}  # agent SAMPLES a block output
 
-subenv_scoreboards:
-  - {name: e2e, source: host, monitor: inv.b}   # BARE agent name as endpoint
+analysis:
+  scoreboards:
+    - {name: e2e, source: host, monitor: inv.b}   # BARE agent name as endpoint
 ```
 
 ## What the generator wires (all of it, no glue)

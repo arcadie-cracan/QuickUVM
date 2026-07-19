@@ -25,8 +25,9 @@ subenvs:
 connections:
   - {from: stg1.add.dout, to: stg2.inv.din}
 
-subenv_scoreboards:
-  - {name: xchk, source: stg1.add.a, monitor: stg2.inv.b}
+analysis:
+  scoreboards:
+    - {name: xchk, source: stg1.add.a, monitor: stg2.inv.b}
 
 tests:
   - {name: xpipe_test}

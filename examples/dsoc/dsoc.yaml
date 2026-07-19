@@ -27,9 +27,10 @@ connections:
   - {from: left.src.dout,  to: right.snk.din}   # left source -> right sink
   - {from: right.src.dout, to: left.snk.din}    # right source -> left sink (ring)
 
-subenv_scoreboards:
-  - {name: l2r, source: left.src.sa,  monitor: right.snk.ka}
-  - {name: r2l, source: right.src.sa, monitor: left.snk.ka}
+analysis:
+  scoreboards:
+    - {name: l2r, source: left.src.sa,  monitor: right.snk.ka}
+    - {name: r2l, source: right.src.sa, monitor: left.snk.ka}
 
 tests:
   - {name: dsoc_test}

@@ -10,9 +10,10 @@ dsoc.yaml                            # top
   connections:                                        # a cross-instance ring
     - {from: left.src.dout,  to: right.snk.din}
     - {from: right.src.dout, to: left.snk.din}
-  subenv_scoreboards:
-    - {name: l2r, source: left.src.sa,  monitor: right.snk.ka}
-    - {name: r2l, source: right.src.sa, monitor: left.snk.ka}
+  analysis:
+    scoreboards:
+      - {name: l2r, source: left.src.sa,  monitor: right.snk.ka}
+      - {name: r2l, source: right.src.sa, monitor: left.snk.ka}
 lane.yaml   # cluster: src (dout=din+1, active) + snk (dout=~din, PASSIVE)
 ```
 
