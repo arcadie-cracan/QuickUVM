@@ -72,6 +72,101 @@ Legend: ✓ full · ◑ partial / skeleton-only · ✗ none · — n/a
 | UVM version selector (1.1d / 1.2) | ✓ | ◑ | ✗ | ✗ | ✗ |
 | Ecosystem (examples, docs, support) | ◑ ~29 examples (Xcelium-validated), MIT, single-author | ✓ vendor-backed | ✓ | ◑ | ◑ |
 
+## Composition matrix (feature × feature)
+
+The schema audit's final recommendation: publish where features **compose**, where they
+are **walled**, and where they are simply **untried** — so an apparent limitation reads
+as stated scope, and an untested cell reads as exactly that. Every cell below is
+mechanically backed: ✅ cites a committed, Xcelium-green example; 🚫 cites a fail-closed
+validator (all walls reject loudly, most with teaching errors); `·` means no example
+composes the pair and no wall forbids it — untried, not broken.
+
+The walls come in two species, worth distinguishing (the audit's framing):
+**theorems** — structural impossibilities that will never lift (marked in the notes) —
+and **"this slice"** scope statements, each of which names its own follow-up in the
+error text.
+
+Axes: **MA** ≥2 agents (flat) · **RE** `replicas` · **IN** `instances`/`parameters` ·
+**SU** `subenvs` · **BA** boundary agents · **MC** multi-clock/reset · **IO** `inouts` ·
+**RS** responder (any `respond:` shape) · **PR** `proactive` hybrid · **RR**
+`request_ready` · **WI** `window` · **OO** `match: out_of_order` · **RC**
+`reference_model: c` · **RM** register model (RAL) · **PB** `probes` · **VP**
+`kind: vip` / `agent_refs` · **CV** rich coverage entries · **RG** `regress`
+
+|      | RE | IN | SU | BA | MC | IO | RS | PR | RR | WI | OO | RC | RM | PB | VP | CV | RG |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **MA** | 🚫 | 🚫 | · | · | ✅ | ✅ | ✅ | · | · | · | ✅ | · | ✅ | · | · | ✅ | ✅ |
+| **RE** |    | 🚫ᵗ | · | 🚫 | 🚫 | 🚫 | ⚠¹ | ✅ | · | 🚫 | 🚫 | 🚫 | · | · | · | 🚫 | ✅ |
+| **IN** |    |    | · | 🚫 | 🚫 | · | 🚫 | · | · | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 | · | 🚫 | · |
+| **SU** |    |    |    | ✅ | ⚠² | · | · | · | · | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 | · | 🚫 |
+| **BA** |    |    |    |    | · | · | 🚫 | · | · | · | · | · | · | · | · | · | · |
+| **MC** |    |    |    |    |    | ✅ | ✅ | · | · | · | · | · | · | · | · | · | ✅ |
+| **IO** |    |    |    |    |    |    | ✅ | · | · | · | · | · | · | · | · | ✅ | ✅ |
+| **RS** |    |    |    |    |    |    |    | ✅ | ✅ | · | · | · | ⚠³ | · | · | · | ✅ |
+| **PR** |    |    |    |    |    |    |    |    | ·⁴ | · | · | · | · | · | · | · | ✅ |
+| **RR** |    |    |    |    |    |    |    |    |    | · | · | · | · | · | · | · | ✅ |
+| **WI** |    |    |    |    |    |    |    |    |    |    | · | 🚫 | · | · | 🚫 | · | ✅ |
+| **OO** |    |    |    |    |    |    |    |    |    |    |    | · | · | · | 🚫 | · | · |
+| **RC** |    |    |    |    |    |    |    |    |    |    |    |    | · | · | · | · | · |
+| **RM** |    |    |    |    |    |    |    |    |    |    |    |    |    | · | 🚫 | ✅ | ✅ |
+| **PB** |    |    |    |    |    |    |    |    |    |    |    |    |    |    | 🚫 | · | · |
+| **VP** |    |    |    |    |    |    |    |    |    |    |    |    |    |    |    | ·⁵ | 🚫 |
+| **CV** |    |    |    |    |    |    |    |    |    |    |    |    |    |    |    |    | ✅ |
+
+**Footnotes** — ᵗ theorem: identical-copies×shared-vectored-DUT vs
+parameterized-variants×per-instance-DUTs; one vectored port cannot carry per-bit
+widths, so the exclusion never lifts. ¹ a *pure* responder is walled; a `proactive:
+true` **hybrid** composes (proven: `alert_array`). ² clocked leaves compose
+(one clock per leaf); a *multi-clock leaf* is walled. ³ `register_model.bus_agent`
+must not be a non-proactive responder (the sequencer-clobber trap); a hybrid is
+exempt. ⁴ `proactive` + `request_ready` both require `respond: on_request`, so they
+can co-exist — probe-verified during the schema audit, no committed example yet.
+⁵ rich coverage entries are fence-*permitted* on a VIP (the covergroup ships in the
+agent package; unit-tested) — no committed example yet.
+
+### Proven compositions (each cell's citation)
+
+| Cell | Example(s) |
+|---|---|
+| MA×MC | `cdc_fifo`, `mclk`, `mxclk` |
+| MA×IO, MC×IO, IO×RS | `spi_host` (inouts + multi-clock + prefetch responder, on one bench) |
+| MA×RS | `axi_slave` (two responders, one DUT), `spi_host` |
+| MA×OO | `reqrsp` |
+| MA×RM, MA×CV, RM×CV | `rvtimer` (2 agents + RAL + rich coverage, one bench) |
+| RE×RS, RE×PR, PR×RS | `alert_array` (N proactive hybrids into one vectored DUT) |
+| SU×BA | `chip` (boundary agent + composed blocks) |
+| MC×RS | `spi_device`, `spi_host` (dut-driven clock responders) |
+| IO×CV | `odbus` |
+| RS×RR | `axi_handshake` |
+| WI (+RG) | `es_adaptp` |
+| RM×RG | `ahb_regs`, `rvtimer` |
+| RG × nearly everything | 20 of the examples carry a `regress:` block |
+
+### The wall annotations (what each 🚫 says, condensed)
+
+- **replicas**: sole agent · no multi-clock · no inouts · no coverage collectors ·
+  plain single-stream scoreboard only · no `language: c` · *(theorem)* no
+  instances/parameters.
+- **instances**: single-agent bench · no responder · no analysis customization
+  (window/OoO/rich coverage) · no `language: c` · no parameterized RAL bus agent ·
+  no probes · no multi-clock.
+- **subenvs**: no register model (top or child) · no regress · no probes ·
+  composition scoreboards are in-order two-stream SV (no window/OoO/DPI).
+- **boundary agents**: no responder shape · no parameters/instances/replicas ·
+  top level only.
+- **`reference_model: c`**: the sole flat single-stream non-windowed scoreboard only
+  (everywhere else the bypass would silently ignore it — rejected instead).
+- **`kind: vip`**: ships agent packages only — every bench-layer section is fenced
+  (user tests, scoreboards, bare coverage routing, probes, vseqs, regress, subenvs,
+  register model).
+
+Reading the matrix honestly: the tier-1 stimulus/checking primitives compose almost
+freely (the ✅-dense upper rows and `regress` column), while the walls concentrate on
+the **structure** features (replicas / instances / subenvs / vip) — the audit's
+"corridor-general" finding, now stated as scope rather than discovered as surprise.
+The `·` cells are the roadmap's cheapest experiments: each is one probe away from
+becoming a ✅ or a wall.
+
 ## Where QuickUVM stands (honest, general-DV)
 
 QuickUVM is a **single-block / subsystem UVM generator** that now covers all four pillars

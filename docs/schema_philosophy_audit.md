@@ -167,6 +167,10 @@ with RAL+CSR+coverage+assertions): a healthy gradient whose entry point never mo
 7. **Publish the composition matrix** (feature × feature: works / wall / untested) in
    `comparison.md` — the information already exists as error strings; surfacing it turns
    apparent limitation into stated scope.
+   *RESOLVED — `comparison.md` now carries the 18-axis matrix: 26 proven cells (each
+   citing a committed green example), 34 walls (each citing its validator), 4 footnoted
+   partials, and the rest honestly untried. Mechanically extracted from the corpus and
+   the validator inventory, so the citations cannot drift from the code by hand.*
 
 ## Threats to validity
 
