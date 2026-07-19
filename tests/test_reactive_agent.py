@@ -115,6 +115,39 @@ def test_responder_emits_the_reactive_machinery(tmp_path):
     assert "pragma quickuvm custom response_logic" in seq
 
 
+def test_request_ready_emits_handshake_capture(tmp_path):
+    """`request_ready` -> the monitor captures on the LEVEL of valid && ready (one publish
+    per handshake cycle), not the rising edge. Real AXI HOLDS valid until ready, so
+    back-to-back transfers under a held valid are distinct requests an edge-detect misses."""
+    a = {**_BASE["agents"][0], "request_ready": "gnt"}
+    _gen(tmp_path, agents=[a])
+    mon = (tmp_path / "mem_monitor.svh").read_text()
+    assert "if (tr.req && tr.gnt) request_ap.write(tr);" in mon
+    assert "HANDSHAKE" in mon
+    # no edge-detect state when capturing on the handshake
+    assert "m_req_seen" not in mon
+
+
+def test_request_ready_driven_is_auto_co_sampled(tmp_path):
+    """A driven ready (the slave's own gnt) is sampled a cycle before the DUT-output valid;
+    the monitor auto-re-samples it raw with the outputs so the handshake AND is co-observed
+    at one edge — no hand seam needed (the fix inouts already get)."""
+    a = {**_BASE["agents"][0], "request_ready": "gnt"}  # gnt is a driven input
+    _gen(tmp_path, agents=[a])
+    mon = (tmp_path / "mem_monitor.svh").read_text()
+    # the raw re-sample sits with the DUT-output sampling, after @vif.cb1
+    after_cb1 = mon.split("@vif.cb1;", 1)[1]
+    assert "t.gnt = vif.gnt;" in after_cb1
+
+
+def test_request_ready_absent_keeps_edge_detect(tmp_path):
+    """Opt-in: without `request_ready` the monitor is byte-identically the edge-detect."""
+    _gen(tmp_path)  # _BASE has no request_ready
+    mon = (tmp_path / "mem_monitor.svh").read_text()
+    assert "if (tr.req && !m_req_seen) request_ap.write(tr);" in mon
+    assert "HANDSHAKE" not in mon
+
+
 def test_responder_is_owned_by_the_agent_not_a_phase_default_sequence(tmp_path):
     """A phase `default_sequence` is KILLED when its phase ends — and a responder raises
     no objection, so it would be torn down instantly. The agent forks it instead."""
@@ -184,6 +217,42 @@ def test_rejects_request_valid_naming_a_driven_port():
     """request_valid must name a SAMPLED port — the DUT drives the request."""
     a = {**_BASE["agents"][0], "request_valid": "gnt"}
     with pytest.raises(ValidationError, match="must name one of this agent's SAMPLED"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_rejects_request_ready_on_an_initiator():
+    a = _initiator(request_ready="gnt")
+    with pytest.raises(ValidationError, match="only valid with"):
+        ProjectConfig.model_validate({**_BASE, "agents": a})
+
+
+def test_rejects_request_ready_unknown_port():
+    a = {**_BASE["agents"][0], "request_ready": "nope"}
+    with pytest.raises(ValidationError, match="must name a port the monitor samples"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_rejects_request_ready_too_wide():
+    """request_ready is a 1-bit qualifier; `addr` is 8 bits."""
+    a = {**_BASE["agents"][0], "request_ready": "addr"}
+    with pytest.raises(ValidationError, match="must be 1 bit"):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_rejects_request_ready_without_request_fifo():
+    """request_ready only affects the request-publish, which prefetch/combinational lack —
+    it would be a silent no-op there, so reject it fail-closed."""
+    a = {**_BASE["agents"][0], "respond": "prefetch", "request_ready": "gnt"}
+    with pytest.raises(
+        ValidationError, match="needs `respond: on_request` or `pipelined`"
+    ):
+        ProjectConfig.model_validate({**_BASE, "agents": [a]})
+
+
+def test_rejects_request_ready_equal_to_request_valid():
+    """A handshake is valid AND ready — the same port for both is a degenerate self-AND."""
+    a = {**_BASE["agents"][0], "request_ready": "req"}  # req is also request_valid
+    with pytest.raises(ValidationError, match="must differ from"):
         ProjectConfig.model_validate({**_BASE, "agents": [a]})
 
 

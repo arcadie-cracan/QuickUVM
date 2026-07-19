@@ -723,6 +723,15 @@ class AgentConfig(BaseModel):
     # Responder only: which SAMPLED port (a DUT output) means "a request arrived". The
     # monitor publishes the request on this qualifier.
     request_valid: str | None = None
+    # Responder only, OPTIONAL: the READY half of a valid/ready handshake. When set, the
+    # monitor captures on the HANDSHAKE (`request_valid && request_ready`, level, one
+    # publish PER CYCLE both are high) instead of edge-detecting `request_valid`. A real
+    # AXI-style channel needs this: `valid` is HELD until `ready`, and back-to-back
+    # transfers under a held `valid` are DISTINCT requests an edge-detect misses (all
+    # but the first). See docs/t6_axi_outstanding_assessment.md. Names a port the
+    # monitor samples (the slave's own ready, or the master's response-ready). Opt-in;
+    # absent = edge-detect, byte-identical.
+    request_ready: str | None = None
     # Responder only, OPTIONAL — and its PRESENCE selects the driver shape:
     #
     #   absent  -> the BLOCKING responder (OpenTitan dv_reactive_agent / Verilab). The
@@ -845,6 +854,17 @@ class AgentConfig(BaseModel):
         its accept thread drains exactly this fifo into per-ID queues.
         """
         return self.is_responder and self.respond in ("on_request", "pipelined")
+
+    @property
+    def request_ready_driven(self) -> bool:
+        """True when `request_ready` names a port the agent itself DRIVES (a slave's own
+        ready). The default input-sampling reads it a cycle BEFORE the DUT-output
+        `request_valid`, so the monitor re-samples it raw with the outputs to co-observe
+        the handshake at one edge (the fix inouts already get). A sampled ready (a DUT
+        output) is already co-observed, so no re-sample is needed."""
+        if self.request_ready is None:
+            return False
+        return any(p.name == self.request_ready for p in self.input_ports)
 
     @property
     def is_continuous(self) -> bool:
@@ -1056,6 +1076,11 @@ class AgentConfig(BaseModel):
                     f"agent '{self.name}': `proactive` is only valid with "
                     f"`mode: responder` (it makes a responder ALSO accept TB stimulus)."
                 )
+            if self.request_ready is not None:
+                raise ValueError(
+                    f"agent '{self.name}': `request_ready` is only valid with "
+                    f"`mode: responder` (the ready half of the request handshake)."
+                )
             return self
 
         if not self.active:
@@ -1108,6 +1133,38 @@ class AgentConfig(BaseModel):
                 f"agent '{self.name}': request_valid='{self.request_valid}' must be "
                 f"1 bit (it is a qualifier), got {rv.bit_width}."
             )
+        # request_ready (optional): the READY half of the handshake. The monitor samples
+        # every port, so it may name a DRIVEN port (the slave's arready) or a SAMPLED
+        # one (the master's response-ready); either way the item carries it.
+        if self.request_ready is not None:
+            # It only affects the request-PUBLISH, which exists only for shapes with a
+            # monitor -> fifo -> sequence chain. prefetch/combinational read the request
+            # in the driver, so request_ready would be validated but silently ignored.
+            if not self.has_request_fifo:
+                raise ValueError(
+                    f"agent '{self.name}': `request_ready` needs `respond: on_request` "
+                    f"or `pipelined` (the shapes whose monitor publishes the request); "
+                    f"prefetch/combinational read the request in the driver and would "
+                    f"ignore it."
+                )
+            if self.request_ready == self.request_valid:
+                raise ValueError(
+                    f"agent '{self.name}': `request_ready` must differ from "
+                    f"`request_valid` ('{self.request_valid}') — a handshake is valid "
+                    f"AND ready, two distinct lines."
+                )
+            rr = sampled.get(self.request_ready) or driven.get(self.request_ready)
+            if rr is None:
+                raise ValueError(
+                    f"agent '{self.name}': request_ready='{self.request_ready}' must "
+                    f"name a port the monitor samples for the handshake. "
+                    f"Ports: {sorted(set(sampled) | set(driven))}."
+                )
+            if rr.bit_width != 1:
+                raise ValueError(
+                    f"agent '{self.name}': request_ready='{self.request_ready}' must "
+                    f"be 1 bit (a handshake qualifier), got {rr.bit_width}."
+                )
         for name, val in self.idle.items():
             p = driven.get(name)
             if p is None:

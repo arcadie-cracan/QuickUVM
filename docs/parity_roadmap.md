@@ -833,6 +833,14 @@ and is the long pole for campaign target **T2** (`spi_host`).
   extra beats, `araddr + i` memory model), no framework change. Built + mutation-proved on
   `examples/axi_read_burst/` (too few beats → stranded; wrong `RLAST` → framing; wrong data →
   mismatch); one read outstanding at a time to isolate bursts from out-of-order.
+- *AXI valid/ready handshake `request_ready:` — DONE as a FEATURE* (the AXI epic, slice 3): the
+  FIRST framework change in the epic, closing the concrete T6 gap. Real AXI HOLDS `valid` until
+  `ready` and issues requests back-to-back, so the monitor's edge-detect under-counts (sees only
+  the first). Opt-in `request_ready:` switches the request-publish to a LEVEL capture
+  (`valid && ready`, one publish per accepted cycle); byte-identical when absent, 5 unit tests.
+  Built + mutation-proved on `examples/axi_handshake/` (4 back-to-back requests + `rready`
+  response backpressure; a UVM oracle counts AR vs R transfers — revert to edge-detect → the four
+  collapse to one → `UVM_ERROR`).
 - *Hybrid (initiator + responder) `proactive: true` — DONE* (the alert_handler I-7 gap). A
   responder that ALSO accepts proactive TB stimulus: an alert-sender answers the DUT's pings AND
   spontaneously raises alerts. The agent stays a responder (the env forks its responder sequence)

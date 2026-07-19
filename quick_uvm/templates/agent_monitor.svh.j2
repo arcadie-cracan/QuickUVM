@@ -18,8 +18,10 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
   // computes the response. The monitor already decodes the protocol for passive mode,
   // so this duplicates nothing — which is exactly why the driver does NOT decode it.
   uvm_analysis_port #({{ agent.sequence_item }}{{ agent.param_args }}) request_ap;
+{% if not agent.request_ready %}
   // Edge-detect state for the request qualifier (see run_phase).
   bit m_req_seen;
+{% endif %}
 {% endif %}
 
   // pragma quickuvm custom class_item_additional begin
@@ -51,6 +53,14 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
       sample_dut(tr);
 {% if agent.has_request_fifo %}
       // The DUT issued a request -> hand it to the responder sequence.
+{% if agent.request_ready %}
+      // HANDSHAKE capture: `{{ agent.request_valid }}` is HELD until `{{ agent.request_ready }}`,
+      // and EACH cycle both are high is a DISTINCT transfer (back-to-back requests under a held
+      // valid). So publish on the LEVEL of valid && ready, once per handshake cycle — an
+      // edge-detect would see only the first of a back-to-back burst. (valid & ready are
+      // co-observed at one edge: sample_dut re-samples a driven ready with the outputs.)
+      if (tr.{{ agent.request_valid }} && tr.{{ agent.request_ready }}) request_ap.write(tr);
+{% else %}
       //
       // On the RISING EDGE of the qualifier, not its level. A request line is normally HELD
       // until it is granted, so a level-triggered publish would queue one copy per cycle and
@@ -58,6 +68,7 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
       // response held for extra cycles).
       if (tr.{{ agent.request_valid }} && !m_req_seen) request_ap.write(tr);
       m_req_seen = tr.{{ agent.request_valid }};
+{% endif %}
 {% endif %}
 {% if agent.emit_when %}
       // Publish only valid/qualified transactions (emit_when: {{ agent.emit_when }}).
@@ -132,6 +143,13 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
     t.{{ port.name }}_o  = vif.{{ port.name }}_o;     // what we were driving at that instant
     t.{{ port.name }}_oe = vif.{{ port.name }}_oe;
 {% endfor %}
+{% if agent.request_ready_driven %}
+    // request_ready is a line WE drive (a slave's own ready), but the handshake capture ANDs
+    // it with the DUT-output request_valid. Re-sample it HERE (raw net, with the outputs) so
+    // both qualifiers are co-observed at THIS edge — otherwise the split sampling reads it a
+    // cycle early and a back-to-back transfer is dropped.
+    t.{{ agent.request_ready }} = vif.{{ agent.request_ready }};
+{% endif %}
 {% endif %}
 
     // pragma quickuvm custom sample_dut_additional begin
