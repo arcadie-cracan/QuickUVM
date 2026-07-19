@@ -98,7 +98,8 @@ def test_bus_agent_allows_proactive_hybrid():
 
 def test_sequence_selector_rejected_with_count():
     cfg = _cfg(
-        dut={"name": "d", "clock": "clk", "reset": "rst_n", "external_reset": True},
+        dut={"name": "d", "clock": "clk", "reset": "rst_n"},
+        reset={"external": True},
         agents=[
             {
                 "name": "ch",

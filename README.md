@@ -110,12 +110,6 @@ dut:
   name: simple_reg
   clock: clk
   reset: rst_n
-  reset_active_low: true
-  external_reset: false  # opt-in: reset is driven by a top-level reset generator
-                         # (not the agent). When true, QuickUVM declares the reset
-                         # as an interface port, generates a reset_generator in top,
-                         # and reset-gates the driver + monitor. Leave false when the
-                         # reset is an agent input port or handled in user pragma code.
   combinational: false   # opt-in: the DUT is purely combinational (no clock/reset).
                          # The clock is kept as a TB cadence (one vector/cycle) but
                          # NOT connected to the DUT; the stub is always_comb; and the
@@ -127,6 +121,13 @@ clock:
   period: 10
   unit: ns
   drive_offset_pct: 20
+
+# Reset config mirrors clock: a MAPPING for the single reset, or a LIST of
+# domains (multi-reset). dut.reset above is just the PORT name, like dut.clock.
+reset:
+  active_low: true
+  external: false   # opt-in: reset driven by a generated top-level reset
+                    # generator (not the agent); reset-gates driver + monitor.
 
 agents:
   - name: reg

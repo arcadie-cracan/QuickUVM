@@ -2,7 +2,8 @@
 # (the alert_handler topology). Each replica answers its own ping (reactive) AND raises
 # its own alerts (proactive); each gets its own request-FIFO-drain liveness.
 project: {name: alert_array_tb, author: qa@example.com}
-dut: {name: alert_array, clock: clk, reset: rst_n, external_reset: true}
+dut: {name: alert_array, clock: clk, reset: rst_n}
+reset: {external: true}
 clock: {period: 10, unit: ns}
 agents:
   - name: sndr

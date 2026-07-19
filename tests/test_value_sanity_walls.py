@@ -153,26 +153,63 @@ def test_resets_requires_dut_reset_among_domains():
             "name": "d",
             "clock": "clk",
             "reset": "rst_n",  # not a declared domain
-            "external_reset": True,
         },
-        resets=_TWO_RESETS,
+        reset=_TWO_RESETS,
     )
     with pytest.raises(ValidationError, match="not one of the declared"):
         ProjectConfig.model_validate(cfg)
 
 
 def test_resets_consistent_config_passes():
-    """dut.reset naming a declared domain passes — with either external_reset
-    spelling (the multi path top-drives every domain regardless; the corpus
-    carries both, so external_reset is deliberately unconstrained here)."""
-    for ext in (True, False):
-        cfg = _cfg(
-            dut={
-                "name": "d",
-                "clock": "clk",
-                "reset": "rst_a",
-                "external_reset": ext,
-            },
-            resets=_TWO_RESETS,
-        )
+    """dut.reset naming a declared domain passes (under the reset: LIST the
+    multi path top-drives every domain; the scalar external knob is the
+    single-reset spelling and cannot co-exist with the list)."""
+    cfg = _cfg(
+        dut={"name": "d", "clock": "clk", "reset": "rst_a"},
+        reset=_TWO_RESETS,
+    )
+    ProjectConfig.model_validate(cfg)
+
+
+# --- the reset: union (symmetry with clock:) ---------------------------------
+
+
+def test_reset_scalar_maps_to_internal_fields():
+    cfg = _cfg(reset={"active_low": False, "external": True})
+    c = ProjectConfig.model_validate(cfg)
+    assert c.dut.reset_active_low is False
+    assert c.dut.external_reset is True
+
+
+def test_reset_list_is_the_multi_reset_form():
+    cfg = _cfg(
+        dut={"name": "d", "clock": "clk", "reset": "rst_a"},
+        reset=_TWO_RESETS,
+    )
+    c = ProjectConfig.model_validate(cfg)
+    assert [r.name for r in c.effective_resets] == ["rst_a", "rst_b"]
+
+
+def test_old_dut_reset_knobs_error_with_move_hint():
+    for key in ("external_reset", "reset_active_low"):
+        cfg = _cfg(dut={"name": "d", "clock": "clk", "reset": "rst_n", key: True})
+        with pytest.raises(ValidationError, match="moved to the top-level `reset:`"):
+            ProjectConfig.model_validate(cfg)
+
+
+def test_old_resets_key_errors_with_move_hint():
+    cfg = _cfg(resets=_TWO_RESETS)
+    with pytest.raises(ValidationError, match="`reset:` key"):
         ProjectConfig.model_validate(cfg)
+
+
+def test_reset_scalar_rejects_unknown_keys():
+    cfg = _cfg(reset={"name": "rst_n", "external": True})
+    with pytest.raises(ValidationError, match="accepts"):
+        ProjectConfig.model_validate(cfg)
+
+
+def test_reset_union_round_trips_through_model_dump():
+    c = ProjectConfig.model_validate(_cfg(reset={"external": True}))
+    reloaded = ProjectConfig.model_validate(c.model_dump())
+    assert reloaded.dut.external_reset is True

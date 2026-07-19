@@ -9,7 +9,7 @@ dut:
   name: fifo
   clock: clk
   reset: rst_n
-  external_reset: true        # the FIFO's reset is driven by top's reset_generator
+reset: {external: true}   # the FIFO's reset is driven by top's reset_generator
 
 clock:
   period: 10

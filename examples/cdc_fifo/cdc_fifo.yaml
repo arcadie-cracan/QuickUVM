@@ -10,13 +10,12 @@ project:
 dut:
   name: cdc_fifo
   reset: wrst_n
-  external_reset: true
 
 clock:
   - {name: wclk, period: 10, unit: ns}
   - {name: rclk, period: 14, unit: ns}   # asynchronous: unrelated period
 
-resets:
+reset:
   - {name: wrst_n, active_low: true, clock: wclk}
   - {name: rrst_n, active_low: true, clock: rclk}
 

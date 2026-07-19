@@ -19,7 +19,7 @@ dut:
   name: axi_write
   clock: clk
   reset: rst_n
-  external_reset: true
+reset: {external: true}
 
 clock:
   period: 10

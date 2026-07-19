@@ -12,7 +12,7 @@ project: {name: wbx, author: QuickUVM, year: 2026}
 dut:
   name: wbx
   reset: rst_n
-  external_reset: true
+reset: {external: true}
 
 clock: {period: 10, unit: ns}
 

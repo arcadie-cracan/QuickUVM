@@ -9,14 +9,14 @@
 #                         The driver takes its item BEFORE the transfer starts.
 project: {name: spi_device_tb, author: QuickUVM, year: 2026}
 
-dut: {name: spi_host, clock: clk, reset: rst_n, external_reset: true}
+dut: {name: spi_host, clock: clk, reset: rst_n}
 
 clock:
   - {name: clk, period: 10, unit: ns}
   # The DUT drives this one. `period` is never used to make an edge.
   - {name: sck, period: 40, unit: ns, source: dut}
 
-resets:
+reset:
   - {name: rst_n, active_low: true, clock: clk}
 
 agents:

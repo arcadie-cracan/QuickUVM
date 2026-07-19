@@ -14,7 +14,7 @@ dut:
   name: axi_read_burst
   clock: clk
   reset: rst_n
-  external_reset: true
+reset: {external: true}
 
 clock:
   period: 10

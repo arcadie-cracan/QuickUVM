@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import ClassVar, Literal, NamedTuple
+from typing import Any, ClassVar, Literal, NamedTuple
 
 import yaml
 from pydantic import (
@@ -13,6 +13,7 @@ from pydantic import (
     Field,
     field_serializer,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
@@ -1564,7 +1565,11 @@ class DutConfig(_SchemaModel):
     name: str
     clock: str = "clk"
     reset: str = "rst_n"
-    reset_active_low: bool = True
+    # Internal canonical storage — the USER spelling is the top-level `reset:`
+    # mapping ({active_low, external}); dict input carrying these keys is
+    # rejected with a move hint (instances are internal construction), and
+    # ProjectConfig dumps re-emit the user spelling (excluded here).
+    reset_active_low: bool = Field(default=True, exclude=True)
 
     @field_validator("name")
     @classmethod
@@ -1582,7 +1587,7 @@ class DutConfig(_SchemaModel):
     # is an agent input port (agent-driven) or handled in user pragma code.
     # Flipping true->false later removes the reset_generator pragma region, so
     # regeneration is fail-closed (re-run with --allow-drop to discard it).
-    external_reset: bool = False
+    external_reset: bool = Field(default=False, exclude=True)
     # Opt-in: the DUT is purely COMBINATIONAL (no clock/reset of its own). The
     # generated clock is kept as a testbench cadence (one vector/cycle), but it
     # is NOT connected to the DUT; the DUT stub is always_comb; and the monitor
@@ -2791,7 +2796,7 @@ class ProjectConfig(_SchemaModel):
     clocks: list[ClockConfig] = Field(default_factory=list, exclude=True, repr=False)
     # M1 — externally-generated reset domains (opt-in). Empty ⇒ `effective_resets`
     # synthesizes today's single reset from `dut` (byte-identical).
-    resets: list[ResetConfig] = Field(default_factory=list)
+    resets: list[ResetConfig] = Field(default_factory=list, exclude=True)
     agents: list[AgentConfig] = Field(default_factory=list)
     # F2' — consume agent VIPs BY REFERENCE. Each entry names an agent and a VIP
     # manifest (.qvip); the loader (from_yaml) reads the manifest, reconstructs the
@@ -2890,6 +2895,11 @@ class ProjectConfig(_SchemaModel):
                 "subenv_configs": "child configs are loaded from `subenvs:` entries",
                 "subenv_namespaces": "namespaces are derived from `subenvs:` reuse",
                 "original_dut_name": "set internally by H1 namespacing",
+                "resets": (
+                    "declare reset config under the top-level `reset:` key — a "
+                    "MAPPING for the single reset ({active_low, external}) or a "
+                    "LIST of domains (was `resets:`), mirroring `clock:`"
+                ),
                 "subenv_scoreboards": (
                     "cross-block scoreboards moved under `analysis.scoreboards` "
                     "(same {name, source, monitor} shape; endpoints may be dotted "
@@ -2925,7 +2935,70 @@ class ProjectConfig(_SchemaModel):
                     "clocks": clocks,
                     "clock": (clocks[0] if clocks else {}),
                 }
+            # Reset symmetry — reset config mirrors clock: a top-level `reset:`
+            # MAPPING ({active_low, external}) for the single reset, or a LIST of
+            # domains (the old `resets:`). `dut.reset` stays the PORT name only
+            # (symmetric with `dut.clock`); the old dut-embedded config knobs are
+            # rejected with the move hint. Internal construction (a DutConfig
+            # INSTANCE) is exempt — the dut fields remain the canonical storage.
+            dut = data.get("dut")
+            if isinstance(dut, dict):
+                for old, new in (
+                    ("reset_active_low", "active_low"),
+                    ("external_reset", "external"),
+                ):
+                    if old in dut:
+                        raise ValueError(
+                            f"dut key '{old}:' moved to the top-level `reset:` "
+                            f"block — `reset: {{{new}: ...}}` (dut.reset is just "
+                            f"the port name, like dut.clock)."
+                        )
+            r = data.get("reset")
+            if isinstance(r, list):
+                data = {**data, "resets": r}
+                data.pop("reset")
+            elif isinstance(r, dict):
+                allowed = {"active_low", "external"}
+                bad = set(r) - allowed
+                if bad:
+                    raise ValueError(
+                        f"`reset:` (single-reset mapping) accepts "
+                        f"{sorted(allowed)} — got {sorted(bad)}. For multiple "
+                        f"reset domains use a LIST of {{name, active_low, "
+                        f"clock}} entries; the port name is dut.reset."
+                    )
+                if not isinstance(dut, dict):
+                    raise ValueError(
+                        "`reset:` requires `dut:` as a mapping (the reset config "
+                        "is stored on the dut internally)."
+                    )
+                dut = dict(dut)
+                if "active_low" in r:
+                    dut["reset_active_low"] = r["active_low"]
+                if "external" in r:
+                    dut["external_reset"] = r["external"]
+                data = {**data, "dut": dut}
+                data.pop("reset")
         return data
+
+    @model_serializer(mode="wrap")
+    def _ser_reset_union(self, handler: Any) -> dict:
+        """Dump the reset union back in its USER spelling (`reset:` mapping or
+        list) so model_dump -> model_validate round-trips the new grammar; the
+        internal storage fields (dut.reset_active_low / dut.external_reset /
+        resets) are excluded from dumps."""
+        out = handler(self)
+        if self.resets:
+            out["reset"] = [r.model_dump() for r in self.resets]
+        else:
+            r: dict = {}
+            if self.dut.reset_active_low is not True:
+                r["active_low"] = self.dut.reset_active_low
+            if self.dut.external_reset:
+                r["external"] = self.dut.external_reset
+            if r:
+                out["reset"] = r
+        return out
 
     @field_serializer("clock")
     def _ser_clock(self, clock: ClockConfig, _info: object) -> object:
@@ -3737,7 +3810,7 @@ class ProjectConfig(_SchemaModel):
             )
         if not self.dut.external_reset:
             raise ValueError(
-                f"`replicas` (agent '{ca.name}') needs `dut.external_reset: true` — a "
+                f"`replicas` (agent '{ca.name}') needs `reset: {{external: true}}` — a "
                 f"shared vectored DUT binds the top-level reset net."
             )
         if ca.inout_ports:
@@ -4112,7 +4185,8 @@ class ProjectConfig(_SchemaModel):
         if self.dut.external_reset:
             if not self.dut.reset:
                 raise ValueError(
-                    "dut.external_reset requires dut.reset to name the reset signal."
+                    "`reset: {external: true}` requires dut.reset to name "
+                    "the reset port."
                 )
             if self.dut.reset == self.dut.clock:
                 raise ValueError(
@@ -4122,14 +4196,15 @@ class ProjectConfig(_SchemaModel):
             port_names = {p.name for a in self.agents for _, p in a.all_ports}
             if self.dut.reset in port_names:
                 raise ValueError(
-                    f"dut.external_reset is set but dut.reset '{self.dut.reset}' is an "
-                    f"agent port. An external reset must not also be an agent port — "
-                    f"remove it from the agent ports or unset external_reset."
+                    f"`reset: {{external: true}}` is set but dut.reset "
+                    f"'{self.dut.reset}' is an agent port. An external reset must "
+                    f"not also be an agent port — remove it from the agent ports "
+                    f"or drop `external: true`."
                 )
         if self.dut.combinational and self.dut.external_reset:
             raise ValueError(
-                "dut.combinational and dut.external_reset are mutually exclusive "
-                "(a combinational DUT has no reset)."
+                "dut.combinational and `reset: {external: true}` are mutually "
+                "exclusive (a combinational DUT has no reset)."
             )
         # M1 — multi-clock / multi-reset validation. A scalar `clock:` with no `resets:`
         # list is single-domain — the checks below run but pass trivially (one clock,
@@ -4221,9 +4296,9 @@ class ProjectConfig(_SchemaModel):
                     )
                 if self.dut.external_reset:
                     raise ValueError(
-                        f"agent '{a.name}': reset_port is an AGENT-DRIVEN reset and "
-                        f"cannot be combined with dut.external_reset (external reset "
-                        f"is top-generated, not agent-driven)."
+                        f"agent '{a.name}': reset_port is an AGENT-DRIVEN reset "
+                        f"and cannot be combined with `reset: {{external: true}}` "
+                        f"(an external reset is top-generated, not agent-driven)."
                     )
                 if multi:
                     raise ValueError(

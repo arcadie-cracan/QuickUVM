@@ -14,7 +14,7 @@ project:
 dut:
   name: splitter
   reset: rst_n
-  external_reset: true
+reset: {external: true}
 
 clock:
   period: 10

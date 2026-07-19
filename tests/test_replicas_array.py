@@ -177,7 +177,7 @@ def _proj(**kw):
 
 
 def test_replicas_requires_external_reset():
-    with pytest.raises(Exception, match="needs `dut.external_reset: true`"):
+    with pytest.raises(Exception, match="needs `reset:"):
         _proj(dut=DutConfig(name="n", external_reset=False))
 
 

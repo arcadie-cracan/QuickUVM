@@ -100,7 +100,7 @@ def test_default_emits_no_external_reset_code(tmp_path):
 
 
 def test_external_reset_requires_reset_name():
-    with pytest.raises(Exception, match="external_reset requires dut.reset"):
+    with pytest.raises(Exception, match="requires dut.reset to name the reset port"):
         _cfg(external_reset=True, reset="")
 
 

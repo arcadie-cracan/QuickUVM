@@ -7,13 +7,13 @@
 # single-unit bench is unaffected (the finest unit is that unit; nothing scales).
 project: {name: mxclk, author: QuickUVM, year: 2026}
 
-dut: {name: mxclk, reset: rst_f, external_reset: true}
+dut: {name: mxclk, reset: rst_f}
 
 clock:
   - {name: clk_fast, period: 500, unit: ps}
   - {name: clk_slow, period: 10,  unit: ns}
 
-resets:
+reset:
   - {name: rst_f, active_low: true, clock: clk_fast}
   - {name: rst_s, active_low: true, clock: clk_slow}
 

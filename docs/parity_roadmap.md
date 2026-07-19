@@ -570,6 +570,13 @@ unwired model is unrepresentable. The vip fence sharpened: rich coverage entries
 in the agent package (allowed); bare names are env routing (fenced). hmac/odbus/
 rvtimer migrated content-in-place (byte-identical); alu/packet went explicit (the
 known one-file cov-handle env diff, re-simmed green).
+**Part 4 — the reset union (`reset:` mirrors `clock:`)**: reset config moved out of `dut`
+into a top-level `reset:` accepting a MAPPING ({active_low, external}) for the single reset
+or a LIST of domains (was `resets:`); `dut.reset` is just the PORT name, symmetric with
+`dut.clock` — one memorable rule. Old spellings (dut.reset_active_low / dut.external_reset /
+resets:) teach-error on dict input; internal DutConfig-instance construction is exempt (the
+dut fields stay the canonical storage; a wrap-serializer re-emits the user spelling so
+model_dump round-trips). All 28 yamls + README migrated; byte-identical 50/50.
 **Part 2 — `reference_model` moved ONTO the scoreboard entry** (`analysis.scoreboards:
 [{..., reference_model: {language: c}}]`): the top-level knob looked bench-global but
 governed exactly one predict() body — the generator bypassed it for multi-sb/instance
