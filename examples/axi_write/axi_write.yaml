@@ -1,0 +1,67 @@
+# PIPELINED WRITE responder — the AXI epic, slice 1: the WRITE channel (AW + W -> B).
+#
+# The counterpart to examples/axi_read (AR -> R). The DUT is an AXI-write MASTER that floats
+# several writes (AW address beats, then W data beats) before any is answered; the testbench
+# is the SLAVE that returns B (write-response) beats OUT OF ORDER by id.
+#
+# The write channel's new problem vs read: TWO request channels feed ONE response. AXI4 gives
+# the W data NO id — the k-th W burst pairs with the k-th AW by ORDER. So the monitor holds a
+# queue of awids and pops the front on WLAST (`sample_dut_additional`), stamping each completed
+# write with its correct id BEFORE the request is published. `request_valid: wlast` then fires
+# once per completed write, and `respond: pipelined` + `reorder_by: awid` answers B off per-id
+# queues, out of order. See docs/axi_epic_assessment.md for the full 5-channel scope.
+
+project:
+  name: axi_write_tb
+  author: qa@example.com
+
+dut:
+  name: axi_write
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: wr
+    interface: wr_if
+    sequence_item: wr_item
+    seq_item_style: manual
+    active: true
+
+    mode: responder          # the DUT masters the bus; we are the slave that answers B
+    request_valid: wlast     # a write COMPLETES on its last W beat (single-beat: every W)
+    respond: pipelined       # multi-outstanding, out-of-order
+    reorder_by: awid         # per-id queues: same-id in arrival order, cross-id reordered
+
+    ports:
+      # inputs = what the agent DRIVES = the response (B) channel (the DUT's inputs)
+      inputs:
+        - {name: bvalid, width: 1, randomize: true}
+        - {name: bid,    width: 4, randomize: true}
+        - {name: bresp,  width: 2, randomize: true}
+      # outputs = what the agent SAMPLES = the request channels AW + W (the DUT's outputs)
+      outputs:
+        - {name: awvalid, width: 1}
+        - {name: awid,    width: 4}
+        - {name: awaddr,  width: 32}
+        - {name: wvalid,  width: 1}
+        - {name: wdata,   width: 32}
+        - {name: wlast,   width: 1}
+
+# The DUT master self-checks (it matches B beats to its outstanding writes by bid and asserts
+# it got them all, out of order). The QuickUVM side proves LIVENESS: DEAD_RESPONDER and
+# STRANDED_REQUESTS guard the responder from the silent-pass trap.
+analysis:
+  coverage: []
+  scoreboards: []
+
+tests:
+  - {name: rand_test, num_items: 120}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f
