@@ -42,8 +42,13 @@ back?" would pass for *any* bijection — including a **wrong-order** correlatio
 write's data with the wrong address. To make the AW→W **order** genuinely observable, each `W`
 beat carries a self-describing tag: `wdata[3:0]` is the id of the `AW` it belongs to. The slave
 checks the tag against the correlated `awid` and returns **`SLVERR`** on a mismatch (that is
-what `bresp` is *for*); the master fails on any `SLVERR`. So a mis-ordered pairing is caught
-end-to-end — not merely "some id was produced" (see mutation 4 below).
+what `bresp` is *for*). So a mis-ordered pairing is caught end-to-end — not merely "some id was
+produced" (see mutation 4 below).
+
+The `SLVERR` (and the cross-id reorder) are made **verdict-carrying** by a **UVM oracle** in the
+monitor (`WR_CHK`): a `UVM_ERROR` on any `SLVERR`, a wrong `bid`, or an in-order degeneration.
+Without it those checks live only in the DUT master's `$error`, invisible to the UVM-severity
+`make regress` verdict — the silent-pass this example was hardened against.
 
 ## What runs
 
