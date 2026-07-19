@@ -310,12 +310,13 @@ def test_fractional_skew_still_exact(tmp_path):
 
 
 def test_unknown_mixed_clock_unit_rejected(tmp_path):
-    # mixing units requires known SI units (so the scaling is defined).
+    # any unknown unit is rejected per-clock at the leaf (ClockConfig), so the
+    # timescale scaling is always defined — mixed or not.
     p = _two_clock_yaml(
         tmp_path,
         clocks="clock:\n  - {name: clk_sys, period: 10, unit: ns}\n  - {name: clk_io, period: 6, unit: bogus}\n",
     )
-    with pytest.raises(Exception, match="unknown clock time unit"):
+    with pytest.raises(Exception, match="unknown unit"):
         ProjectConfig.from_yaml(p)
 
 

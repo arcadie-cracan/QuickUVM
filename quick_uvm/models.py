@@ -1125,6 +1125,15 @@ class AgentConfig(_SchemaModel):
                     f"agent '{self.name}': `request_ready` is only valid with "
                     f"`mode: responder` (the ready half of the request handshake)."
                 )
+            # The last responder-only knob: its six siblings above are rejected on
+            # an initiator, but a non-default `respond:` was accepted silently and
+            # ignored (the audit's one escaped sweep member).
+            if self.respond != "on_request":
+                raise ValueError(
+                    f"agent '{self.name}': `respond: {self.respond}` is only valid "
+                    f"with `mode: responder` (it selects the responder driver "
+                    f"shape; an initiator has no response to time)."
+                )
             return self
 
         if not self.active:
@@ -1209,6 +1218,18 @@ class AgentConfig(_SchemaModel):
                     f"agent '{self.name}': request_ready='{self.request_ready}' must "
                     f"be 1 bit (a handshake qualifier), got {rr.bit_width}."
                 )
+        # idle composes with on_request (the CONTINUOUS shape) and combinational
+        # (zero-slack parking values) — but prefetch has NO per-cycle drive path, so
+        # idle+prefetch validated and then generated a bench whose SILENT_RESPONDER
+        # check can never be satisfied (it always fails; the request_ready validator
+        # walled exactly this shape for the same reason).
+        if self.idle and self.respond == "prefetch":
+            raise ValueError(
+                f"agent '{self.name}': `idle` is incompatible with `respond: "
+                f"prefetch` — prefetch pre-computes responses on request arrival "
+                f"and has no per-cycle drive loop to hold idle values, so the "
+                f"generated per-cycle liveness could never be satisfied."
+            )
         for name, val in self.idle.items():
             p = driven.get(name)
             if p is None:
@@ -1604,6 +1625,31 @@ class ClockConfig(_SchemaModel):
         _check_sv_identifier(v, "clock name")
         return v
 
+    @model_validator(mode="after")
+    def _check_numeric_sanity(self) -> ClockConfig:
+        """Numeric holes that produce a hung or mis-timed bench, not an error.
+        `period <= 0` generates `forever #0 clk = ~clk` — a zero-delay infinite
+        loop that hangs at t=0, and a hung bench can never report an error. An
+        unknown `unit` KeyErrors deep in the multi-clock math (or silently
+        passes through to the templates single-clock). An out-of-range
+        `drive_offset_pct` drives outside the clock period."""
+        if self.period < 1:
+            raise ValueError(
+                f"clock '{self.name}': period must be >= 1 (got {self.period}) — "
+                f"period 0 generates a zero-delay infinite loop that hangs at t=0."
+            )
+        if self.unit not in _UNIT_MAG:
+            raise ValueError(
+                f"clock '{self.name}': unknown unit '{self.unit}' "
+                f"(one of {sorted(_UNIT_MAG)})."
+            )
+        if not 0 <= self.drive_offset_pct < 100:
+            raise ValueError(
+                f"clock '{self.name}': drive_offset_pct must be in 0..99 (got "
+                f"{self.drive_offset_pct}) — it is a percentage of the period."
+            )
+        return self
+
 
 class DrivenReset(NamedTuple):
     """M1 — an agent-driven reset (the agent's sequences drive it): the reset PORT name
@@ -1632,6 +1678,10 @@ class ResetConfig(_SchemaModel):
 
 class TestConfig(_SchemaModel):
     name: str
+    # 0 is a legitimate idiom — "the default sequence contributes nothing; the
+    # test's pragma code drives" (examples/spi_host runs a hand-written prog
+    # sequence from run_phase_additional). Negative would silently generate a
+    # zero-iteration repeat: a test that runs nothing and passes.
     num_items: int = 100
     # S2 — run a selected agent-library sequence instead of the default
     # <primary>_sequence. None ⇒ today's behavior (byte-identical).
@@ -1659,6 +1709,13 @@ class TestConfig(_SchemaModel):
         if self.seeds is not None and self.seeds < 1:
             raise ValueError(
                 f"test '{self.name}': seeds must be >= 1 (got {self.seeds})."
+            )
+        if self.num_items < 0:
+            raise ValueError(
+                f"test '{self.name}': num_items must be >= 0 (got "
+                f"{self.num_items}); 0 is the pragma-driven idiom (the default "
+                f"sequence contributes nothing), negative is a test that runs "
+                f"nothing and passes."
             )
         return self
 
@@ -3850,17 +3907,9 @@ class ProjectConfig(_SchemaModel):
         clock_names = [c.name for c in self.effective_clocks]
         if len(clock_names) != len(set(clock_names)):
             raise ValueError("clock names must be unique.")
-        # M1 mixed-unit — clocks may use different time units; the tb emits one
-        # -timescale at the finest unit and scales each period into it. When units are
-        # mixed they must be known SI units (so the scaling is defined).
-        units = {c.unit for c in self.effective_clocks}
-        if len(units) > 1:
-            bad = sorted(u for u in units if u not in _UNIT_MAG)
-            if bad:
-                raise ValueError(
-                    f"unknown clock time unit(s) {bad} — to mix units use one of "
-                    f"fs/ps/ns/us/ms/s."
-                )
+        # (Mixed-unit sanity needs no cross-check here: ClockConfig rejects any
+        # unknown unit at the leaf, so every unit that reaches the timescale math
+        # is a known SI unit and the scaling is always defined.)
         resets = self.effective_resets
         reset_names = [r.name for r in resets]
         if len(reset_names) != len(set(reset_names)):
@@ -3878,6 +3927,19 @@ class ProjectConfig(_SchemaModel):
                     f"declared clock ({', '.join(clock_names)})."
                 )
         reset_set = set(reset_names)
+        # Under an explicit `resets:` list, dut.reset selects which declared domain
+        # binds the DUT's reset port — a name outside the list would be silently
+        # ignored (the multi-domain path reads only the list). NB dut.external_reset
+        # is deliberately NOT constrained here: the multi path top-drives every
+        # declared domain regardless, and the corpus legitimately carries both
+        # spellings (examples set true; the minimal form leaves the default false).
+        if self.resets and self.dut.reset and self.dut.reset not in reset_set:
+            raise ValueError(
+                f"dut.reset '{self.dut.reset}' is not one of the declared "
+                f"`resets:` domains {sorted(reset_set)} — under a resets: list, "
+                f"dut.reset selects which domain binds the DUT's reset port (it "
+                f"would otherwise be silently ignored)."
+            )
         for a in self.agents:
             if a.clock is not None and a.clock not in clock_set:
                 raise ValueError(
