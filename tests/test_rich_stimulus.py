@@ -42,7 +42,15 @@ def _agent(fields=None, constraints=None, inputs=None, outputs=None, name="a"):
 def _cfg(**kw):
     rm = kw.pop("reference_model", None)
     agent = _agent(**kw)
-    extra = {"reference_model": rm} if rm else {}
+    extra = {}
+    if rm is not None:
+        from quick_uvm.models import AnalysisConfig, ScoreboardSpec
+
+        extra["analysis"] = AnalysisConfig(
+            scoreboards=[
+                ScoreboardSpec(name="sbd", source=agent.name, reference_model=rm)
+            ]
+        )
     return ProjectConfig(
         project=ProjectMeta(name="t"),
         dut=DutConfig(name="d", reset="", combinational=True),

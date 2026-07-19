@@ -1759,6 +1759,36 @@ class WindowSpec(_SchemaModel):
         return self
 
 
+class ReferenceModelConfig(_SchemaModel):
+    """Configures the scoreboard's reference model / predictor (K0).
+
+    `language: sv` (default) keeps the `predict()` body in
+    `<dut>_reference_model.svh`. `language: c` also generates a DPI-C **bridge**: an
+    SV marshaling layer + a `<dut>_reference_model.c` stub whose signature is derived
+    from the primary agent's fields.
+
+    WHAT `language: c` IS FOR -- and what it is not.
+    The bridge models a golden model as a **pure scalar function**: scalars in, scalar
+    pointers out, <=64 bits each, one call per transaction. That fits a small
+    combinational model (see `examples/sat_adder/`).
+
+    It does NOT fit a real golden model, because real golden models are LIBRARIES:
+    OpenTitan `cryptoc` takes open-array byte streams and returns an 8-word digest;
+    Spike is a `chandle` you STEP; Caliptra's predictor shells out to Python. None of
+    those is a pure scalar function -- and none of them needs the bridge.
+
+    The seam already has the escape hatch: keep `language: sv`, declare the library's
+    own `import "DPI-C"` (via `project.imports` or the tb_pkg `imports` pragma), and
+    call it from the `prediction_logic` pragma. The predictor is a CLASS, so it can
+    hold state across transactions -- accumulate a stream, trigger on a control event,
+    serve a result back later. `examples/hmac/` does exactly that.
+
+    See docs/reference_model_seam.md.
+    """
+
+    language: Literal["sv", "c"] = "sv"
+
+
 class ScoreboardSpec(_SchemaModel):
     name: str = "sbd"
     source: str  # input/stimulus stream agent → predictor
@@ -1767,6 +1797,11 @@ class ScoreboardSpec(_SchemaModel):
     # compared against monitor). Omitted → single-stream (source feeds both the
     # predictor and the comparator, today's behavior). monitor != source.
     monitor: str | None = None
+    # K0 — THIS scoreboard's reference model / predictor config (see
+    # ReferenceModelConfig). Lives here because the language governs exactly one
+    # predict() body — never the bench (multi-scoreboard / instance / windowed /
+    # two-stream sets are SV-only, fenced below). Default = the SV seam.
+    reference_model: ReferenceModelConfig = Field(default_factory=ReferenceModelConfig)
     # A2 — comparison strategy. 'in_order' (default): a FIFO pair matches expected
     # and actual in arrival order. 'out_of_order': a queue-per-key pool matches each
     # actual to the pending expected with the same `match_key` (a reordering DUT).
@@ -2167,36 +2202,6 @@ class RegisterModelConfig(_SchemaModel):
             "shared": "uvm_reg_shared_access_seq",
         }
         return [{"kind": k, "seq": seqs[k]} for k in self.csr_tests]
-
-
-class ReferenceModelConfig(_SchemaModel):
-    """Configures the scoreboard's reference model / predictor (K0).
-
-    `language: sv` (default) keeps the `predict()` body in
-    `<dut>_reference_model.svh`. `language: c` also generates a DPI-C **bridge**: an
-    SV marshaling layer + a `<dut>_reference_model.c` stub whose signature is derived
-    from the primary agent's fields.
-
-    WHAT `language: c` IS FOR -- and what it is not.
-    The bridge models a golden model as a **pure scalar function**: scalars in, scalar
-    pointers out, <=64 bits each, one call per transaction. That fits a small
-    combinational model (see `examples/sat_adder/`).
-
-    It does NOT fit a real golden model, because real golden models are LIBRARIES:
-    OpenTitan `cryptoc` takes open-array byte streams and returns an 8-word digest;
-    Spike is a `chandle` you STEP; Caliptra's predictor shells out to Python. None of
-    those is a pure scalar function -- and none of them needs the bridge.
-
-    The seam already has the escape hatch: keep `language: sv`, declare the library's
-    own `import "DPI-C"` (via `project.imports` or the tb_pkg `imports` pragma), and
-    call it from the `prediction_logic` pragma. The predictor is a CLASS, so it can
-    hold state across transactions -- accumulate a stream, trigger on a control event,
-    serve a result back later. `examples/hmac/` does exactly that.
-
-    See docs/reference_model_seam.md.
-    """
-
-    language: Literal["sv", "c"] = "sv"
 
 
 class ProjectMeta(_SchemaModel):
@@ -2756,7 +2761,6 @@ class ProjectConfig(_SchemaModel):
     # See RegressConfig.
     regress: RegressConfig | None = None
     virtual_sequences: list[VseqConfig] = Field(default_factory=list)  # C2
-    reference_model: ReferenceModelConfig = Field(default_factory=ReferenceModelConfig)
     # Sane default for multi-agent subsystems: with >=2 active agents and no explicit
     # virtual_sequences, auto-scaffold a vsqr + a default vseq that fires each agent's
     # base sequence (the "add a vsqr as a habit" convention). Set false to opt out.
@@ -2843,6 +2847,12 @@ class ProjectConfig(_SchemaModel):
                     "cross-block scoreboards moved under `analysis.scoreboards` "
                     "(same {name, source, monitor} shape; endpoints may be dotted "
                     "leaf paths or a bare boundary-agent name)"
+                ),
+                "reference_model": (
+                    "moved ONTO the scoreboard it configures: `analysis: "
+                    "{scoreboards: [{name: sbd, source: <agent>, reference_model: "
+                    "{language: c}}]}` — the language governs one predict() body, "
+                    "never the bench"
                 ),
             }
             for k, hint in runtime.items():
@@ -3773,12 +3783,13 @@ class ProjectConfig(_SchemaModel):
                         or sb.match_key
                         or sb.max_latency
                         or sb.window
+                        or sb.reference_model.language != "sv"
                     ):
                         raise ValueError(
                             f"analysis.scoreboards '{sb.name}': match/match_key/"
-                            f"max_latency/window are not supported on a composition "
-                            f"scoreboard yet (cross-block sets are in-order "
-                            f"two-stream this slice)."
+                            f"max_latency/window/reference_model are not supported "
+                            f"on a composition scoreboard yet (cross-block sets are "
+                            f"in-order two-stream SV this slice)."
                         )
                     routed.append(
                         SubenvScoreboard(
@@ -3926,7 +3937,7 @@ class ProjectConfig(_SchemaModel):
                             f"analysis.scoreboards '{s.name}': window.boundary "
                             f"'{s.window.boundary}' must be a 1-bit scalar strobe."
                         )
-                    if self.reference_model.language != "sv":
+                    if s.reference_model.language != "sv":
                         raise ValueError(
                             f"analysis.scoreboards '{s.name}': a windowed scoreboard "
                             f"needs a SystemVerilog reference model (the accumulate/"
@@ -3935,11 +3946,34 @@ class ProjectConfig(_SchemaModel):
             # A two-stream scoreboard's predict() is SystemVerilog (DPI-C two-type
             # marshaling is not yet supported). With >=2 scoreboards each gets its
             # own typed predictor/comparator set (<dut>_<sbname>_*).
-            two_stream = [s for s in self.analysis.scoreboards if s.monitor is not None]
-            if two_stream and self.reference_model.language != "sv":
+            for s in self.analysis.scoreboards:
+                if s.monitor is not None and s.reference_model.language != "sv":
+                    raise ValueError(
+                        f"analysis.scoreboards '{s.name}': a two-stream scoreboard "
+                        f"requires reference_model.language 'sv' (DPI-C two-type "
+                        f"marshaling is not yet supported)."
+                    )
+            # The DPI bridge exists only on the SINGLE flat set: the multi-scoreboard
+            # and instance/replica paths emit per-set SV predict() files and never
+            # consult the language — accepting `c` there would be a silent no-op.
+            c_sbs = [
+                s
+                for s in self.analysis.scoreboards
+                if s.reference_model.language != "sv"
+            ]
+            if c_sbs and len(self.analysis.scoreboards) > 1:
                 raise ValueError(
-                    "a two-stream scoreboard requires reference_model.language "
-                    "'sv' (DPI-C two-type marshaling is not yet supported)."
+                    f"analysis.scoreboards '{c_sbs[0].name}': reference_model."
+                    f"language 'c' needs the SOLE scoreboard (multi-scoreboard "
+                    f"benches emit one SV predict() per set — the language would "
+                    f"be silently ignored)."
+                )
+            if c_sbs and any(a.instances or a.replicas > 1 for a in self.agents):
+                raise ValueError(
+                    f"analysis.scoreboards '{c_sbs[0].name}': reference_model."
+                    f"language 'c' is not supported with `instances`/`replicas` "
+                    f"(those paths emit per-instance SV predict() files — the "
+                    f"language would be silently ignored)."
                 )
         if self.register_model is not None:
             if self.register_model.bus_agent not in {a.name for a in self.agents}:
@@ -4543,6 +4577,22 @@ class ProjectConfig(_SchemaModel):
     def referenced_agents(self) -> list[AgentConfig]:
         """F2' — the agents consumed by reference (wired, not generated)."""
         return [a for a in self.agents if a.is_reference]
+
+    @property
+    def reference_model(self) -> ReferenceModelConfig:
+        """K0 — the effective SINGLE-flat-scoreboard reference-model config (the
+        only shape where `language: c` generates the DPI bridge; every other shape
+        is SV-only, fenced in validate_agents). Reads the sole explicit
+        `analysis.scoreboards` entry's config; the implicit-scoreboard / multi-sb /
+        composition cases get the default SV seam. A computed view — the knob
+        itself lives ON the scoreboard entry."""
+        if (
+            self.analysis is not None
+            and not self.subenvs
+            and len(self.analysis.scoreboards) == 1
+        ):
+            return self.analysis.scoreboards[0].reference_model
+        return ReferenceModelConfig()
 
     @property
     def primary_agent(self) -> AgentConfig:

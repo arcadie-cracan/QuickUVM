@@ -143,6 +143,7 @@ def _two_stream(
     match_key=None,
     max_latency=None,
     agents=None,
+    reference_model=None,
     **over,
 ):
     return ProjectConfig(
@@ -159,6 +160,7 @@ def _two_stream(
                     match=match,
                     match_key=match_key,
                     max_latency=max_latency,
+                    reference_model=reference_model or ReferenceModelConfig(),
                 )
             ]
         ),

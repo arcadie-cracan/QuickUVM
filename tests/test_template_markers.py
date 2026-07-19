@@ -103,10 +103,28 @@ CONFIGS = {
     ),
     # K0 — the DPI-C path is the only feature with a user-editable pragma in a
     # generated .c file; cover it here too (history of {%- marker-gluing defects).
-    "dpi_c": _cfg(reference_model=ReferenceModelConfig(language="c")),
+    "dpi_c": _cfg(
+        analysis=AnalysisConfig(
+            scoreboards=[
+                ScoreboardSpec(
+                    name="sbd",
+                    source="a0",
+                    reference_model=ReferenceModelConfig(language="c"),
+                )
+            ]
+        ),
+    ),
     "dpi_c_two_agents": _cfg(
         agents=[_agent("a0"), _agent("a1", pfx="a1_")],
-        reference_model=ReferenceModelConfig(language="c"),
+        analysis=AnalysisConfig(
+            scoreboards=[
+                ScoreboardSpec(
+                    name="sbd",
+                    source="a0",
+                    reference_model=ReferenceModelConfig(language="c"),
+                )
+            ]
+        ),
     ),
     # S1 — a transaction with a var-length payload field + transaction constraints
     # (exercises the new `trans_c` block + post-input field declarations).

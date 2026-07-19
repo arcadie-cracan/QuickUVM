@@ -12,11 +12,11 @@ class sat_adder_env extends uvm_env;
   // Agent handles
   add_agent  add_agnt;
 
-  // Scoreboard (wired to primary agent: add)
+  // Scoreboards
   sat_adder_scoreboard sbd;
 
-  // Functional coverage (wired to primary agent: add)
-  add_cov cov;
+  // Functional coverage (per agent)
+  add_cov add_cov_h;
 
   // Environment configuration
   sat_adder_env_cfg env_cfg;
@@ -34,17 +34,17 @@ class sat_adder_env extends uvm_env;
       `uvm_fatal("NOCFG", {"No sat_adder_env_cfg set for: ", get_full_name()})
     uvm_config_db#(add_cfg)::set(this, "add_agnt", "cfg", env_cfg.add_cfg);
     add_agnt = add_agent::type_id::create("add_agnt", this);
-    sbd  = sat_adder_scoreboard::type_id::create("sbd",  this);
-    cov  = add_cov::type_id::create("cov",  this);
+    sbd = sat_adder_scoreboard::type_id::create("sbd", this);
+    add_cov_h = add_cov::type_id::create("add_cov_h", this);
     // pragma quickuvm custom build_phase_additional begin
     // pragma quickuvm custom build_phase_additional end
   endfunction
 
   function void connect_phase(uvm_phase phase);
     super.connect_phase(phase);
-    // Primary agent → scoreboard + coverage
+    // Declared analysis connectivity (per analysis: block)
     add_agnt.ap.connect(sbd.axp);
-    add_agnt.ap.connect(cov.analysis_export);
+    add_agnt.ap.connect(add_cov_h.analysis_export);
     // pragma quickuvm custom connect_phase_additional begin
     // pragma quickuvm custom connect_phase_additional end
   endfunction

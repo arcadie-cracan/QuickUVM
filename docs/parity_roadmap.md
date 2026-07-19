@@ -560,6 +560,16 @@ window) and `analysis.coverage` are fenced fail-closed on a composition (cross-b
 in-order two-stream this slice — the fence is the lift path for OoO/windowed cross-block
 checking later). The old key errors with a move hint; generated output is BYTE-IDENTICAL
 (the internal machinery is unchanged — the router populates it from the new spelling).
+**Part 2 — `reference_model` moved ONTO the scoreboard entry** (`analysis.scoreboards:
+[{..., reference_model: {language: c}}]`): the top-level knob looked bench-global but
+governed exactly one predict() body — the generator bypassed it for multi-sb/instance
+sets and two walls pinned it to the single flat single-stream scoreboard. Per-entry
+placement makes that scope visible in the grammar; the walls became locality (+ new
+fences where the bypass would have silently ignored `c`: multi-sb, instances/replicas,
+compositions). `ProjectConfig.reference_model` survives as a computed view for the
+generator/templates. sat_adder (the sole user) migrated to an explicit analysis block —
+a one-file env diff (cov handle rename), re-simmed green (201/201 through the DPI
+bridge).
 
 ### H1 — Sub-environments — DONE (first slice)
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.

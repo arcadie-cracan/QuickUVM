@@ -167,8 +167,21 @@ def test_duplicate_parameter_rejected():
 
 
 def test_param_agent_rejects_dpi_c_reference_model():
+    from quick_uvm.models import AnalysisConfig, ScoreboardSpec
+
     with pytest.raises(Exception, match="DPI-C marshaling"):
-        _cfg([_param_ag()], reference_model=ReferenceModelConfig(language="c"))
+        _cfg(
+            [_param_ag()],
+            analysis=AnalysisConfig(
+                scoreboards=[
+                    ScoreboardSpec(
+                        name="sbd",
+                        source=_param_ag().name,
+                        reference_model=ReferenceModelConfig(language="c"),
+                    )
+                ]
+            ),
+        )
 
 
 def test_param_agent_rejects_coverage_model():
