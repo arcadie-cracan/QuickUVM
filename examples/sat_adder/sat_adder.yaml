@@ -23,7 +23,7 @@ agents:
   - name: add
     interface: add_if
     sequence_item: add_seq_item
-    trans_style: manual
+    seq_item_style: manual
     active: true
     ports:
       inputs:
