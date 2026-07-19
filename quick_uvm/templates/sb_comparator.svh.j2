@@ -41,6 +41,13 @@ class {{ sb_prefix }}_comparator extends uvm_component;
   // Set while an expected has been dequeued but its actual hasn't arrived yet, so
   // a test that ends mid-pair is reported (see report_phase / SB_LEFTOVER).
   bit pending_exp = 0;
+{% if sb_max_latency %}
+  // Latency window on the in-order pair: expected held in a local queue so each is
+  // stamped at its TRUE arrival (predict time), mirroring the out-of-order pool.
+  {{ sb_out_item }} exp_q [$];
+  realtime exp_age_q [$];
+  localparam realtime MaxLatency = {{ sb_max_lat_time }}{{ sb_clock_unit }};
+{% endif %}
 {% endif %}
 
   // pragma quickuvm custom class_item_additional begin
@@ -130,6 +137,37 @@ class {{ sb_prefix }}_comparator extends uvm_component;
         outfifo.get(out_tr);
       end
     end
+{% if sb_max_latency %}
+    // In-order + latency window: two processes, so each expected is stamped when it
+    // ARRIVES (predict time) — a single get/get loop would start the clock late.
+    fork
+      forever begin
+        {{ sb_out_item }} e;
+        expfifo.get(e);
+        exp_q.push_back(e);
+        exp_age_q.push_back($realtime);
+      end
+      forever begin
+        outfifo.get(out_tr);
+        wait (exp_q.size() != 0);
+        exp_tr = exp_q.pop_front();
+        begin
+          // A too-late response fails even if its data matches, and a wrong-data
+          // response is still reported (the data check is not skipped).
+          bit data_ok = out_tr.compare(exp_tr);
+          bit late    = ($realtime - exp_age_q.pop_front()) > MaxLatency;
+          if (late)
+            `uvm_error("SB_LATENCY", $sformatf(
+              "in-order response exceeded the {{ sb_max_latency }}-cycle window (pair %0d)",
+              VECT_CNT + 1))
+          if (!data_ok)
+            `uvm_error("ERROR", {get_vector_str(), "\n"})
+          if (data_ok && !late) PASS();
+          else begin VECT_CNT++; ERROR_CNT++; end
+        end
+      end
+    join
+{% else %}
     forever begin
       `uvm_info("SB_CMP", "WAITING for expected output", UVM_FULL)
       expfifo.get(exp_tr);
@@ -140,6 +178,7 @@ class {{ sb_prefix }}_comparator extends uvm_component;
       if (out_tr.compare(exp_tr)) PASS();
       else                        ERROR();
     end
+{% endif %}
 {% endif %}
   endtask
 
@@ -160,11 +199,19 @@ class {{ sb_prefix }}_comparator extends uvm_component;
     // drained, or the two streams desynced) — surface them rather than letting an
     // undersized drain silently pass with fewer vectors than expected. Counts the
     // queued items PLUS one held mid-pair (dequeued expected still awaiting actual).
+{% if sb_max_latency %}
+    if (enabled &&
+        ((expfifo.used() + exp_q.size()) != 0 || outfifo.used() != 0))
+      `uvm_warning("SB_LEFTOVER", $sformatf(
+        "%0d expected / %0d actual transaction(s) never matched (test ended early?)",
+        expfifo.used() + exp_q.size(), outfifo.used()))
+{% else %}
     if (enabled &&
         ((expfifo.used() + pending_exp) != 0 || outfifo.used() != 0))
       `uvm_warning("SB_LEFTOVER", $sformatf(
         "%0d expected / %0d actual transaction(s) never matched (test ended early?)",
         expfifo.used() + pending_exp, outfifo.used()))
+{% endif %}
 {% endif %}
     if (ERROR_CNT)
       `uvm_error("FAILED",
