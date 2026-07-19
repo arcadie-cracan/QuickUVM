@@ -59,7 +59,24 @@ agents:
       - {name: hmac_vector_seq, kind: directed}
 
 analysis:
-  coverage: [host]
+  coverage:
+      - agent: host
+        goal: 80
+        coverpoints:
+          - field: wr
+            bins:
+              - {name: rd, value: 0}
+              - {name: wr, value: 1}
+          - field: addr
+            bins:
+              - {name: cfg,     value: 0}
+              - {name: cmd,     value: 4}
+              - {name: status,  value: 8}
+              - {name: key,     range: [32, 156]}    # KEY_0..31
+              - {name: digest,  range: [160, 220]}   # DIGEST_0..15
+              - {name: msg_fifo, range: [256, 511]}  # the FIFO write window
+        crosses:
+          - {name: reg_x_dir, fields: [addr, wr]}
   scoreboards:
     # Single-stream: predict(host_item) -> the expected host_item (i.e. expected rdata).
     # The predictor must be STATEFUL — that is the whole experiment.
@@ -67,24 +84,6 @@ analysis:
 
 # V1 — is every register touched, read and written? (The digest array is the interesting
 # one: rv_timer's five scalar registers never exercised a register ARRAY.)
-coverage_models:
-  - agent: host
-    goal: 80
-    coverpoints:
-      - field: wr
-        bins:
-          - {name: rd, value: 0}
-          - {name: wr, value: 1}
-      - field: addr
-        bins:
-          - {name: cfg,     value: 0}
-          - {name: cmd,     value: 4}
-          - {name: status,  value: 8}
-          - {name: key,     range: [32, 156]}    # KEY_0..31
-          - {name: digest,  range: [160, 220]}   # DIGEST_0..15
-          - {name: msg_fifo, range: [256, 511]}  # the FIFO write window
-    crosses:
-      - {name: reg_x_dir, fields: [addr, wr]}
 
 tests:
   # Random register traffic — checks the CFG/KEY/MSG_LEN readback path.

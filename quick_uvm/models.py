@@ -1856,17 +1856,6 @@ class ScoreboardSpec(_SchemaModel):
         return self
 
 
-class AnalysisConfig(_SchemaModel):
-    """Opt-in declarative analysis connectivity (C1, MVP per-agent routing).
-
-    When omitted, the environment keeps the legacy single-stream wiring
-    (one scoreboard + one coverage collector on the primary agent).
-    """
-
-    coverage: list[str] = Field(default_factory=list)  # agent names that get a cover
-    scoreboards: list[ScoreboardSpec] = Field(default_factory=list)
-
-
 class CoverageBin(_SchemaModel):
     """One named bin of a coverpoint — exactly one of value/range/values."""
 
@@ -2120,6 +2109,56 @@ class CoverageModel(_SchemaModel):
                     )
                 seen_cb.add(b.name)
         return self
+
+
+class AnalysisConfig(_SchemaModel):
+    """Opt-in declarative analysis connectivity (C1, MVP per-agent routing).
+
+    When omitted, the environment keeps the legacy single-stream wiring
+    (one scoreboard + one coverage collector on the primary agent).
+
+    A `coverage` entry is a bare agent NAME (a skeleton collector, the degenerate
+    spelling) or a RICH entry `{agent, coverpoints, crosses, goal}` declaring the
+    routing AND the covergroup content in one place (V1; formerly the top-level
+    `coverage_models:` key — the fold makes an orphaned model impossible by
+    construction: a rich entry IS its own routing).
+    """
+
+    coverage: list[str] = Field(default_factory=list)  # agent names that get a cover
+    scoreboards: list[ScoreboardSpec] = Field(default_factory=list)
+    # Internal: rich-entry content hoisted by the before-validator below; never
+    # valid user input directly.
+    coverage_models: list[CoverageModel] = Field(
+        default_factory=list, exclude=True, repr=False
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hoist_rich_coverage(cls, data: object) -> object:
+        if isinstance(data, dict):
+            if data.get("coverage_models"):
+                raise ValueError(
+                    "analysis.coverage_models is internal — declare rich entries "
+                    "directly in analysis.coverage: "
+                    "[{agent: <n>, coverpoints: [...]}]."
+                )
+            cov = data.get("coverage")
+            if isinstance(cov, list) and any(
+                isinstance(e, (dict, CoverageModel)) for e in cov
+            ):
+                names: list = []
+                models: list = []
+                for e in cov:
+                    if isinstance(e, CoverageModel):
+                        models.append(e)
+                        names.append(e.agent)
+                    elif isinstance(e, dict):
+                        models.append(e)
+                        names.append(e.get("agent", "<missing agent>"))
+                    else:
+                        names.append(e)
+                data = {**data, "coverage": names, "coverage_models": models}
+        return data
 
 
 class RegisterModelConfig(_SchemaModel):
@@ -2753,7 +2792,6 @@ class ProjectConfig(_SchemaModel):
     tests: list[TestConfig] = Field(default_factory=lambda: [TestConfig(name="test1")])
     analysis: AnalysisConfig | None = None
     register_model: RegisterModelConfig | None = None
-    coverage_models: list[CoverageModel] = Field(default_factory=list)
     # K2 — whitebox probes: OBSERVE-only internal DUT signals (opt-in, byte-identical
     # when empty). See ProbeConfig.
     probes: list[ProbeConfig] = Field(default_factory=list)
@@ -2847,6 +2885,11 @@ class ProjectConfig(_SchemaModel):
                     "cross-block scoreboards moved under `analysis.scoreboards` "
                     "(same {name, source, monitor} shape; endpoints may be dotted "
                     "leaf paths or a bare boundary-agent name)"
+                ),
+                "coverage_models": (
+                    "moved INTO analysis.coverage — a rich entry {agent, "
+                    "coverpoints, crosses, goal} declares the routing and the "
+                    "covergroup content in one place"
                 ),
                 "reference_model": (
                     "moved ONTO the scoreboard it configures: `analysis: "
@@ -3838,7 +3881,20 @@ class ProjectConfig(_SchemaModel):
                 # tests DEFAULTS to [test1] (simple-by-default) — fence only a
                 # user-declared test list, i.e. anything but the untouched default.
                 "tests": self.tests != [TestConfig(name="test1")],
-                "analysis": self.analysis is not None,
+                # analysis SCOREBOARDS are bench-layer (dropped by the vip path),
+                # and a BARE coverage name is pure env routing (likewise dropped).
+                # A RICH coverage entry is allowed: its covergroup content renders
+                # into the agent package's <ag>_cov.svh, which the vip ships.
+                "analysis.scoreboards": bool(
+                    self.analysis is not None and self.analysis.scoreboards
+                ),
+                "analysis.coverage (bare names)": bool(
+                    self.analysis is not None
+                    and any(
+                        all(m.agent != n for m in self.analysis.coverage_models)
+                        for n in self.analysis.coverage
+                    )
+                ),
                 "probes": bool(self.probes),
                 "virtual_sequences": bool(self.virtual_sequences),
                 "regress": self.regress is not None,
@@ -4209,14 +4265,6 @@ class ProjectConfig(_SchemaModel):
                         f"agent's parameters) — reorder it first, or use `instances` / "
                         f"`subenvs`."
                     )
-        # Which agents actually get a <agent>_cover instance in the env: the
-        # listed agents when an analysis block is present, else just the primary.
-        # A coverage model on any other agent would compile but never be sampled.
-        covered_agents = (
-            set(self.analysis.coverage)
-            if self.analysis
-            else ({self.agents[0].name} if self.agents else set())
-        )
         seen_cov: set[str] = set()
         for cm in self.coverage_models:
             if cm.agent not in agent_name_set:
@@ -4228,17 +4276,8 @@ class ProjectConfig(_SchemaModel):
                     f"coverage_models: duplicate model for agent '{cm.agent}'."
                 )
             seen_cov.add(cm.agent)
-            if cm.agent not in covered_agents:
-                hint = (
-                    f"add '{cm.agent}' to analysis.coverage"
-                    if self.analysis
-                    else f"only the primary agent '{self.agents[0].name}' is covered "
-                    f"by default — add an analysis.coverage list to cover others"
-                )
-                raise ValueError(
-                    f"coverage_model[{cm.agent}]: agent '{cm.agent}' has a coverage "
-                    f"model but is not wired for coverage ({hint})."
-                )
+            # (No orphan wall needed since the analysis fold: a rich coverage
+            # entry IS its own routing, so an unwired model is unrepresentable.)
             agent = next(a for a in self.agents if a.name == cm.agent)
             port_by_name = agent.coverable_fields
             for cp in cm.coverpoints:
@@ -4577,6 +4616,14 @@ class ProjectConfig(_SchemaModel):
     def referenced_agents(self) -> list[AgentConfig]:
         """F2' — the agents consumed by reference (wired, not generated)."""
         return [a for a in self.agents if a.is_reference]
+
+    @property
+    def coverage_models(self) -> list[CoverageModel]:
+        """V1 — the rich coverage entries (covergroup content), hoisted from
+        `analysis.coverage` (a computed view; the knob lives on the entries).
+        An orphaned model is impossible by construction — a rich entry is its
+        own routing."""
+        return self.analysis.coverage_models if self.analysis is not None else []
 
     @property
     def reference_model(self) -> ReferenceModelConfig:

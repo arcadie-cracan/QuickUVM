@@ -203,15 +203,26 @@ def test_vip_fence_rejects_dropped_sections(section, value):
         ProjectConfig.model_validate({**_VIP_BASE, section: value})
 
 
-def test_vip_with_coverage_models_still_fine():
-    """coverage_models is CONSUMED by the agent package (<ag>_cov.svh) — not fenced."""
+def test_vip_with_rich_coverage_still_fine():
+    """Covergroup content is CONSUMED by the agent package (<ag>_cov.svh) — a
+    vip may carry rich analysis.coverage entries; only scoreboards are fenced."""
     cfg = {
         **_VIP_BASE,
-        "coverage_models": [
-            {
-                "agent": "io",
-                "coverpoints": [{"field": "a", "bins": [{"name": "z", "value": 0}]}],
-            }
-        ],
+        "analysis": {
+            "coverage": [
+                {
+                    "agent": "io",
+                    "coverpoints": [
+                        {"field": "a", "bins": [{"name": "z", "value": 0}]}
+                    ],
+                }
+            ]
+        },
     }
     ProjectConfig.model_validate(cfg)  # must not raise
+    cfg_sb = {
+        **_VIP_BASE,
+        "analysis": {"scoreboards": [{"name": "sbd", "source": "io"}]},
+    }
+    with pytest.raises(ValidationError, match="silently dropped"):
+        ProjectConfig.model_validate(cfg_sb)

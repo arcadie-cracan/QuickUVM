@@ -12,11 +12,11 @@ class pkt_sum_env extends uvm_env;
   // Agent handles
   stream_agent  stream_agnt;
 
-  // Scoreboard (wired to primary agent: stream)
+  // Scoreboards
   pkt_sum_scoreboard sbd;
 
-  // Functional coverage (wired to primary agent: stream)
-  stream_cov cov;
+  // Functional coverage (per agent)
+  stream_cov stream_cov_h;
 
   // Environment configuration
   pkt_sum_env_cfg env_cfg;
@@ -34,17 +34,17 @@ class pkt_sum_env extends uvm_env;
       `uvm_fatal("NOCFG", {"No pkt_sum_env_cfg set for: ", get_full_name()})
     uvm_config_db#(stream_cfg)::set(this, "stream_agnt", "cfg", env_cfg.stream_cfg);
     stream_agnt = stream_agent::type_id::create("stream_agnt", this);
-    sbd  = pkt_sum_scoreboard::type_id::create("sbd",  this);
-    cov  = stream_cov::type_id::create("cov",  this);
+    sbd = pkt_sum_scoreboard::type_id::create("sbd", this);
+    stream_cov_h = stream_cov::type_id::create("stream_cov_h", this);
     // pragma quickuvm custom build_phase_additional begin
     // pragma quickuvm custom build_phase_additional end
   endfunction
 
   function void connect_phase(uvm_phase phase);
     super.connect_phase(phase);
-    // Primary agent → scoreboard + coverage
+    // Declared analysis connectivity (per analysis: block)
     stream_agnt.ap.connect(sbd.axp);
-    stream_agnt.ap.connect(cov.analysis_export);
+    stream_agnt.ap.connect(stream_cov_h.analysis_export);
     // pragma quickuvm custom connect_phase_additional begin
     // pragma quickuvm custom connect_phase_additional end
   endfunction

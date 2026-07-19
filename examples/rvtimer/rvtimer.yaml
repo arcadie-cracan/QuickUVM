@@ -70,29 +70,28 @@ register_model:
   csr_tests: [hw_reset, bit_bash, rw]
 
 analysis:
-  coverage: [host]
+  # V1 — config-driven functional coverage as a RICH coverage entry: which register
+  # is accessed, read vs write, and the cross (was every register both read and
+  # written?). Routing + covergroup content in one place.
+  coverage:
+    - agent: host
+      goal: 90
+      coverpoints:
+        - field: addr
+          bins:
+            - {name: ctrl,        value: 0}
+            - {name: cfg,         value: 2}
+            - {name: mtimecmp,    value: 4}
+            - {name: intr_enable, value: 6}
+            - {name: intr_state,  value: 8}
+        - field: wr
+          bins:
+            - {name: rd, value: 0}
+            - {name: wr, value: 1}
+      crosses:
+        - {name: reg_x_dir, fields: [addr, wr]}
   scoreboards:
     - {name: reg_sb, source: host}   # data-path golden-model check on the register bus
-
-# V1 — config-driven functional coverage: which register is accessed, read vs write,
-# and the cross (was every register both read and written?).
-coverage_models:
-  - agent: host
-    goal: 90
-    coverpoints:
-      - field: addr
-        bins:
-          - {name: ctrl,        value: 0}
-          - {name: cfg,         value: 2}
-          - {name: mtimecmp,    value: 4}
-          - {name: intr_enable, value: 6}
-          - {name: intr_state,  value: 8}
-      - field: wr
-        bins:
-          - {name: rd, value: 0}
-          - {name: wr, value: 1}
-    crosses:
-      - {name: reg_x_dir, fields: [addr, wr]}
 
 # R1 — regression + coverage closure. The testlist is derived: the declared tests[]
 # plus the RAL reg_test and one test per C5 csr_tests kind — 5 tests here. rand_test
