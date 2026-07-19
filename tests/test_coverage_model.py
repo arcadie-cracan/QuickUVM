@@ -50,12 +50,18 @@ def _agent():
 
 
 def _cfg(coverage_models=None, agent=None):
+    from quick_uvm.models import AnalysisConfig
+
+    extra = {}
+    if coverage_models:
+        # rich entries live IN analysis.coverage (the fold)
+        extra["analysis"] = AnalysisConfig(coverage=list(coverage_models))
     return ProjectConfig(
         project=ProjectMeta(name="t"),
         dut=DutConfig(name="d", reset="", combinational=True),
         agents=[agent or _agent()],
         tests=[TConf(name="t1")],
-        coverage_models=coverage_models or [],
+        **extra,
     )
 
 
@@ -383,9 +389,12 @@ def test_at_least_below_one_rejected():
         Coverpoint(field="op", at_least=-5)
 
 
-def test_coverage_model_on_uncovered_agent_rejected():
-    # two agents, no analysis block -> only the primary (a0) is covered; a model
-    # on the secondary agent would compile but never be sampled.
+def test_rich_coverage_entry_is_its_own_routing():
+    """The fold made the old orphan case (a model on an unrouted agent)
+    UNREPRESENTABLE: a rich `analysis.coverage` entry hoists both the routing
+    name and the covergroup content, so a model always has its collector."""
+    from quick_uvm.models import AnalysisConfig, ScoreboardSpec
+
     a0 = AgentConfig(
         name="a0",
         interface="a0_if",
@@ -398,15 +407,29 @@ def test_coverage_model_on_uncovered_agent_rejected():
         sequence_item="a1_seq_item",
         ports={"inputs": [PortConfig(name="y", width=1)], "outputs": []},
     )
-    with pytest.raises(Exception, match="not wired for coverage"):
-        ProjectConfig(
-            project=ProjectMeta(name="t"),
-            dut=DutConfig(name="d", reset="", combinational=True),
-            agents=[a0, a1],
-            tests=[TConf(name="t1")],
-            coverage_models=[
-                CoverageModel(agent="a1", coverpoints=[Coverpoint(field="y")])
+    cfg = ProjectConfig(
+        project=ProjectMeta(name="t"),
+        dut=DutConfig(name="d", reset="", combinational=True),
+        agents=[a0, a1],
+        tests=[TConf(name="t1")],
+        analysis=AnalysisConfig(
+            coverage=[
+                "a0",
+                CoverageModel(agent="a1", coverpoints=[Coverpoint(field="y")]),
             ],
+            scoreboards=[ScoreboardSpec(name="sbd", source="a0")],
+        ),
+    )
+    assert cfg.analysis.coverage == ["a0", "a1"]  # the rich entry routed itself
+    assert [m.agent for m in cfg.coverage_models] == ["a1"]
+
+
+def test_direct_analysis_coverage_models_key_rejected():
+    from quick_uvm.models import AnalysisConfig
+
+    with pytest.raises(Exception, match="internal"):
+        AnalysisConfig.model_validate(
+            {"coverage_models": [{"agent": "x", "coverpoints": [{"field": "f"}]}]}
         )
 
 

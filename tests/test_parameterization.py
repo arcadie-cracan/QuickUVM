@@ -185,12 +185,16 @@ def test_param_agent_rejects_dpi_c_reference_model():
 
 
 def test_param_agent_rejects_coverage_model():
+    from quick_uvm.models import AnalysisConfig
+
     with pytest.raises(Exception, match="covergroups need concrete"):
         _cfg(
             [_param_ag()],
-            coverage_models=[
-                CoverageModel(agent="io", coverpoints=[Coverpoint(field="din")])
-            ],
+            analysis=AnalysisConfig(
+                coverage=[
+                    CoverageModel(agent="io", coverpoints=[Coverpoint(field="din")])
+                ]
+            ),
         )
 
 

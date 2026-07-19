@@ -45,44 +45,49 @@ tests:
 # coverage on the carry. (See examples/packet for enforceable illegal_bins, which
 # need a field whose illegal values are storable — an enum coverpoint can only bin
 # its own labels.)
-coverage_models:
-  - agent: alu
-    goal: 90                            # option.goal — closure target (percent)
-    coverpoints:
-      - field: op                       # enum -> auto one bin per opcode, plus:
-        ignore_bins:
-          - {name: slt_wip, value: 7}          # SLT (op 7) out of scope this regression
-      - field: a
-        bins:
-          - {name: zero, value: 0}
-          - {name: max,  value: 255}
-          - {name: mid,  range: [1, 254]}
-      - field: b
-        bins:
-          - {name: zero, value: 0}
-          - {name: max,  value: 255}
-          - {name: mid,  range: [1, 254]}
-      - field: carry                    # 1-bit output: bins + toggle transitions
-        bins:
-          - {name: lo, value: 0}
-          - {name: hi, value: 1}
-        transitions:
-          - {name: rise, seq: "0 => 1"}
-          - {name: fall, seq: "1 => 0"}
-      - field: result                   # 8-bit output auto-binned into 16 buckets
-        auto_bin_max: 16
-    crosses:
-      - [op, a]
-      - [op, b]
-      # binsof selection: a named, refined cross that counts only ADD at the
-      # zero/max operand corners, and ignores the bulk mid-range — focusing
-      # closure on the interesting combinations.
-      - name: add_corners
-        fields: [op, a]
-        bins:
-          - name: add_at_corner
-            select: "binsof(op_cp) intersect {ADD} && !binsof(a_cp.mid)"
-          - {name: skip_mid, kind: ignore_bins, select: "binsof(a_cp.mid)"}
+# The rich coverage entry declares routing + covergroup content in one place;
+# the explicit scoreboard keeps today's single-stream data-path check.
+analysis:
+  coverage:
+    - agent: alu
+      goal: 90                            # option.goal — closure target (percent)
+      coverpoints:
+        - field: op                       # enum -> auto one bin per opcode, plus:
+          ignore_bins:
+            - {name: slt_wip, value: 7}          # SLT (op 7) out of scope this regression
+        - field: a
+          bins:
+            - {name: zero, value: 0}
+            - {name: max,  value: 255}
+            - {name: mid,  range: [1, 254]}
+        - field: b
+          bins:
+            - {name: zero, value: 0}
+            - {name: max,  value: 255}
+            - {name: mid,  range: [1, 254]}
+        - field: carry                    # 1-bit output: bins + toggle transitions
+          bins:
+            - {name: lo, value: 0}
+            - {name: hi, value: 1}
+          transitions:
+            - {name: rise, seq: "0 => 1"}
+            - {name: fall, seq: "1 => 0"}
+        - field: result                   # 8-bit output auto-binned into 16 buckets
+          auto_bin_max: 16
+      crosses:
+        - [op, a]
+        - [op, b]
+        # binsof selection: a named, refined cross that counts only ADD at the
+        # zero/max operand corners, and ignores the bulk mid-range — focusing
+        # closure on the interesting combinations.
+        - name: add_corners
+          fields: [op, a]
+          bins:
+            - name: add_at_corner
+              select: "binsof(op_cp) intersect {ADD} && !binsof(a_cp.mid)"
+            - {name: skip_mid, kind: ignore_bins, select: "binsof(a_cp.mid)"}
+  scoreboards:
+    - {name: sbd, source: alu}
 
 # R1 — regression + coverage closure. `make -C gen regress` elaborates the bench
 # once, runs the testlist x seeds against that snapshot, verdicts each run from the

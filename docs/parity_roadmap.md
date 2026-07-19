@@ -560,6 +560,14 @@ window) and `analysis.coverage` are fenced fail-closed on a composition (cross-b
 in-order two-stream this slice — the fence is the lift path for OoO/windowed cross-block
 checking later). The old key errors with a move hint; generated output is BYTE-IDENTICAL
 (the internal machinery is unchanged — the router populates it from the new spelling).
+**Part 3 — `coverage_models` folded INTO `analysis.coverage`**: an entry is a bare
+agent NAME (skeleton collector) or a RICH `{agent, coverpoints, crosses, goal}` entry
+declaring routing + covergroup content in one place. The old orphan wall ("model but
+not wired for coverage") became STRUCTURAL — a rich entry is its own routing, so an
+unwired model is unrepresentable. The vip fence sharpened: rich coverage entries ship
+in the agent package (allowed); bare names are env routing (fenced). hmac/odbus/
+rvtimer migrated content-in-place (byte-identical); alu/packet went explicit (the
+known one-file cov-handle env diff, re-simmed green).
 **Part 2 — `reference_model` moved ONTO the scoreboard entry** (`analysis.scoreboards:
 [{..., reference_model: {language: c}}]`): the top-level knob looked bench-global but
 governed exactly one predict() body — the generator bypassed it for multi-sb/instance

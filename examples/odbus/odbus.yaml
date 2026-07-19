@@ -39,26 +39,25 @@ agents:
         - {name: sda, width: 1, open_drain: true, pullup: true}
 
 analysis:
-  coverage: [bus]
+  coverage:
+      - agent: bus
+        coverpoints:
+          - field: sda_oe
+            bins:
+              - {name: released, value: 0}
+              - {name: driving,  value: 1}
+          - field: dut_low
+            bins:
+              - {name: dut_released, value: 0}
+              - {name: dut_low,      value: 1}
+        crosses:
+          # the interesting cell: BOTH pulling low at once — legal, and must not produce X
+          - {name: contention, fields: [sda_oe, dut_low]}
   scoreboards:
     # Checks the WIRED-AND contract itself: the resolved line is low iff SOMEBODY pulls it
     # low, and reads 1 (never X) when everyone releases.
     - {name: sb, source: bus}
 
-coverage_models:
-  - agent: bus
-    coverpoints:
-      - field: sda_oe
-        bins:
-          - {name: released, value: 0}
-          - {name: driving,  value: 1}
-      - field: dut_low
-        bins:
-          - {name: dut_released, value: 0}
-          - {name: dut_low,      value: 1}
-    crosses:
-      # the interesting cell: BOTH pulling low at once — legal, and must not produce X
-      - {name: contention, fields: [sda_oe, dut_low]}
 
 tests:
   - {name: rand_test, num_items: 60}

@@ -63,6 +63,10 @@ def _agent(name, pfx="", **kw):
 
 
 def _cfg(**over):
+    cms = over.pop("coverage_models", None)
+    if cms:
+        # rich entries live IN analysis.coverage (the fold)
+        over["analysis"] = AnalysisConfig(coverage=list(cms))
     base = dict(
         project=ProjectMeta(name="t", author="a", year=2026),
         dut=DutConfig(name="t_dut"),

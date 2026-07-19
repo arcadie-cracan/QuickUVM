@@ -188,21 +188,22 @@ def test_coverage_may_target_the_synthesised_fields(tmp_path):
     shared bus — refusing to cover it would make the feature half-useless."""
     cfg = _gen(
         tmp_path,
-        analysis={"coverage": ["bus"]},
-        coverage_models=[
-            {
-                "agent": "bus",
-                "coverpoints": [
-                    {
-                        "field": "sda_oe",
-                        "bins": [
-                            {"name": "released", "value": 0},
-                            {"name": "driving", "value": 1},
-                        ],
-                    }
-                ],
-            }
-        ],
+        analysis={
+            "coverage": [
+                {
+                    "agent": "bus",
+                    "coverpoints": [
+                        {
+                            "field": "sda_oe",
+                            "bins": [
+                                {"name": "released", "value": 0},
+                                {"name": "driving", "value": 1},
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
     )
     assert "sda_oe" in cfg.agents[0].coverable_fields
     cov = (tmp_path / "bus_cov.svh").read_text()
