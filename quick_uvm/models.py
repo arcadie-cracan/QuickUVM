@@ -4454,6 +4454,25 @@ class ProjectConfig(_SchemaModel):
         return f"{self.dut.name}_vseq"
 
     @property
+    def unchecked_stimulus_agents(self) -> list[str]:
+        """Checking must scale with stimulus. When the auto virtual sequence fires
+        (>=2 stimulus agents, the default), EVERY stimulus agent is driven in
+        parallel — but the default analysis wiring scoreboards only the PRIMARY
+        agent, so the others are driven and never checked: a green bench with an
+        unverified agent, the silent-pass shape one agent over from the
+        UNFILLED_PREDICTOR fatal that guards agent #1. Refusing here would tax the
+        simple case (two agents must still just work), so — the UNFILLED_PREDICTOR
+        pattern at proportionate severity — the generated env raises a loud
+        UNCHECKED_AGENT uvm_warning per listed agent instead. Declaring any
+        `analysis:` block (even primary-only) is the explicit routing that
+        silences it. Empty for every committed example (all multi-agent examples
+        declare `analysis:`), so this is byte-identical where it does not apply."""
+        if self.auto_vseq_name is None or self.analysis is not None:
+            return []
+        primary = self.agents[0].name
+        return [a.name for a in self.stimulus_agents if a.name != primary]
+
+    @property
     def instance_views(self) -> list[InstanceView]:
         """C3 — the per-instantiation views (env/top/scoreboard) for agents that
         declare `instances`; empty when none do (the legacy per-agent wiring is
