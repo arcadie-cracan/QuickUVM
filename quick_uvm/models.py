@@ -3616,13 +3616,32 @@ class ProjectConfig(_SchemaModel):
                 "ProjectConfig.from_yaml (it reads each VIP manifest relative to "
                 "the config file); a bare model_validate cannot resolve them."
             )
-        if self.is_vip and (
-            self.subenvs or self.register_model is not None or self.connections
-        ):
-            raise ValueError(
-                "`kind: vip` emits only reusable agent packages — it must not set "
-                "`subenvs` / `register_model` / `connections`."
-            )
+        if self.is_vip:
+            # The fence covers EVERY section the vip path drops (it emits only the
+            # agent packages + manifest) — a section listed here would be validated
+            # and then silently vanish from the output. coverage_models is NOT
+            # fenced: it renders into the agent's <ag>_cov.svh, part of the package.
+            dropped = {
+                "subenvs": bool(self.subenvs),
+                "register_model": self.register_model is not None,
+                "connections": bool(self.connections),
+                # tests DEFAULTS to [test1] (simple-by-default) — fence only a
+                # user-declared test list, i.e. anything but the untouched default.
+                "tests": self.tests != [TestConfig(name="test1")],
+                "analysis": self.analysis is not None,
+                "probes": bool(self.probes),
+                "virtual_sequences": bool(self.virtual_sequences),
+                "regress": self.regress is not None,
+                "subenv_scoreboards": bool(self.subenv_scoreboards),
+            }
+            offending = sorted(k for k, v in dropped.items() if v)
+            if offending:
+                raise ValueError(
+                    f"`kind: vip` emits only reusable agent packages + a manifest — "
+                    f"these sections would be silently dropped from the output: "
+                    f"{offending}. Move them to the consuming bench (`agent_refs:`) "
+                    f"or the selftest (`kind: selftest`)."
+                )
         agent_name_set = set(names)
         if self.analysis is not None:
             agent_names = set(names)
@@ -3728,6 +3747,23 @@ class ProjectConfig(_SchemaModel):
                 raise ValueError(
                     f"register_model.bus_agent references unknown agent "
                     f"'{self.register_model.bus_agent}'."
+                )
+            # The RAL front door drives reg.read()/write() items through the bus
+            # agent's SEQUENCER — the same door tests[].sequence and vseq steps
+            # guard: a responder's sequencer is owned by its forever responder
+            # sequence, so RAL items there would clobber the computed responses and
+            # the device would answer garbage while the bench reported PASS.
+            ral_ag = next(
+                a for a in self.agents if a.name == self.register_model.bus_agent
+            )
+            if ral_ag.is_responder and not ral_ag.is_proactive:
+                raise ValueError(
+                    f"register_model.bus_agent targets RESPONDER agent "
+                    f"'{ral_ag.name}'. Its sequencer is owned by its forever "
+                    f"responder sequence — RAL front-door items would clobber the "
+                    f"computed responses, and the device would answer garbage while "
+                    f"the bench reported PASS. Use an initiator (or `proactive: "
+                    f"true` hybrid) agent as the register bus master."
                 )
         # C3 — multi-instantiation (`instances`) is a focused slice: one parameterized
         # agent, instantiated N times, each with its own interface/DUT/scoreboard.
@@ -4048,6 +4084,19 @@ class ProjectConfig(_SchemaModel):
                     f"test '{t.name}': sequence '{sel.name}' is a nested "
                     f"sequence-of-sequences and has no item count to override — set "
                     f"count on its steps instead."
+                )
+            # The multi-instance test body (C3 `instances` / `count: N`) starts each
+            # replica's DEFAULT sequence — it does not consult the selector, so the
+            # selector would be validated and then silently dropped (the test would
+            # run a different sequence than the one it names, and pass). Fail closed
+            # until per-replica selection is a real feature.
+            if sel_agent.instances or sel_agent.count > 1:
+                raise ValueError(
+                    f"test '{t.name}': a `sequence` selector is not supported on a "
+                    f"multi-instance agent ('{sel.agent}' has "
+                    f"{'`instances`' if sel_agent.instances else '`count` > 1'}) — "
+                    f"the per-replica test body starts each replica's default "
+                    f"sequence and would silently ignore the selector."
                 )
         # C2 — virtual sequences
         agents_by_name = {a.name: a for a in self.agents}
