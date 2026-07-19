@@ -18,6 +18,9 @@ package {{ dut.name }}_test_pkg;
 {% for pkg in leaf_agent_pkgs %}
   import {{ pkg }}::*;
 {% endfor %}
+{% for agent in boundary_agents %}
+  import {{ agent.name }}_pkg::*;
+{% endfor %}
 {% for level in composition_levels %}
 {% if level.subenv_scoreboards %}
 

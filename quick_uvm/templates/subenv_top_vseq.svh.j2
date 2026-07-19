@@ -29,6 +29,9 @@ class {{ dut.name }}_vseq extends {{ dut.name }}_base_vseq;
 {% endfor %}
 {% endif %}
 {% endfor %}
+{% for agent in boundary_agents if agent.active %}
+    {{ agent.default_seq_name }} {{ agent.name }}_seq_h;
+{% endfor %}
 
 {% for sv in subenvs %}
 {% if sv.is_subsystem %}
@@ -40,6 +43,9 @@ class {{ dut.name }}_vseq extends {{ dut.name }}_base_vseq;
     {{ sv.name }}_{{ agent.name }}_seq = {{ agent.default_seq_name }}{{ agent.param_args_values }}::type_id::create("{{ sv.name }}_{{ agent.name }}_seq");
 {% endfor %}
 {% endif %}
+{% endfor %}
+{% for agent in boundary_agents if agent.active %}
+    {{ agent.name }}_seq_h = {{ agent.default_seq_name }}::type_id::create("{{ agent.name }}_seq_h");
 {% endfor %}
     // pragma quickuvm custom vseq_body_pre begin
     // pragma quickuvm custom vseq_body_pre end
@@ -55,6 +61,9 @@ class {{ dut.name }}_vseq extends {{ dut.name }}_base_vseq;
       {{ sv.name }}_{{ agent.name }}_seq.start(p_sequencer.{{ sv.name }}_{{ agent.name }}_sqr);
 {% endfor %}
 {% endif %}
+{% endfor %}
+{% for agent in boundary_agents if agent.active %}
+      {{ agent.name }}_seq_h.start(p_sequencer.{{ agent.name }}_sqr);
 {% endfor %}
     join
     // pragma quickuvm custom vseq_body_post begin

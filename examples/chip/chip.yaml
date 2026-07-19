@@ -1,0 +1,41 @@
+# chip — H2 BOUNDARY AGENTS: a subsystem with its own top-level agent.
+#
+# The chip-level UVM shape: block envs INSIDE (add -> inv, the pipe pipeline), a
+# chip-boundary agent OUTSIDE (`host`) driving the subsystem's external input —
+# declared in `agents:` alongside `subenvs:`. Connections may now use the agent as
+# an endpoint in either direction:
+#   host.hin  -> add.din   (the agent DRIVES the subsystem input)
+#   inv.dout  -> host.resp (the agent SAMPLES the subsystem output)
+# and a cross-block scoreboard may use the BARE agent name as an endpoint:
+#   e2e: source=host (what was sent), monitor=inv.b (what came out) —
+# the end-to-end check: inv.dout == ~(host.hin + 1).
+project: {name: chip, author: QuickUVM, year: 2026}
+
+layout: packaged
+
+dut: {name: chip, clock: clk, reset: '', combinational: true}
+
+clock: {period: 10, unit: ns}
+
+agents:
+  - name: host
+    interface: host_if
+    sequence_item: host_seq_item
+    ports:
+      inputs:  [{name: hin,  width: 8}]   # driven: the subsystem's external input
+      outputs: [{name: resp, width: 8}]   # sampled: the subsystem's response
+
+subenvs:
+  - {name: add, config: add/add.yaml}
+  - {name: inv, config: inv/inv.yaml}
+
+connections:
+  - {from: host.hin,  to: add.din}
+  - {from: add.dout,  to: inv.din}
+  - {from: inv.dout,  to: host.resp}
+
+subenv_scoreboards:
+  - {name: e2e, source: host, monitor: inv.b}
+
+tests:
+  - {name: chip_test}

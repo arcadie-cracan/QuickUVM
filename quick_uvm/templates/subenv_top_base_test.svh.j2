@@ -49,6 +49,16 @@ class {{ dut.name }}_base_test extends uvm_test;
 {% endif %}
 {% endfor %}
 
+{% for agent in boundary_agents %}
+
+    // H2 — boundary agent: {{ agent.name }}
+    env_cfg.{{ agent.name }}_cfg_h = {{ agent.name }}_cfg::type_id::create("{{ agent.name }}_cfg");
+    env_cfg.{{ agent.name }}_cfg_h.is_active = UVM_{{ "ACTIVE" if agent.active else "PASSIVE" }};
+    if (!uvm_config_db#(virtual {{ agent.interface }})::get(
+          this, "", "{{ agent.interface }}_vif", env_cfg.{{ agent.name }}_cfg_h.vif))
+      `uvm_fatal("NOVIF",
+                 "No virtual interface '{{ agent.interface }}_vif' in config DB (see {{ top_name }}.sv)")
+{% endfor %}
     uvm_config_db#({{ dut.name }}_env_cfg)::set(this, "e", "env_cfg", env_cfg);
     e = {{ dut.name }}_env::type_id::create("e", this);
     // pragma quickuvm custom build_phase_additional begin

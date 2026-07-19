@@ -22,6 +22,9 @@ class {{ dut.name }}_virtual_sequencer extends uvm_sequencer;
 {% endfor %}
 {% endif %}
 {% endfor %}
+{% for agent in boundary_agents if agent.active %}
+  {{ agent.name }}_sequencer {{ agent.name }}_sqr;
+{% endfor %}
 
   function new (string name, uvm_component parent);
     super.new(name, parent);

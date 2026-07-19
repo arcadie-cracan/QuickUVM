@@ -533,6 +533,23 @@ checks are independent. So the two structural alert_handler gaps *compose* into 
 what remains is protocol depth in seams, not primitives. See
 [`alert_array_assessment.md`](alert_array_assessment.md).
 
+### H2 — Boundary agents (top-level agents in a composition) — DONE
+A subsystem top may declare its own `agents:` alongside `subenvs:` — the chip-level
+UVM shape (block envs inside, chip-boundary agents outside; OpenTitan's `chip_env`
+topology). The agent is a first-class endpoint: `connections:` wire it in either
+direction (`from: <agent>.<port>` = a port it DRIVES, its `inputs`; `to:` = a port it
+SAMPLES), and `subenv_scoreboards:` accept the BARE agent name as source/monitor (the
+agent's analysis port lives on the top env — empty handle chain). The top vseq drives
+active boundary agents concurrently with the blocks; the boundary agent's package is
+generated exactly like a flat packaged bench's (same specs + ctx, byte-identical
+however hosted). A boundary stimulus agent no cross-block scoreboard touches raises
+UNCHECKED_AGENT at elaboration (checking scales with stimulus). Fail-closed this
+slice: no responder / parameterized / replicated boundary agents; only the TOP level
+may declare them (a nested subsystem may not). Built + mutation-proved on
+`examples/chip/` (host → add → inv → host.resp, e2e scoreboard sourced from the
+boundary stream): wrong e2e model → only e2e fails; corrupt `add` → add's sb + e2e
+fail while inv's stays green.
+
 ### H1 — Sub-environments — DONE (first slice)
 `subenvs:`; nest child env packages + configs + param propagation. Depends F1/F2/C1/C3.
 **Accept:** a subsystem env composes ≥2 block envs. ✅
@@ -552,8 +569,9 @@ what remains is protocol depth in seams, not primitives. See
   real DUT. Each block keeps its own scoreboard checking its own DUT.
 - **Opt-in: a bench with no `subenvs` is byte-identical** (a dedicated composition path;
   the ordinary-bench flow is untouched). Fail-closed guards: `subenvs` require
-  `layout: packaged`, no own `agents`, ≥2 blocks, unique subenv names, and (this slice)
-  no nested subenvs / register-model child.
+  `layout: packaged`, ≥2 blocks, unique subenv names, and (this slice) no
+  register-model child. *(The original "no own agents" guard was lifted by H2 —
+  boundary agents — below.)*
 - Validated on `examples/soc/`: one subsystem composing an `adder` block (dout=din+1)
   and an `inverter` block (dout=~din), driven concurrently by the top vseq — **31/31 on
   each block's scoreboard on Xcelium** (0 errors). verible-lint-clean; CI gates it.

@@ -1,13 +1,10 @@
 // Top (subsystem) test package filelist (H1): every composed block's env
 // package, then the top test package. Paths are relative to this gen/ dir.
 +incdir+.
-{% for pkg in leaf_env_pkgs %}
--f {{ pkg }}.f
-{% endfor %}
-{% for agent in boundary_agents %}
--f {{ agent.name }}_pkg.f
-{% endfor %}
+-f add_env_pkg.f
+-f inv_env_pkg.f
+-f host_pkg.f
 // Extra top test sources (preserved on regen):
 // pragma quickuvm custom test_pkg_extra_files begin
 // pragma quickuvm custom test_pkg_extra_files end
-{{ dut.name }}_test_pkg.sv
+chip_test_pkg.sv
