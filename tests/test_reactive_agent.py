@@ -243,7 +243,9 @@ def test_rejects_request_ready_without_request_fifo():
     """request_ready only affects the request-publish, which prefetch/combinational lack —
     it would be a silent no-op there, so reject it fail-closed."""
     a = {**_BASE["agents"][0], "respond": "prefetch", "request_ready": "gnt"}
-    with pytest.raises(ValidationError, match="needs `respond: on_request` or `pipelined`"):
+    with pytest.raises(
+        ValidationError, match="needs `respond: on_request` or `pipelined`"
+    ):
         ProjectConfig.model_validate({**_BASE, "agents": [a]})
 
 
