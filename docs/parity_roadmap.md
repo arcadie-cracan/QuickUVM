@@ -827,6 +827,12 @@ and is the long pole for campaign target **T2** (`spi_host`).
   handshake, unified read+write agent, atomics) is scoped slice-by-slice in
   [`axi_epic_assessment.md`](axi_epic_assessment.md) — the remaining deep gap is the *unified*
   multi-channel agent (slice 4), left as a deliberate design decision, not built speculatively.
+- *AXI read bursts `ARLEN > 0` — DONE as an example* (the AXI epic, slice 2): multi-beat `R` bursts
+  (`ARLEN+1` beats, `RLAST` on the last) — the capability single-beat `axi_read` did not exercise.
+  Driven entirely in the **driver seam** (the response item carries `arlen`; the driver loops the
+  extra beats, `araddr + i` memory model), no framework change. Built + mutation-proved on
+  `examples/axi_read_burst/` (too few beats → stranded; wrong `RLAST` → framing; wrong data →
+  mismatch); one read outstanding at a time to isolate bursts from out-of-order.
 - *Hybrid (initiator + responder) `proactive: true` — DONE* (the alert_handler I-7 gap). A
   responder that ALSO accepts proactive TB stimulus: an alert-sender answers the DUT's pings AND
   spontaneously raises alerts. The agent stays a responder (the env forks its responder sequence)

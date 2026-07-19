@@ -1,0 +1,56 @@
+# BURST read responder — the AXI epic, slice 2: multi-beat R bursts (AR -> R, ARLEN+1 beats).
+#
+# The DUT is an AXI-read MASTER that issues BURST reads (one AR carries a length ARLEN); the
+# testbench is the SLAVE that answers each with ARLEN+1 R data beats, RLAST on the last. The new
+# capability over examples/axi_read (single-beat) is DRIVING a multi-beat burst — done in the
+# driver seam (the response item carries arlen; the driver loops arlen extra beats). One read is
+# outstanding at a time here, to isolate bursts from out-of-order (axi_read's axis).
+
+project:
+  name: axi_read_burst_tb
+  author: qa@example.com
+
+dut:
+  name: axi_read_burst
+  clock: clk
+  reset: rst_n
+  external_reset: true
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: rd
+    interface: rd_if
+    sequence_item: rd_item
+    seq_item_style: manual
+    active: true
+
+    mode: responder
+    request_valid: arvalid
+    respond: pipelined
+    reorder_by: arid
+
+    ports:
+      inputs:
+        - {name: rvalid, width: 1,  randomize: true}
+        - {name: rid,    width: 4,  randomize: true}
+        - {name: rdata,  width: 32, randomize: true}
+        - {name: rlast,  width: 1,  randomize: true}
+      outputs:
+        - {name: arvalid, width: 1}
+        - {name: arid,    width: 4}
+        - {name: araddr,  width: 32}
+        - {name: arlen,   width: 8}
+
+analysis:
+  coverage: []
+  scoreboards: []
+
+tests:
+  - {name: rand_test, num_items: 120}
+
+regress:
+  seeds: 2
+  filelist: ../sim/xrun.f

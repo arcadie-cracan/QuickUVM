@@ -31,10 +31,10 @@ The two transaction types decompose cleanly into a **read agent** (`AR → R`, o
 | 0 | Read channel `AR → R`, multi-outstanding, OoO by id | [`axi_read`](../examples/axi_read/) | ✅ green | `respond: pipelined` + `reorder_by` (T6 feature) |
 | — | Reorder policy (priority / round-robin) | [`axi_reorder`](../examples/axi_reorder/) | ✅ green | `reorder_policy` |
 | 1 | **Write channel `AW + W → B`**, OoO by id | [`axi_write`](../examples/axi_write/) | ✅ green | **monitor AW→W order-correlation seam** (no framework change) |
-| 2 | Bursts (`AxLEN > 0`, multi-beat `W`/`R`, `xLAST`) | — | ○ next | monitor beat-counting seam (likely no framework change) |
-| 3 | Ready-handshake backpressure (`AxREADY`/`xREADY`) | — | ○ | a driven+sampled handshake per channel — **needs study** |
+| 2 | **Bursts (`ARLEN > 0`, multi-beat `R`, `RLAST`)** | [`axi_read_burst`](../examples/axi_read_burst/) | ✅ green | **driver-seam multi-beat drive** (no framework change) |
+| 3 | Ready-handshake backpressure (`AxREADY`/`xREADY`) | — | ○ next | a driven+sampled handshake per channel — **needs study** |
 | 4 | Unified read **and** write in one `axi` agent | — | ○ | **the deep gap** — two request streams (`AR`+`AW`) in one agent |
-| 5 | Exclusive / atomic access, cross-agent glue | — | ○ | two-agent build + glue (full VIP) |
+| 5 | Bursts × out-of-order (interleaved `R`/`B` beats), exclusive/atomic access | — | ○ | two-agent build + glue (full VIP) |
 
 ## The write channel (slice 1) — the finding that matters
 
@@ -75,6 +75,27 @@ Is cross-id **write** reordering even legal? Yes — `BID` exists precisely to a
 mirror of `RID`. It is *less common* than read reordering (many slaves commit writes in order),
 so `axi_write` demonstrates the **capability**; a purely in-order write slave is the trivial
 sub-case (drop `reorder_by`).
+
+## Bursts (slice 2) — a multi-beat response, driver-seam only
+
+`axi_read` drives exactly one `R` beat per request; a burst is `ARLEN+1` beats with `RLAST` on
+the last. That is expressed entirely in the **driver seam**: the response item already carries
+`arlen`, so the driver loops the extra beats (data from an `araddr + i` memory model, `RLAST` on
+the final beat). No framework change again — the second epic slice, like the first, is a pure
+example. [`axi_read_burst`](../examples/axi_read_burst/) issues bursts of 1/4/2/3 beats and checks
+per beat (id, data, `RLAST` framing); mutation-proved three ways (too few beats → stranded; wrong
+`RLAST` → framing error; wrong data → mismatch). It keeps one read outstanding at a time to
+isolate the burst axis from out-of-order — their **interleaving** (R beats of different ids
+intermixed) is deferred to slice 5.
+
+Adversarial review earned one fix here: the burst checks first lived only in the DUT `$error`,
+which the **UVM-severity-based** regression verdict cannot see — so `make regress` reported PASS
+on a broken burst. The fix is a **UVM burst oracle in the monitor**: it re-derives the expected
+`R`-beat sequence from the observed `AR` and raises `uvm_error` on a wrong beat/`RLAST`/count (a
+`check_phase` catches a stranded burst that end-of-test detection would otherwise miss). Now each
+mutation flips the automated verdict to FAIL. The recurring lesson: a passing test is only proof
+if the thing that would fail is visible to the *automated gate*, not just to a human reading the
+log.
 
 ## Where the real framework gap still is (slices 3–5)
 
