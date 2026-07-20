@@ -61,6 +61,10 @@ module {{ top_name }};
   {{ agent.interface }}{{ agent.param_args_values }} {{ agent.interface }}_inst (.clk({{ agent_clocks[agent.name] }}){% if agent_resets[agent.name] %}, .{{ agent_resets[agent.name].name }}({{ agent_resets[agent.name].name }}){% endif %});
 {% endfor %}
 
+{% if dut.unverified_ports %}
+  // Deliberately UNVERIFIED DUT ports (dut.unverified_ports) — out of verification
+  // scope, left unconnected on purpose: {{ dut.unverified_ports | join(', ') }}
+{% endif %}
   // pragma quickuvm custom dut_connections begin
   // Instantiate DUT — per-domain clocks/resets + interface signals. Edit for real RTL
   // (the DUT's clock/reset port names are assumed to match the domain names).
@@ -114,6 +118,10 @@ module {{ top_name }};
 {% endfor %}
 {% endif %}
 
+{% if dut.unverified_ports %}
+  // Deliberately UNVERIFIED DUT ports (dut.unverified_ports) — out of verification
+  // scope, left unconnected on purpose: {{ dut.unverified_ports | join(', ') }}
+{% endif %}
   // pragma quickuvm custom dut_connections begin
 {% if has_instances and shared_dut %}
   // I-9 — ONE DUT with VECTORED ports: replica i drives/samples bit i of each port

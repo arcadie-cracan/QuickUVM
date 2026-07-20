@@ -1595,6 +1595,24 @@ class DutConfig(_SchemaModel):
     # dedicated monitor clocking block. The cadence period (clock.period) must
     # exceed the DUT's combinational settling time.
     combinational: bool = False
+    # DUT ports deliberately OUT OF verification scope (a port-coverage waiver:
+    # scan/test/debug pins the bench leaves unconnected on purpose). The generator
+    # cannot know the RTL's full portlist, so the names are not checked against it —
+    # but a waived port that an agent also connects is a contradiction and is
+    # rejected. Rendered as a comment above dut_inst so the intent survives into
+    # the bench; RTL-aware tooling (QuickUVM Architect) reads it to silence
+    # port-not-covered diagnostics.
+    unverified_ports: list[str] = Field(default_factory=list)
+
+    @field_validator("unverified_ports")
+    @classmethod
+    def _check_unverified_ports(cls, v: list[str]) -> list[str]:
+        for p in v:
+            _check_sv_identifier(p, "unverified_ports entry")
+        dupes = sorted({p for p in v if v.count(p) > 1})
+        if dupes:
+            raise ValueError(f"unverified_ports has duplicate entries: {dupes}.")
+        return v
 
 
 # M1 mixed-unit — SI time-unit magnitudes relative to fs, for resolving a single
@@ -3776,6 +3794,39 @@ class ProjectConfig(_SchemaModel):
                 f"probes span multiple clock domains {sorted(set_clocks)} — the probe "
                 f"interface has ONE clocking block for now; put them on a single "
                 f"`clock:` (multi-domain probes are a follow-up)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_unverified_ports(self) -> ProjectConfig:
+        """A waiver names a port the bench deliberately does NOT touch — so a waived
+        port that an agent connects, or the DUT's own clock/reset, is a
+        contradiction, not a waiver."""
+        if not self.dut.unverified_ports:
+            return self
+        owner: dict[str, str] = {}
+        for a in self.agents:
+            for _kind, port in a.all_ports:
+                owner.setdefault(port.name, a.name)
+        for c in self.effective_clocks:
+            owner.setdefault(c.name, "")
+        for r in self.effective_resets:
+            owner.setdefault(r.name, "")
+        owner.setdefault(self.dut.clock, "")
+        if self.dut.reset:
+            owner.setdefault(self.dut.reset, "")
+        for p in self.dut.unverified_ports:
+            if p not in owner:
+                continue
+            if owner[p]:
+                raise ValueError(
+                    f"dut.unverified_ports '{p}' is connected by agent '{owner[p]}' — "
+                    f"a port cannot be both verified (an agent drives/monitors it) "
+                    f"and declared unverified. Remove it from one side."
+                )
+            raise ValueError(
+                f"dut.unverified_ports '{p}' is the bench clock/reset net — the "
+                f"bench itself drives it; only DUT data ports can be waived."
             )
         return self
 
