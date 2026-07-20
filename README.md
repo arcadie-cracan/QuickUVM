@@ -116,6 +116,14 @@ dut:
                          # monitor samples inputs+outputs together (0-cycle latency)
                          # race-free via a monitor clocking block. The cadence period
                          # must exceed the DUT's combinational settling time.
+  unverified_ports: [scan_en, test_mode]
+                         # port-coverage waiver: DUT ports deliberately OUT of
+                         # verification scope (scan/test/debug pins). Not checked
+                         # against the RTL (the generator never sees it), but a
+                         # waived port that an agent also connects is rejected.
+                         # Rendered as a comment above dut_inst in tb_top;
+                         # RTL-aware tooling (QuickUVM Architect) reads it to
+                         # silence port-not-covered diagnostics.
 
 clock:
   period: 10
