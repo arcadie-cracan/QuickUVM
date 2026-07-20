@@ -1,5 +1,9 @@
 # QuickUVM parity roadmap (v0.9 → v1.0)
 
+> **Status: COMPLETE — v1.0.0 released** (see `CHANGELOG.md`). Every tier below
+> shipped with a committed, simulating example; this document remains as the
+> record of the route taken.
+
 Goal: make QuickUVM a credible **general-purpose** UVM generator for any digital
 functional-verification project — not just single-block, single-protocol benches —
 while preserving its identity (simplicity + fail-closed pragma preservation).

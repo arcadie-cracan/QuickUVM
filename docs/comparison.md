@@ -4,7 +4,7 @@ A general-purpose comparison: QuickUVM as a generator for **any digital function
 verification project**, not one protocol. Judged against the four pillars of a UVM
 environment — **stimulus, checking, coverage, reuse** — plus registers and infra.
 
-> Status: reflects QuickUVM **v0.10.0**. The capability matrix is kept in sync with the
+> Status: reflects QuickUVM **v1.0.0**. The capability matrix is kept in sync with the
 > shipped feature set; see `parity_roadmap.md` for what is planned and in what order.
 
 ## Tools compared
@@ -35,7 +35,7 @@ QuickUVM's most differentiated capability and the core of its identity.
 
 Legend: ✓ full · ◑ partial / skeleton-only · ✗ none · — n/a
 
-| Dimension | QuickUVM v0.10.0 | UVMF | Doulos | icdk uvmgen | gen_uvm |
+| Dimension | QuickUVM v1.0.0 | UVMF | Doulos | icdk uvmgen | gen_uvm |
 |---|---|---|---|---|---|
 | **Foundations** |
 | Language / templating | Python / Jinja2 | Python / Jinja2 | Perl | Python / Mako | Python |

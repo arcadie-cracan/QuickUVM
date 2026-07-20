@@ -1,5 +1,8 @@
 # QuickUVM
 
+**v1.0.0** — stable release; the schema is frozen with a teaching-error
+deprecation policy. See [CHANGELOG.md](CHANGELOG.md).
+
 A Python/Jinja2 UVM testbench generator based on the
 [Paradigm Works `uvmtb_template`](https://github.com/cliffordcummings/uvmtb_template)
 style (Cliff Cummings / Sunburst Design).
