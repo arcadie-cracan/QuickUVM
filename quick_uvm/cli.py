@@ -4,6 +4,7 @@ QuickUVM CLI — entry point: quick-uvm
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import click
@@ -76,9 +77,10 @@ def main() -> None:
 )
 @click.option(
     "--only",
-    default=None,
+    multiple=True,
     metavar="FILENAME",
-    help="Generate only the specified output filename.",
+    help="Generate only the specified output filename(s). Repeatable — pass "
+    "--only once per file to regenerate one element (see the `manifest` command).",
 )
 @click.option(
     "--allow-drop",
@@ -95,7 +97,7 @@ def generate(
     config: str,
     output: str | None,
     dry_run: bool,
-    only: str | None,
+    only: tuple[str, ...],
     allow_drop: bool,
     no_backup: bool,
 ) -> None:
@@ -107,6 +109,17 @@ def generate(
     click.echo(f"QuickUVM  {__version__}  →  {out_dir.resolve()}")
     if dry_run:
         click.echo("  (dry-run mode — no files written)\n")
+
+    # Warn on any --only value that matches no generated file (a renamed element +
+    # a stale name would otherwise regenerate NOTHING silently).
+    if only:
+        gen._output_dir = out_dir
+        produced = {spec.output for spec in gen.files_to_generate()}
+        for name in only:
+            if name not in produced:
+                click.echo(
+                    f"  [!]  --only '{name}' matches no generated file", err=True
+                )
 
     try:
         results = gen.generate_all(
@@ -246,6 +259,42 @@ def list_cmd(config: str, output: str | None) -> None:
         dest = out_dir / spec.output
         exists = "yes" if dest.exists() else "no "
         click.echo(f"  {spec.template:<38}  {spec.output:<35}  {exists}")
+
+
+# ---------------------------------------------------------------------------
+# manifest
+# ---------------------------------------------------------------------------
+
+
+@main.command("manifest")
+@click.option(
+    "-c",
+    "--config",
+    required=True,
+    metavar="YAML",
+    help="Path to the project config file.",
+)
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    metavar="DIR",
+    help="Output directory used for the per-file `exists` flags (default: ./tb).",
+)
+def manifest_cmd(config: str, output: str | None) -> None:
+    """Emit a JSON map of config ELEMENT → generated files.
+
+    Groups the would-be-generated files by owning element (`agent:<name>`,
+    `scoreboard:<name>`, `test:<name>`, `vseq:<name>`, `register_model`, `probes`,
+    `vip`) plus an `aggregate` group (the whole-config files — packages, filelists,
+    top, env, clkgen, DUT stub — that must be co-regenerated on any structural
+    add/remove/rename). Powers per-item incremental regen (`generate --only …`) and
+    QuickUVM Architect's "not generated" decorations.
+    """
+    cfg = _load_config(config)
+    gen = Generator(cfg)
+    out_dir = Path(output) if output else None
+    click.echo(json.dumps(gen.manifest(output_dir=out_dir), indent=2))
 
 
 # ---------------------------------------------------------------------------

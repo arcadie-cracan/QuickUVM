@@ -7,12 +7,14 @@ from __future__ import annotations
 import os
 import re
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
+from . import __version__
 from .merger import MergeError, merge
 from .models import AgentConfig, InstanceView, ProjectConfig, ScoreboardSpec, TestConfig
 
@@ -53,6 +55,22 @@ class FileSpec:
     template: str  # name inside quick_uvm/templates/
     output: str  # filename to write in output_dir
     context: dict  # extra context variables for this file
+    # The config ELEMENT this file belongs to, for the `manifest` command (which
+    # powers per-item incremental regen and QuickUVM Architect's "not generated"
+    # decoration). Values: `agent:<name>`, `scoreboard:<name>`, `test:<name>`,
+    # `vseq:<name>`, `register_model`, `probes`, `vip`, or `aggregate` (the
+    # whole-config files — packages, filelists, top, env, clkgen, DUT stub,
+    # Makefile — that reference every element and so must be co-regenerated on any
+    # structural add/remove/rename). Defaults to `aggregate` (the safe, always-
+    # co-regenerated bucket); per-element files are stamped in `files_to_generate`.
+    owner: str = "aggregate"
+
+
+def _own(specs: list[FileSpec], owner: str) -> list[FileSpec]:
+    """Stamp `owner` on every spec and return the list (for inline `extend`)."""
+    for s in specs:
+        s.owner = owner
+    return specs
 
 
 def _next_backup_path(path: Path) -> Path:
@@ -97,6 +115,7 @@ class Generator:
         return {
             **base_ctx,
             "sb_prefix": f"{cfg.dut.name}_{sb.name}",
+            "sb_owner": f"scoreboard:{sb.name}",
             "sb_in_item": in_agent.sequence_item + in_agent.param_args_values,
             "sb_out_item": out_agent.sequence_item + out_agent.param_args_values,
             "sb_in_agent": in_agent,
@@ -130,6 +149,7 @@ class Generator:
         return {
             **base_ctx,
             "sb_prefix": f"{cfg.dut.name}_{iv.name}",
+            "sb_owner": f"scoreboard:{iv.name}",
             "sb_in_item": item,
             "sb_out_item": item,
             "sb_in_agent": iv.agent,
@@ -277,6 +297,15 @@ class Generator:
         sb_multi = cfg.analysis is not None and len(cfg.analysis.scoreboards) >= 2
         base_ctx["sb_multi"] = sb_multi
         base_ctx["sb_prefix"] = cfg.dut.name
+        # manifest owner for the single (or implicit) scoreboard set: its config name
+        # (default "sbd"), NOT the DUT-prefixed filename — Architect keys elements by
+        # the scoreboard's name. Multi-sb / C3 sets override this in their own ctx.
+        _sole_sb_name = (
+            cfg.analysis.scoreboards[0].name
+            if cfg.analysis is not None and cfg.analysis.scoreboards
+            else "sbd"
+        )
+        base_ctx["sb_owner"] = f"scoreboard:{_sole_sb_name}"
         # Windowed scoreboard (opt-in): the sole scoreboard's window, if set. Multi-sb
         # sets it per-set in _sb_set_ctx; here for the single-scoreboard reference model
         # (sb_sets == [base_ctx]). None => the plain predictor (byte-identical unused).
@@ -333,7 +362,9 @@ class Generator:
 
         # ---- per-agent files (interface + TB components) -----------------
         for agent in cfg.generated_agents:
-            specs.extend(self._agent_source_specs(agent, base_ctx))
+            specs.extend(
+                _own(self._agent_source_specs(agent, base_ctx), f"agent:{agent.name}")
+            )
 
         # ---- scoreboard(s) (prefixed by the DUT/block name) --------------
         dut = cfg.dut.name
@@ -356,9 +387,14 @@ class Generator:
             sb_sets = [base_ctx]
         for sbx in sb_sets:
             p = sbx["sb_prefix"]
-            specs.append(FileSpec("sb_predictor.svh.j2", f"{p}_predictor.svh", sbx))
-            specs.append(FileSpec("sb_comparator.svh.j2", f"{p}_comparator.svh", sbx))
-            specs.append(FileSpec("tb_scoreboard.svh.j2", f"{p}_scoreboard.svh", sbx))
+            o = sbx["sb_owner"]
+            specs.append(FileSpec("sb_predictor.svh.j2", f"{p}_predictor.svh", sbx, o))
+            specs.append(
+                FileSpec("sb_comparator.svh.j2", f"{p}_comparator.svh", sbx, o)
+            )
+            specs.append(
+                FileSpec("tb_scoreboard.svh.j2", f"{p}_scoreboard.svh", sbx, o)
+            )
 
         # ---- environment -------------------------------------------------
         specs.append(FileSpec("env_config.svh.j2", f"{dut}_env_cfg.svh", base_ctx))
@@ -366,7 +402,9 @@ class Generator:
 
         # ---- per-agent sequences -----------------------------------------
         for agent in cfg.generated_agents:
-            specs.extend(self._agent_seq_specs(agent, base_ctx))
+            specs.extend(
+                _own(self._agent_seq_specs(agent, base_ctx), f"agent:{agent.name}")
+            )
 
         # ---- C2: virtual sequencer + virtual sequences -------------------
         # `effective_virtual_sequences` = the explicit ones, or an auto-default
@@ -381,7 +419,11 @@ class Generator:
             )
             for vseq in effective_vseqs:
                 vctx = {**base_ctx, "vseq": vseq}
-                specs.append(FileSpec("env_vseq.svh.j2", f"{vseq.name}.svh", vctx))
+                specs.append(
+                    FileSpec(
+                        "env_vseq.svh.j2", f"{vseq.name}.svh", vctx, f"vseq:{vseq.name}"
+                    )
+                )
 
         # ---- tests -------------------------------------------------------
         # A composed child has no test/top of its own — the top bench drives it.
@@ -389,28 +431,39 @@ class Generator:
             specs.append(FileSpec("test_base.svh.j2", f"{dut}_base_test.svh", base_ctx))
             for test in cfg.tests:
                 ctx = {**base_ctx, "test": test}
-                specs.append(FileSpec("test.svh.j2", f"{test.name}.svh", ctx))
+                specs.append(
+                    FileSpec(
+                        "test.svh.j2", f"{test.name}.svh", ctx, f"test:{test.name}"
+                    )
+                )
 
         # ---- register model (optional, front-door) -----------------------
         if cfg.register_model is not None:
+            rm = "register_model"
             specs.append(
                 FileSpec(
-                    "reg_adapter.svh.j2", f"{cfg.register_model.adapter}.svh", base_ctx
+                    "reg_adapter.svh.j2",
+                    f"{cfg.register_model.adapter}.svh",
+                    base_ctx,
+                    rm,
                 )
             )
             if cfg.register_model.coverage:
-                specs.append(FileSpec("reg_cov.svh.j2", f"{dut}_reg_cov.svh", base_ctx))
+                specs.append(
+                    FileSpec("reg_cov.svh.j2", f"{dut}_reg_cov.svh", base_ctx, rm)
+                )
             if cfg.register_model.frontdoor:
                 specs.append(
                     FileSpec(
                         "reg_frontdoor.svh.j2",
                         f"{cfg.register_model.frontdoor}.svh",
                         base_ctx,
+                        rm,
                     )
                 )
             if cfg.register_model.reg_test:
                 specs.append(
-                    FileSpec("reg_test.svh.j2", f"{dut}_reg_test.svh", base_ctx)
+                    FileSpec("reg_test.svh.j2", f"{dut}_reg_test.svh", base_ctx, rm)
                 )
             # C5 — one runnable CSR test per selected kind (UVM built-in reg seqs).
             for csr in cfg.register_model.csr_test_specs:
@@ -419,12 +472,14 @@ class Generator:
                         "csr_test.svh.j2",
                         f"{dut}_csr_{csr['kind']}_test.svh",
                         {**base_ctx, "csr": csr},
+                        rm,
                     )
                 )
 
         # ---- reference model(s): SV predict() body, or DPI-C bridge + C stub (K0).
         # Multi-scoreboard is two-stream → SV only (one predict per pair). C3 multi-
         # instantiation likewise emits one concrete SV predict per instance width.
+        # The reference model belongs to the scoreboard it types (single/multi/C3).
         if sb_multi or cfg.instance_views:
             for sbx in sb_sets:
                 specs.append(
@@ -432,35 +487,46 @@ class Generator:
                         "sb_reference_model.svh.j2",
                         f"{sbx['sb_prefix']}_reference_model.svh",
                         sbx,
+                        sbx["sb_owner"],
                     )
                 )
         elif cfg.reference_model.language == "c":
+            ro = base_ctx["sb_owner"]
             specs.append(
                 FileSpec(
                     "sb_reference_model_dpi.svh.j2",
                     f"{dut}_reference_model.svh",
                     base_ctx,
+                    ro,
                 )
             )
             specs.append(
                 FileSpec(
-                    "sb_reference_model.c.j2", f"{dut}_reference_model.c", base_ctx
+                    "sb_reference_model.c.j2", f"{dut}_reference_model.c", base_ctx, ro
                 )
             )
         else:
             specs.append(
                 FileSpec(
-                    "sb_reference_model.svh.j2", f"{dut}_reference_model.svh", base_ctx
+                    "sb_reference_model.svh.j2",
+                    f"{dut}_reference_model.svh",
+                    base_ctx,
+                    base_ctx["sb_owner"],
                 )
             )
 
         # ---- K2 whitebox probes (opt-in; nothing emitted when empty) ------
         if cfg.probes:
-            specs.append(FileSpec("probe_if.sv.j2", f"{dut}_probe_if.sv", base_ctx))
+            specs.append(
+                FileSpec("probe_if.sv.j2", f"{dut}_probe_if.sv", base_ctx, "probes")
+            )
             if any(p.coverage for p in cfg.probes):
                 specs.append(
                     FileSpec(
-                        "probe_monitor.svh.j2", f"{dut}_probe_monitor.svh", base_ctx
+                        "probe_monitor.svh.j2",
+                        f"{dut}_probe_monitor.svh",
+                        base_ctx,
+                        "probes",
                     )
                 )
 
@@ -471,8 +537,13 @@ class Generator:
             # run.f (the top bench supplies those and composes this env_pkg).
             for agent in cfg.generated_agents:
                 actx = {**base_ctx, "agent": agent}
-                specs.append(FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx))
-                specs.append(FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx))
+                ao = f"agent:{agent.name}"
+                specs.append(
+                    FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx, ao)
+                )
+                specs.append(
+                    FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx, ao)
+                )
             specs.append(FileSpec("env_pkg.sv.j2", f"{dut}_env_pkg.sv", base_ctx))
             specs.append(FileSpec("env_pkg.f.j2", f"{dut}_env_pkg.f", base_ctx))
             return specs
@@ -483,8 +554,13 @@ class Generator:
             # <dut>_test_pkg, each with its own .f filelist.
             for agent in cfg.generated_agents:
                 actx = {**base_ctx, "agent": agent}
-                specs.append(FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx))
-                specs.append(FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx))
+                ao = f"agent:{agent.name}"
+                specs.append(
+                    FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx, ao)
+                )
+                specs.append(
+                    FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx, ao)
+                )
             specs.append(FileSpec("env_pkg.sv.j2", f"{dut}_env_pkg.sv", base_ctx))
             specs.append(FileSpec("env_pkg.f.j2", f"{dut}_env_pkg.f", base_ctx))
             specs.append(FileSpec("test_pkg.sv.j2", f"{dut}_test_pkg.sv", base_ctx))
@@ -576,11 +652,12 @@ class Generator:
         cfg = self.config
         specs: list[FileSpec] = []
         for agent in cfg.generated_agents:
-            specs.extend(self._agent_source_specs(agent, base_ctx))
-            specs.extend(self._agent_seq_specs(agent, base_ctx))
+            ao = f"agent:{agent.name}"
+            specs.extend(_own(self._agent_source_specs(agent, base_ctx), ao))
+            specs.extend(_own(self._agent_seq_specs(agent, base_ctx), ao))
             actx = {**base_ctx, "agent": agent}
-            specs.append(FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx))
-            specs.append(FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx))
+            specs.append(FileSpec("agent_pkg.sv.j2", f"{agent.name}_pkg.sv", actx, ao))
+            specs.append(FileSpec("agent_pkg.f.j2", f"{agent.name}_pkg.f", actx, ao))
         # The manifest records the VIP's identity + version + each agent's package,
         # filelist and full config (so a by-reference consumer can reconstruct the agent
         # without seeing the source). yaml.safe_dump here, emitted verbatim by the
@@ -607,7 +684,9 @@ class Generator:
             **base_ctx,
             "manifest_yaml": yaml.safe_dump(manifest, sort_keys=False).rstrip(),
         }
-        specs.append(FileSpec("vip_manifest.qvip.j2", f"{cfg.project.name}.qvip", mctx))
+        specs.append(
+            FileSpec("vip_manifest.qvip.j2", f"{cfg.project.name}.qvip", mctx, "vip")
+        )
         return specs
 
     @staticmethod
@@ -904,23 +983,53 @@ class Generator:
     # Generate all files
     # ------------------------------------------------------------------
 
+    def manifest(self, output_dir: Path | None = None) -> dict:
+        """Machine-readable map of config ELEMENT → generated files, for per-item
+        incremental regen and QuickUVM Architect's decorations. Grouped by
+        `FileSpec.owner`; the `aggregate` group is the whole-config files that must
+        be co-regenerated on any structural add/remove/rename. When `output_dir` is
+        given (default ./tb), each file carries an on-disk `exists` flag."""
+        out_dir = Path(output_dir) if output_dir is not None else Path("tb")
+        # Set for F2' relative `-F` paths in referenced-VIP filelists (as `list` does).
+        self._output_dir = out_dir
+        groups: dict[str, list[str]] = {}
+        for spec in self.files_to_generate():
+            groups.setdefault(spec.owner, []).append(spec.output)
+        elements = [
+            {
+                "owner": owner,
+                "files": [{"file": f, "exists": (out_dir / f).exists()} for f in files],
+            }
+            for owner, files in groups.items()
+        ]
+        return {
+            "version": __version__,
+            "layout": self.config.layout,
+            "kind": self.config.kind,
+            "output_dir": str(out_dir),
+            "elements": elements,
+        }
+
     def generate_all(
         self,
         output_dir: Path,
         dry_run: bool = False,
-        only: str | None = None,
+        only: str | Iterable[str] | None = None,
         allow_drop: bool = False,
         backup: bool = True,
     ) -> list[tuple[str, str]]:
         """Render and write every file.  Returns list of (status, path).
 
-        Propagates :class:`~quick_uvm.merger.MergeError` from any file whose
-        merge would be unsafe (caller decides how to surface it).
+        `only` scopes generation to one or more output filenames (a str or an
+        iterable of str); everything else is skipped. Propagates
+        :class:`~quick_uvm.merger.MergeError` from any file whose merge would be
+        unsafe (caller decides how to surface it).
         """
         results: list[tuple[str, str]] = []
         self._output_dir = Path(output_dir)
+        only_set = {only} if isinstance(only, str) else (set(only) if only else None)
         for spec in self.files_to_generate():
-            if only and spec.output != only:
+            if only_set is not None and spec.output not in only_set:
                 continue
             content = self.render(spec)
             status, path = self._write(
