@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.0 — 2026-07-22
+
+Generation manifest + per-item incremental regeneration. Additive and
+backward-compatible; the schema is unchanged (every committed example regenerates
+byte-identically).
+
+- **`quick-uvm manifest -c <yaml> [-o <dir>]`** — a JSON map of config **element →
+  generated files**, grouped by owner (`agent:<name>`, `scoreboard:<name>`,
+  `test:<name>`, `vseq:<name>`, `register_model`, `probes`, `vip`) plus an
+  `aggregate` group (the whole-config files — packages, filelists, top, env,
+  clkgen, DUT stub, Makefile — that must be co-regenerated on any structural
+  add/remove/rename). With `-o`, each file carries an on-disk `exists` flag. The
+  owner is captured where the element is known, so it is correct even where the
+  filename drops the element's name (a flat scoreboard `sbd` →
+  `<dut>_scoreboard.svh`). Powers per-item incremental regen and downstream
+  tooling (QuickUVM Architect's "not generated" decorations).
+- **`generate --only` is now repeatable** — pass `--only <file>` once per file to
+  regenerate exactly one element (e.g. all of an agent's files) in a single
+  invocation; a single `--only` still works. Pragma preservation and backups are
+  unchanged under scoping. An `--only` value that matches no generated file now
+  warns instead of silently regenerating nothing.
+- Internal: `FileSpec` gained an `owner` field (the two above read it); it does not
+  affect rendering.
+
 ## 1.0.0 — 2026-07-20
 
 First stable release. QuickUVM is a Python/Jinja2 UVM testbench generator in the
