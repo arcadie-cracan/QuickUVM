@@ -1,9 +1,12 @@
 # QuickUVM VIP manifest (.qvip) -- GENERATED, do not edit.
 # Identity of a reusable agent VIP (F2'). A bench consumes an agent from it by reference:
-#   agent_refs:
-#     - {name: <agent>, manifest: <path to this .qvip>}
+#   layout: packaged        # a referenced VIP is an external package
+#   agents:
+#     - {name: <agent>, from_vip: <path to this .qvip, relative to the config>}
 # which wires the agent into the env and chains its package filelist with Cadence `-F`,
-# WITHOUT regenerating its source. See docs/t3_tl_agent_assessment.md.
+# WITHOUT regenerating its source. The reference entry carries ONLY those two keys --
+# the agent's configuration comes from this manifest.
+# See docs/t3_tl_agent_assessment.md.
 qvip_version: 1
 project: f2_iovip
 version: 1.0.0
