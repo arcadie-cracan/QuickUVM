@@ -2694,6 +2694,63 @@ class ProbeConfig(_SchemaModel):
         return [] if self.real else self._as_port.struct_typedefs
 
 
+def _default_sim_tools() -> list[Literal["xcelium", "vcs", "questa"]]:
+    """The proven Cadence wrapper is the default when `sim: {}` names no tools."""
+    return ["xcelium"]
+
+
+class SimConfig(_SchemaModel):
+    """Multi-vendor simulation filelists (opt-in).
+
+    Emits one **portable core** ``compile.f`` — the generated TB sources + the
+    real DUT RTL + include dirs, with NO tool switches — which is both the
+    coding-assistance filelist (a language server understands exactly this
+    subset) and the shared input to every vendor wrapper. Then a **thin wrapper**
+    per requested vendor that ``-f``s the core and adds only that vendor's
+    UVM / timescale / access switches:
+
+    - ``xcelium`` → ``xrun.f``   (Cadence: ``-uvm -access +rwc``)
+    - ``vcs``     → ``vcs.f``    (Synopsys: ``-ntb_opts uvm``, note ``-timescale=``)
+    - ``questa``  → ``run_questa.do`` (Siemens: needs ``vlib work`` first)
+
+    Absent ⇒ nothing emitted (byte-identical). See
+    docs/filelist_generation_analysis.md for the full vendor analysis.
+    """
+
+    tools: list[Literal["xcelium", "vcs", "questa"]] = Field(
+        default_factory=_default_sim_tools
+    )
+    # The user's REAL DUT RTL filelist. Referenced from the portable core with a
+    # plain `-f`, so the PATHS INSIDE IT must be relative to the generated output
+    # directory (where sims run) or absolute — the same convention as
+    # `regress.filelist`. (A file-relative `-F` was tried but is unreliable across
+    # vendors — qrun resolves it inconsistently.) When omitted, the core compiles
+    # the generated DUT *stub* instead: a self-contained smoke compile that
+    # elaborates but exercises nothing, the same trade-off as `run.f`.
+    rtl_filelist: str | None = None
+    # Also emit a Bender.yml package manifest (the composable-package / long-tail
+    # path). Best-effort: `bender` is not in the validated toolchain, so it ships
+    # unproven, unlike the wrappers which are each run green on the real simulator.
+    bender: bool = False
+
+    @model_validator(mode="after")
+    def _check_sim(self) -> SimConfig:
+        if not self.tools:
+            raise ValueError(
+                "sim.tools must name at least one vendor "
+                "(xcelium / vcs / questa), or omit the `sim:` block entirely."
+            )
+        dupes = sorted({t for t in self.tools if self.tools.count(t) > 1})
+        if dupes:
+            raise ValueError(f"sim.tools has duplicate entries: {dupes}.")
+        if self.rtl_filelist is not None and not self.rtl_filelist.strip():
+            raise ValueError(
+                "sim.rtl_filelist must be a non-empty path (or omit it to compile "
+                "the generated DUT stub)."
+            )
+        return self
+
+
 class RegressConfig(_SchemaModel):
     """R1 — regression + coverage-closure infrastructure (opt-in).
 
@@ -2825,6 +2882,8 @@ class ProjectConfig(_SchemaModel):
     # R1 — regression + coverage-closure runner (opt-in, byte-identical when None).
     # See RegressConfig.
     regress: RegressConfig | None = None
+    # Multi-vendor simulation filelists + the coding-assistance core (opt-in).
+    sim: SimConfig | None = None
     virtual_sequences: list[VseqConfig] = Field(default_factory=list)  # C2
     # Sane default for multi-agent subsystems: with >=2 active agents and no explicit
     # virtual_sequences, auto-scaffold a vsqr + a default vseq that fires each agent's

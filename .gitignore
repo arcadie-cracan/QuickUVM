@@ -59,6 +59,37 @@ dvt_build.log
 **/gen/.simvision/
 **/gen/*.key
 
+# Questa (qrun) and VCS working dirs / artifacts — the multi-vendor sim wrappers
+# (sim_questa.sh / sim_vcs.sh) run from gen/. Keep the generated compile.f + scripts.
+**/gen/qrun.out/
+**/gen/work/
+**/gen/transcript
+**/gen/*.wlf
+**/gen/*.ini
+**/gen/csrc/
+**/gen/simv
+**/gen/simv.daidir/
+**/gen/*.vpd
+**/gen/ucli.key
+**/gen/vc_hdrs.h
+**/gen/AN.DB/
+**/gen/DVEfiles/
+**/gen/64/
+**/gen/.vcs_lib_lock
+**/gen/vc_hdrs.h
+**/gen/novas*
+**/sim/qrun.out/
+**/sim/work/
+**/sim/transcript
+**/sim/*.ini
+**/sim/csrc/
+**/sim/simv
+**/sim/simv.daidir/
+
+# Bender working artifacts (keep the generated Bender.yml)
+**/Bender.lock
+**/.bender/
+
 # R1 — `make regress` output: the snapshot, per-(test,seed) run dirs + logs, and the
 # coverage DBs/reports. All reproducible; keep the generated Makefile itself.
 **/gen/out/

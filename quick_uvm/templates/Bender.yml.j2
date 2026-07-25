@@ -1,0 +1,21 @@
+# QuickUVM bench as a Bender package (composable + long-tail fan-out).
+# `bender script <target>` emits the per-tool source list: vsim (Questa), vcs,
+# verilator, vivado(-sim), flist / flist-plus, ... Bender has NO native Xcelium
+# target -- use the generated sim_xcelium.sh for Cadence. UVM library flags
+# (-uvm / -ntb_opts uvm) are added by the consuming flow, not by Bender.
+package:
+  name: {{ project.name }}
+{% if project.author %}
+  authors:
+    - "{{ project.author }}"
+{% endif %}
+
+sources:
+  - include_dirs:
+{% for d in bender_incdirs %}
+      - {{ d }}
+{% endfor %}
+    files:
+{% for f in bender_files %}
+      - {{ f }}
+{% endfor %}

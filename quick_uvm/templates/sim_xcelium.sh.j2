@@ -1,0 +1,15 @@
+#!/bin/sh
+# Cadence Xcelium runner -- {{ project.name }}. Run from this directory:
+#   sh sim_xcelium.sh +UVM_TESTNAME=<test>
+# xrun is a single call (compile + elaborate + simulate) and takes everything in
+# the filelist, so this is a thin wrapper over the portable core `compile.f`.
+exec xrun \
+  -uvm \
+  -access +rwc \
+  -timescale 1{{ timescale_unit }}/1{{ timescale_unit }} \
+  -top {{ top_name }} \
+{% if reference_model.language == 'c' %}
+  {{ dut.name }}_reference_model.c \
+{% endif %}
+  -f compile.f \
+  "$@"

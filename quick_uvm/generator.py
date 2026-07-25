@@ -73,6 +73,31 @@ def _own(specs: list[FileSpec], owner: str) -> list[FileSpec]:
     return specs
 
 
+def _read_filelist_sources(path: Path) -> tuple[list[str], list[str]]:
+    """Read a simple `.f` filelist into (files, include_dirs) for a Bender.yml.
+
+    Bender needs actual file PATHS, so a referenced RTL filelist is flattened:
+    plain lines are files, `+incdir+<dir>` becomes an include dir, and `//`/`#`
+    comments are skipped. Nested `-f`/`-F` and other tool directives are NOT
+    expanded (a documented limitation — Bender.yml is the composable-package path,
+    not a general filelist parser); the simulator wrappers consume the filelist
+    directly and are unaffected.
+    """
+    files: list[str] = []
+    incdirs: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("//", "#")):
+            continue
+        if line.startswith("+incdir+"):
+            incdirs.append(line[len("+incdir+") :])
+        elif line.startswith(("-", "+")):
+            continue  # -f/-F nested filelists + other directives: not expanded
+        else:
+            files.append(line)
+    return files, incdirs
+
+
 def _next_backup_path(path: Path) -> Path:
     """Return the first free rolling backup path ``<file>.bak.<N>``.
 
@@ -222,6 +247,8 @@ class Generator:
             # that would crash EVERY bench with no tests, including ones not using R1.
             # A `regress:` block with no runnable test is rejected in validate_regress.
             "regress": cfg.regress,
+            # Multi-vendor sim filelists + the coding-assistance core (opt-in).
+            "sim": cfg.sim,
             "regress_jobs": cfg.regress_jobs,
             "regress_default_test": (
                 cfg.regress_jobs[0]["name"] if cfg.regress_jobs else ""
@@ -572,6 +599,56 @@ class Generator:
         # R1 — the regression runner. Opt-in: no `regress:` block => no Makefile.
         if cfg.regress is not None:
             specs.append(FileSpec("Makefile.j2", "Makefile", base_ctx))
+
+        # Multi-vendor sim filelists. Opt-in: no `sim:` block => nothing emitted
+        # (byte-identical). The portable core is always emitted when `sim:` is
+        # present; each requested vendor gets its thin wrapper.
+        if cfg.sim is not None:
+            specs.append(FileSpec("compile.f.j2", "compile.f", base_ctx))
+            wrappers = {
+                "xcelium": ("sim_xcelium.sh.j2", "sim_xcelium.sh"),
+                "vcs": ("sim_vcs.sh.j2", "sim_vcs.sh"),
+                "questa": ("sim_questa.sh.j2", "sim_questa.sh"),
+            }
+            for tool in cfg.sim.tools:
+                template, out = wrappers[tool]
+                specs.append(FileSpec(template, out, base_ctx))
+
+            # Bender.yml — the composable-package / long-tail path (opt-in). Bender
+            # needs actual file PATHS (not a `-f` reference), so the referenced RTL
+            # filelist is read and inlined; `bender script <target>` then fans out to
+            # vsim/vcs/verilator/vivado/flist (no native xcelium — use sim_xcelium.sh).
+            if cfg.sim.bender:
+                if cfg.layout != "flat":
+                    raise ValueError(
+                        "sim.bender currently supports only `layout: flat` — the "
+                        "packaged layout's multi-package source graph is a follow-up."
+                    )
+                # the TB sources QuickUVM owns, in compile-order (package,
+                # interfaces, clkgen, [probe if], top) — the set compile.f pulls
+                # via `-f pkg.f`.
+                tb_sources = [f"{dut}_tb_pkg.sv"]
+                tb_sources += [f"{a.interface}.sv" for a in cfg.agents]
+                tb_sources.append("clkgen.sv")
+                if cfg.probes:
+                    tb_sources.append(f"{dut}_probe_if.sv")
+                tb_sources.append(f"{cfg.top_name}.sv")
+                # the real RTL — read the referenced filelist (bender can't follow -f);
+                # no filelist => the generated DUT stub, mirroring compile.f.
+                rtl_files: list[str] = []
+                rtl_incdirs: list[str] = []
+                if cfg.sim.rtl_filelist:
+                    fl = (self._output_dir or Path(".")) / cfg.sim.rtl_filelist
+                    if fl.exists():
+                        rtl_files, rtl_incdirs = _read_filelist_sources(fl)
+                else:
+                    rtl_files = [f"{dut}.sv"]
+                bender_ctx = {
+                    **base_ctx,
+                    "bender_files": rtl_files + tb_sources,
+                    "bender_incdirs": ["."] + rtl_incdirs,
+                }
+                specs.append(FileSpec("Bender.yml.j2", "Bender.yml", bender_ctx))
 
         return specs
 
