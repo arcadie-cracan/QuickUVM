@@ -65,3 +65,8 @@ analysis:
       match: out_of_order
       match_key: rsp_id
       max_latency: 8        # cycles; lane 1 (the slow lane) completes in 5
+
+# Multi-vendor sim filelists + the coding-assistance core (portable compile.f).
+sim:
+  tools: [xcelium, vcs, questa]
+  rtl_filelist: ../rtl/reqrsp.f

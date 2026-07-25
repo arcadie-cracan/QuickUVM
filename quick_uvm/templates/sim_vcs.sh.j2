@@ -1,0 +1,16 @@
+#!/bin/sh
+# Synopsys VCS runner -- {{ project.name }}. Two-step (compile -> ./simv):
+#   sh sim_vcs.sh +UVM_TESTNAME=<test>
+# `-ntb_opts uvm` MUST be on the command line -- VCS rejects it inside a -f file.
+vcs \
+  -sverilog \
+  -full64 \
+  -ntb_opts uvm \
+  -timescale=1{{ timescale_unit }}/1{{ timescale_unit }} \
+  -debug_access+all \
+  -top {{ top_name }} \
+{% if reference_model.language == 'c' %}
+  {{ dut.name }}_reference_model.c \
+{% endif %}
+  -f compile.f || exit $?
+exec ./simv "$@"

@@ -222,6 +222,8 @@ class Generator:
             # that would crash EVERY bench with no tests, including ones not using R1.
             # A `regress:` block with no runnable test is rejected in validate_regress.
             "regress": cfg.regress,
+            # Multi-vendor sim filelists + the coding-assistance core (opt-in).
+            "sim": cfg.sim,
             "regress_jobs": cfg.regress_jobs,
             "regress_default_test": (
                 cfg.regress_jobs[0]["name"] if cfg.regress_jobs else ""
@@ -572,6 +574,20 @@ class Generator:
         # R1 — the regression runner. Opt-in: no `regress:` block => no Makefile.
         if cfg.regress is not None:
             specs.append(FileSpec("Makefile.j2", "Makefile", base_ctx))
+
+        # Multi-vendor sim filelists. Opt-in: no `sim:` block => nothing emitted
+        # (byte-identical). The portable core is always emitted when `sim:` is
+        # present; each requested vendor gets its thin wrapper.
+        if cfg.sim is not None:
+            specs.append(FileSpec("compile.f.j2", "compile.f", base_ctx))
+            wrappers = {
+                "xcelium": ("sim_xcelium.sh.j2", "sim_xcelium.sh"),
+                "vcs": ("sim_vcs.sh.j2", "sim_vcs.sh"),
+                "questa": ("sim_questa.sh.j2", "sim_questa.sh"),
+            }
+            for tool in cfg.sim.tools:
+                template, out = wrappers[tool]
+                specs.append(FileSpec(template, out, base_ctx))
 
         return specs
 
