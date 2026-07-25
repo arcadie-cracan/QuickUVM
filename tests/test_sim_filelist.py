@@ -1,9 +1,9 @@
 """Multi-vendor sim filelists + the coding-assistance core (opt-in `sim:` block).
 
 The portable ``compile.f`` is proven end-to-end against the real simulators on
-``examples/reqrsp`` (Cadence + Questa green, VCS wrapper accepted); these tests
-pin the generation contract: what is emitted, the portable-core invariants, and
-the vendor-specific switches each wrapper must carry.
+``examples/reqrsp`` (Cadence, Questa AND VCS all green; Bender fans out and runs
+green too); these tests pin the generation contract: what is emitted, the
+portable-core invariants, and the vendor-specific switches each wrapper carries.
 """
 
 import pytest

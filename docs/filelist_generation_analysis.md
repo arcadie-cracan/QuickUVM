@@ -400,8 +400,8 @@ consuming flow, not by Bender.
 
 - **Cadence** (`xrun`): **green** — 0 UVM_ERROR, 30/30 PASSED.
 - **Questa** (`qrun`): **green** — 0 UVM_ERROR, 30/30 PASSED.
-- **VCS** (`vcs`): wrapper **accepted** (past `-ntb_opts` and `-f compile.f`);
-  full run blocked only by an expired license in this environment.
+- **VCS** (`vcs`): **green** — 0 UVM_ERROR, 30/30 PASSED (the two-step
+  `vcs` compile → `./simv` run).
 - **Bender** (`bender 0.32.1`): the generated `Bender.yml` parses and fans out
   (`flist-plus` / `vsim` / `vcs` / `verilator` all OK); `bender script
   flist-plus` piped to `xrun` runs **green** (30/30 PASSED) — the manifest is a

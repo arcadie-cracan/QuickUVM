@@ -74,6 +74,9 @@ dvt_build.log
 **/gen/vc_hdrs.h
 **/gen/AN.DB/
 **/gen/DVEfiles/
+**/gen/64/
+**/gen/.vcs_lib_lock
+**/gen/vc_hdrs.h
 **/gen/novas*
 **/sim/qrun.out/
 **/sim/work/
