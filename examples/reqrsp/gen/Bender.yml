@@ -1,0 +1,20 @@
+# QuickUVM bench as a Bender package (composable + long-tail fan-out).
+# `bender script <target>` emits the per-tool source list: vsim (Questa), vcs,
+# verilator, vivado(-sim), flist / flist-plus, ... Bender has NO native Xcelium
+# target -- use the generated sim_xcelium.sh for Cadence. UVM library flags
+# (-uvm / -ntb_opts uvm) are added by the consuming flow, not by Bender.
+package:
+  name: reqrsp
+  authors:
+    - "QuickUVM"
+
+sources:
+  - include_dirs:
+      - .
+    files:
+      - ../rtl/reqrsp.sv
+      - reqrsp_tb_pkg.sv
+      - req_if.sv
+      - rsp_if.sv
+      - clkgen.sv
+      - tb_top.sv

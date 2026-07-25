@@ -70,3 +70,4 @@ analysis:
 sim:
   tools: [xcelium, vcs, questa]
   rtl_filelist: ../rtl/reqrsp.f
+  bender: true  # also emit a Bender.yml (composable package + long-tail fan-out)

@@ -389,12 +389,23 @@ sim:
 Emitted into `gen/`: `compile.f` (portable core) + `sim_xcelium.sh` /
 `sim_vcs.sh` / `sim_questa.sh`.
 
+Also emits, when `bender: true`, a **`Bender.yml`** — the bench as a composable
+Bender package. Bender needs file *paths* (not a `-f` reference), so the
+referenced RTL filelist is read and inlined; `bender script <target>` then fans
+out to `vsim` / `vcs` / `verilator` / `vivado(-sim)` / `flist(-plus)` (no native
+Xcelium target — use `sim_xcelium.sh`). UVM library flags are added by the
+consuming flow, not by Bender.
+
 ### Validated (examples/reqrsp, a clocked bench)
 
 - **Cadence** (`xrun`): **green** — 0 UVM_ERROR, 30/30 PASSED.
 - **Questa** (`qrun`): **green** — 0 UVM_ERROR, 30/30 PASSED.
 - **VCS** (`vcs`): wrapper **accepted** (past `-ntb_opts` and `-f compile.f`);
   full run blocked only by an expired license in this environment.
+- **Bender** (`bender 0.32.1`): the generated `Bender.yml` parses and fans out
+  (`flist-plus` / `vsim` / `vcs` / `verilator` all OK); `bender script
+  flist-plus` piped to `xrun` runs **green** (30/30 PASSED) — the manifest is a
+  complete, correct source set.
 - **Coding assistance**: `verible-verilog-project` builds a symbol table directly
   from `compile.f` (nested `-f`, `+incdir+` and all) — the go-to-def / completion
   foundation. slang consumes the same `-f` form (it is what the Architect uses).
@@ -425,7 +436,7 @@ Emitted into `gen/`: `compile.f` (portable core) + `sim_xcelium.sh` /
 
 ### Deferred
 
-`Bender.yml` (composable-package / long-tail; best-effort — `bender` not in the
-validated toolchain here), an LSP-config emitter for the config-based servers
-(svlangserver/veridian), and Xilinx/Verilator/Icarus wrappers (open-source =
+An LSP-config emitter for the config-based servers (svlangserver/veridian),
+`Bender.yml` under the **packaged** layout (its multi-package source graph — flat
+is supported and validated), and Xilinx/Verilator/Icarus wrappers (open-source =
 lint + LSP only, no UVM).

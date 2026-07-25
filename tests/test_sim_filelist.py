@@ -158,3 +158,63 @@ def test_unknown_tool_rejected(tmp_path):
 def test_blank_rtl_filelist_rejected(tmp_path):
     with pytest.raises(ValidationError, match="non-empty path"):
         ProjectConfig.model_validate({**_BASE, "sim": {"rtl_filelist": "  "}})
+
+
+# ------------------------------------------------------------------- Bender.yml tail
+
+
+def test_bender_off_by_default(tmp_path):
+    _gen(tmp_path, sim={"tools": ["xcelium"]})
+    assert not (tmp_path / "Bender.yml").exists()
+
+
+def test_bender_emits_manifest_with_tb_and_rtl(tmp_path):
+    """`bender: true` emits a Bender.yml listing the TB sources + the RTL read from
+    the referenced filelist (Bender needs paths, not a `-f` reference). Validated
+    end-to-end on examples/reqrsp: `bender script flist-plus | xrun` runs green."""
+    (tmp_path / "dut.f").write_text("// rtl\n../rtl/s_pkg.sv\n../rtl/s.sv\n")
+    _gen(tmp_path, sim={"tools": ["xcelium"], "rtl_filelist": "dut.f", "bender": True})
+    m = _read(tmp_path, "Bender.yml")
+    assert "name: s_tb" in m
+    # RTL (from the filelist) then the TB sources QuickUVM owns
+    assert "../rtl/s_pkg.sv" in m and "../rtl/s.sv" in m
+    assert "s_tb_pkg.sv" in m and "tb_top.sv" in m and "io_if.sv" in m
+    assert "include_dirs:" in m
+
+
+def test_bender_reads_incdirs_from_rtl_filelist(tmp_path):
+    """`+incdir+` lines in the RTL filelist carry into the manifest's include_dirs;
+    nested `-f`/`-F` and other directives are skipped (documented limitation)."""
+    (tmp_path / "dut.f").write_text("+incdir+../rtl/inc\n-f other.f\n../rtl/s.sv\n")
+    _gen(tmp_path, sim={"tools": ["xcelium"], "rtl_filelist": "dut.f", "bender": True})
+    m = _read(tmp_path, "Bender.yml")
+    assert "../rtl/inc" in m  # the +incdir+ was lifted
+    assert "../rtl/s.sv" in m
+    assert "other.f" not in m  # the nested -f was NOT expanded
+
+
+def test_bender_stub_without_rtl_filelist(tmp_path):
+    """No rtl_filelist => the manifest lists the generated DUT stub."""
+    _gen(tmp_path, sim={"tools": ["xcelium"], "bender": True})
+    assert "s.sv" in _read(tmp_path, "Bender.yml")
+
+
+def test_bender_rejected_on_packaged_layout(tmp_path):
+    """Flat-only for now: the packaged multi-package source graph is a follow-up."""
+    with pytest.raises(ValueError, match="layout: flat"):
+        _gen(
+            tmp_path,
+            layout="packaged",
+            sim={"tools": ["xcelium"], "bender": True},
+        )
+
+
+def test_read_filelist_sources_helper(tmp_path):
+    """The `.f` flattener: files vs +incdir+ vs skipped comments/directives."""
+    from quick_uvm.generator import _read_filelist_sources
+
+    f = tmp_path / "in.f"
+    f.write_text("// c\n#c\n+incdir+inc\n-f nested.f\n-F n2.f\na.sv\n  b.sv  \n\n")
+    files, incdirs = _read_filelist_sources(f)
+    assert files == ["a.sv", "b.sv"]
+    assert incdirs == ["inc"]
