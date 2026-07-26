@@ -27,6 +27,13 @@ class hi_a_monitor #(parameter int W = 16) extends uvm_monitor;
 
   task run_phase(uvm_phase phase);
     hi_a_item#(W) tr;
+    // Portability: prime one clock before the first pairing, so the DUT has produced a
+    // valid first output. A simulator that schedules the driver's first drive AFTER the
+    // monitor's first sample (Questa, VCS) otherwise pairs the reset output with the
+    // first stimulus -> one spurious startup mismatch. Benign where the scheduler
+    // already aligns them (Cadence). Skipped for responder/request-fifo monitors, whose
+    // sampling publishes requests and must not be delayed.
+    @vif.mon_cb;
     forever begin
       sample_dut(tr);
       ap.write(tr);

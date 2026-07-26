@@ -49,6 +49,19 @@ class {{ agent.name }}_monitor{{ agent.param_decl }} extends uvm_monitor;
     @vif.cb1;
 {% endif %}
 {% endif %}
+{% if not agent.has_request_fifo %}
+    // Portability: prime one clock before the first pairing, so the DUT has produced a
+    // valid first output. A simulator that schedules the driver's first drive AFTER the
+    // monitor's first sample (Questa, VCS) otherwise pairs the reset output with the
+    // first stimulus -> one spurious startup mismatch. Benign where the scheduler
+    // already aligns them (Cadence). Skipped for responder/request-fifo monitors, whose
+    // sampling publishes requests and must not be delayed.
+{% if dut.combinational or agent.is_zero_slack %}
+    @vif.mon_cb;
+{% else %}
+    @vif.cb1;
+{% endif %}
+{% endif %}
     forever begin
       sample_dut(tr);
 {% if agent.has_request_fifo %}
