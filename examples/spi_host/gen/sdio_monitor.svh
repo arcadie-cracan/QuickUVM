@@ -30,6 +30,13 @@ class sdio_monitor extends uvm_monitor;
     // Reset is driven externally: do not emit transactions until it deasserts, then
     // resync to the clock grid (sample_dut() assumes it starts at a posedge clk).
     wait (vif.rst_n === 1'b1);
+    // Portability: prime one clock before the first pairing, so the DUT has produced a
+    // valid first output. A simulator that schedules the driver's first drive AFTER the
+    // monitor's first sample (Questa, VCS) otherwise pairs the reset output with the
+    // first stimulus -> one spurious startup mismatch. Benign where the scheduler
+    // already aligns them (Cadence). Skipped for responder/request-fifo monitors, whose
+    // sampling publishes requests and must not be delayed.
+    @vif.cb1;
     forever begin
       sample_dut(tr);
       ap.write(tr);

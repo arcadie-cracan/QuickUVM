@@ -427,12 +427,32 @@ consuming flow, not by Bender.
    two-step `vcs → ./simv` and any Questa library setup.
 
 3. **The example choice matters for the runtime proof.** A *combinational* DUT
-   (examples/alu) shows a first-cycle sampling race on Questa (1 mismatch at t=5)
+   (examples/alu) showed a first-cycle sampling race on Questa (1 mismatch at t=5)
    that Cadence's scheduler masks — a **testbench-timing** portability issue, not a
    filelist one (the filelist compiled the right RTL). The green-on-vendors proof
-   therefore ships on a **clocked** example (reqrsp), whose sampling is
-   deterministic across simulators. The combinational first-cycle race is a
-   separate, real finding worth its own look (monitor sampling skew).
+   therefore ships on a **clocked** example (reqrsp). **This race is now fixed** —
+   the generated monitor primes one clock before its first pairing (see the full
+   cross-vendor campaign below), so the whole example corpus runs vendor-portable.
+
+### Cross-vendor portability campaign (all examples on Questa + VCS)
+
+Running every runnable example (Cadence = reference) surfaced one generated-code
+issue and one DUT-RTL issue:
+
+- **First-transaction sampling race** (alu, csoc, mclk, mxclk): the single-stream
+  monitor sampled input+output for the first transaction before the DUT produced a
+  valid output — one spurious mismatch that Cadence masks. **Fixed**: the monitor
+  primes one clock (`@vif.cb1` / `@vif.mon_cb`) before the first pairing;
+  responder/request-fifo monitors are exempt (their sampling publishes requests).
+- **spi_host** on Questa: the *vendored OpenTitan DUT RTL* (`spi_host_fsm.sv`) uses
+  an undefined `` `ASSERT `` macro + an end-label mismatch — Questa is strict, not a
+  QuickUVM concern.
+
+Result after the fix: **Questa 46/47, VCS 47/47** (the sole remainder is
+spi_host's DUT RTL). QuickUVM's generated code is portable across Cadence, Questa
+and VCS.
+
+### Deferred
 
 ### Deferred
 
