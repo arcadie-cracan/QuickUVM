@@ -1,0 +1,50 @@
+# YAPP router — the tutorial bench. One packet agent drives the input channel and
+# observes all three output channels; a single-stream scoreboard predicts the routed
+# outputs from the input address. Coverage tracks every destination (incl. DROP).
+project:
+  name: yapp
+  author: QuickUVM
+  year: 2026
+
+dut:
+  name: yapp_router
+  reset: rst_n
+reset: {external: true}
+
+clock:
+  period: 10
+  unit: ns
+
+agents:
+  - name: pkt
+    interface: pkt_if
+    sequence_item: pkt_seq_item
+    seq_item_style: manual
+    active: true
+    emit_when: in_valid          # score only cycles that carry a packet
+    constraints:
+      - "in_valid == 1"          # every generated item is a real packet
+    ports:
+      inputs:
+        # black-box enum: the TB names the four destinations; DROP (3) means no output.
+        - {name: in_valid, width: 1}
+        - {name: in_addr,  width: 2, enum: {P0: 0, P1: 1, P2: 2, DROP: 3}}
+        - {name: in_data,  width: 8}
+      outputs:
+        - {name: out0_valid, width: 1}
+        - {name: out0_data,  width: 8}
+        - {name: out1_valid, width: 1}
+        - {name: out1_data,  width: 8}
+        - {name: out2_valid, width: 1}
+        - {name: out2_data,  width: 8}
+
+tests:
+  - {name: rand_test, num_items: 50}
+
+analysis:
+  coverage:
+    - agent: pkt
+      coverpoints:
+        - field: in_addr          # enum -> one bin per destination (P0/P1/P2/DROP)
+  scoreboards:
+    - {name: sbd, source: pkt}     # single-stream: predict the outputs from the input
