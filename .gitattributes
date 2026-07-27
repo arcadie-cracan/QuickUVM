@@ -1,0 +1,10 @@
+# Line-ending normalization. Text files are auto-detected and stored as LF in
+# history, so a Windows checkout does not show the whole tree as modified (there
+# is otherwise no policy, and the SV/generated files are LF).
+#
+# Deliberately NOT `eol=lf`: the generator writes the host's NATIVE newline
+# (Python emits CRLF on Windows), and the byte-identity gate compares the
+# checked-out gen/ against a fresh render — forcing an LF checkout while the
+# generator emits CRLF would make them mismatch on Windows. `text=auto` keeps
+# the history LF and the diff clean without dictating the working-tree EOL.
+* text=auto
