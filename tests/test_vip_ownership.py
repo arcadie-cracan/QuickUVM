@@ -372,3 +372,28 @@ def test_old_agent_refs_key_errors_with_move_hint():
                 "agent_refs": [{"name": "io", "manifest": "x.qvip"}],
             }
         )
+
+
+def test_filelist_paths_use_forward_slashes_on_every_platform():
+    r"""The `-F` chain of a referenced VIP must be POSIX-separated.
+
+    `os.path.relpath` returns OS-NATIVE separators, so on Windows this line used to be
+    written as `-F ..\..\f2_iovip\gen\io_pkg.f`. That broke two things at once: the
+    byte-identity gate (the checked-in golden has forward slashes) and the filelist
+    itself, since xrun/qrun/vcs treat a backslash as an escape rather than a separator.
+
+    The separator is injected rather than monkeypatched so this test is meaningful on
+    POSIX CI, where `os.sep` is already "/" and the bug is otherwise invisible.
+    """
+    from quick_uvm.generator import _filelist_path
+
+    # what os.path.relpath would hand back on Windows
+    assert _filelist_path(r"..\..\f2_iovip\gen\io_pkg.f", sep="\\") == (
+        "../../f2_iovip/gen/io_pkg.f"
+    )
+    # POSIX input is passed through untouched (no accidental mangling of a path that
+    # legitimately contains a backslash on a POSIX filesystem)
+    assert _filelist_path("../../f2_iovip/gen/io_pkg.f", sep="/") == (
+        "../../f2_iovip/gen/io_pkg.f"
+    )
+    assert _filelist_path(r"weird\name.f", sep="/") == r"weird\name.f"
