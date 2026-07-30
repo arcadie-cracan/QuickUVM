@@ -5,7 +5,15 @@ one of three output channels by its 2-bit destination address, with a one-cycle
 registered latency. Address `3` means **drop** — no output that cycle. It is the
 classic teaching DUT — small enough to hold in your head, rich enough to need a real
 scoreboard — and it is the backing bench for the **QuickUVM Architect** visual
-tutorial (`QuickUVM-Architect/docs/tutorial-yapp-router.html`).
+walkthrough (`QuickUVM-Architect/docs/yapp-router-walkthrough.html`).
+
+> The walkthrough builds this bench from scratch through the diagram, so it ends up
+> with the extension's own names: `yapp_router.quickuvm.yaml` (config named after the
+> module) in `tb/` (the `quickuvm.outputDir` default). This directory keeps the
+> hand-curated `yapp.yaml` + `gen/` instead — same content, regenerated with the CLI
+> (`quick-uvm generate -c yapp.yaml -o gen`). Note that `yapp.yaml` does NOT match the
+> extension's `**/*.quickuvm.yaml` discovery glob, so opening this folder in Architect
+> shows the RTL views without a verification overlay.
 
 ## The DUT
 `rtl/yapp_router.sv`: inputs `in_valid`, `in_addr[1:0]`, `in_data[7:0]`; three output

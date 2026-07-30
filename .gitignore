@@ -94,3 +94,13 @@ dvt_build.log
 # coverage DBs/reports. All reproducible; keep the generated Makefile itself.
 **/gen/out/
 **/sim/.xrun_gate.log
+
+# QuickUVM Architect working artifacts: following docs/yapp-router-walkthrough.html
+# against examples/yapp makes the extension write a config, a layout sidecar and a
+# generated testbench. All are the reader's, none belong in the repo — the committed
+# bench for this example is `yapp.yaml` + `gen/`.
+# `tb/` is scoped to examples/yapp ON PURPOSE: examples/hmac/tb/ is TRACKED, so a
+# blanket examples/*/tb/ would shadow real files.
+*.quickuvm.yaml
+**/quickuvm-architect.yaml
+examples/yapp/tb/
