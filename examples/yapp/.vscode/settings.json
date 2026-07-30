@@ -1,0 +1,5 @@
+{
+  // Opening this folder in the QuickUVM Architect extension (docs/yapp-router-walkthrough.html)
+  // starts on the router symbol instead of the welcome screen.
+  "quickuvm.top": "yapp_router"
+}
