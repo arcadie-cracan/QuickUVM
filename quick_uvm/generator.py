@@ -33,6 +33,22 @@ def _make_jinja_env() -> Environment:
     )
 
 
+def _filelist_path(path: str, sep: str = os.sep) -> str:
+    """A path as it must be WRITTEN INTO a simulator filelist: forward slashes.
+
+    `os.path.relpath` returns OS-NATIVE separators, so on Windows the F2' `-F` chain
+    came out `-F ..\\..\\f2_iovip\\gen\\io_pkg.f` where the checked-in golden has
+    `-F ../../f2_iovip/gen/io_pkg.f`. Two things break: the byte-identity gate fails
+    on a Windows regeneration, and the filelist itself is consumed by xrun/qrun/vcs,
+    which expect forward slashes on every platform (a backslash is an escape there,
+    not a separator).
+
+    `sep` is injectable so the Windows behaviour is testable from a POSIX CI run —
+    on POSIX `os.sep` is already "/", so the bug is invisible to a plain call.
+    """
+    return path if sep == "/" else path.replace(sep, "/")
+
+
 def _skew_literal(pct: int, period_ts: int) -> str:
     """The clocking-block drive-skew delay (`pct`% of `period_ts` after posedge) as an
     EXACT literal: an integer when `pct*period_ts` divides 100, else an exact 2-decimal
@@ -347,7 +363,7 @@ class Generator:
         # fallback when no output dir is known. Empty for an ordinary bench.
         base_ctx["agent_ref_filelists"] = {
             a.name: (
-                os.path.relpath(a.ref_filelist, self._output_dir)
+                _filelist_path(os.path.relpath(a.ref_filelist, self._output_dir))
                 if self._output_dir and a.ref_filelist
                 else a.ref_filelist
             )
