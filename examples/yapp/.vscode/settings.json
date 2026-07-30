@@ -1,5 +1,17 @@
 {
   // Opening this folder in the QuickUVM Architect extension (docs/yapp-router-walkthrough.html)
   // starts on the router symbol instead of the welcome screen.
-  "quickuvm.top": "yapp_router"
+  "quickuvm.top": "yapp_router",
+
+  // MUST be "gen", and not only because that is where this example's testbench lives.
+  // The extension EXCLUDES quickuvm.outputDir from its SystemVerilog source glob
+  // (outputDirExclude in src/filelistops.ts). Left at the default "tb", gen/ is globbed
+  // as design source and the view breaks two ways at once:
+  //
+  //   - gen/yapp_router.sv is the generated DUT STUB: a SECOND module named yapp_router,
+  //     same port names but declared outputs-first, so the symbol shows the stub's
+  //     interface instead of rtl/yapp_router.sv's;
+  //   - gen/ also holds the UVM testbench, so slang reports `unknown package 'uvm_pkg'`
+  //     and svmodel refuses the model outright.
+  "quickuvm.outputDir": "gen"
 }
