@@ -254,6 +254,9 @@ class Generator:
             # means no TB-initiated stimulus at all (the DUT initiates).
             "responder_only": cfg.responder_only,
             "primary_agent": cfg.primary_agent if cfg.agents else None,
+            # the UNCHECKED_AGENT hole seen from the other side: declaring `analysis:`
+            # drops the implicit coverage collector, silently (see uncovered_agents)
+            "uncovered_agents": cfg.uncovered_agents,
             "primary_clock_observed": cfg.primary_clock_observed,
             "primary_clock_period_ts": cfg.primary_clock_period_ts,
             "stimulus_primary": cfg.stimulus_primary,

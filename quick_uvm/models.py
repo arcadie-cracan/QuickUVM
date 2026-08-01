@@ -2157,11 +2157,26 @@ class AnalysisConfig(_SchemaModel):
     coverage_models: list[CoverageModel] = Field(
         default_factory=list, exclude=True, repr=False
     )
+    # Internal: was `coverage:` WRITTEN, as opposed to merely defaulting to []? The two
+    # are indistinguishable after validation, but they mean different things here:
+    # omitting the key loses the collector the implicit wiring would have given (see
+    # `uncovered_agents`), while `coverage: []` says "measure nothing" on purpose. The
+    # warning fires for the first and stays quiet for the second, so it has an escape
+    # hatch instead of being permanent noise.
+    coverage_declared: bool = Field(default=False, exclude=True, repr=False)
 
     @model_validator(mode="before")
     @classmethod
     def _hoist_rich_coverage(cls, data: object) -> object:
         if isinstance(data, dict):
+            if data.get("coverage_declared"):
+                raise ValueError(
+                    "analysis.coverage_declared is internal — it records whether "
+                    "`coverage:` was written at all; do not set it."
+                )
+            # recorded BEFORE validation fills the default, which is the only moment
+            # "absent" and "[]" are still distinguishable
+            data = {**data, "coverage_declared": "coverage" in data}
             if data.get("coverage_models"):
                 raise ValueError(
                     "analysis.coverage_models is internal — declare rich entries "
@@ -4906,6 +4921,46 @@ class ProjectConfig(_SchemaModel):
             return []
         primary = self.agents[0].name
         return [a.name for a in self.stimulus_agents if a.name != primary]
+
+    @property
+    def uncovered_agents(self) -> list[str]:
+        """Agents that LOST their coverage collector by declaring `analysis:`.
+
+        `analysis:` is presence-switched: omit it and the env wires one scoreboard AND
+        one coverage collector to the primary agent; declare it and you get exactly what
+        is listed. So adding a first scoreboard REMOVES a collector that was there --
+        silently, because nothing else changes: the bench still checks correctly, it
+        just stops measuring, and `<agent>_cov.svh` is still generated and compiled,
+        merely never connected.
+
+        This is the `UNCHECKED_AGENT` hole seen from the other side. That guard covers
+        every way inference can make a bench pass FALSELY; nothing covered inference
+        that makes a bench silently WEAKER. Same remedy at proportionate severity: a
+        warning, not a fatal -- an unmeasured bench is weaker, not wrong.
+
+        Scoped to what was actually LOST, not to an opinion about coverage: the implicit
+        wiring only ever covered the primary agent, so only the primary can be listed
+        here. Warning about other uncovered agents would be a new policy, not this one.
+
+        Silent when:
+          - `analysis:` is absent (the implicit wiring IS the coverage);
+          - no scoreboards are declared (nothing was traded for it);
+          - the primary agent has a coverage entry (nothing was lost);
+          - `coverage:` was written explicitly, even as `[]` -- "measure nothing" on
+            purpose, the escape hatch that keeps this from being permanent noise.
+
+        Byte-identical for all 51 committed examples. NOT because they all declare
+        `coverage` -- `alert_array` and `nchan` did not, and this correctly flagged
+        both: each declares a scoreboard and had silently traded away its collector.
+        They now say `coverage: []`, which is what they meant (they demonstrate replica
+        independence, not measurement) and is the escape hatch working on real configs.
+        """
+        if self.analysis is None or not self.agents or self.subenvs:
+            return []
+        if not self.analysis.scoreboards or self.analysis.coverage_declared:
+            return []
+        primary = self.agents[0].name
+        return [] if primary in self.analysis.coverage else [primary]
 
     @property
     def instance_views(self) -> list[InstanceView]:
