@@ -17,6 +17,10 @@ agents:
       outputs:
         - {name: q, width: 1}
 analysis:
+  # this example demonstrates replica independence, not measurement: no coverage
+  # collector is wanted. Written explicitly so the UNCOVERED_AGENT warning knows it
+  # is deliberate rather than a default lost by declaring an analysis block.
+  coverage: []
   scoreboards:
     - {name: sb, source: ch}
 tests:
