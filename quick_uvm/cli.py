@@ -298,6 +298,52 @@ def manifest_cmd(config: str, output: str | None) -> None:
 
 
 # ---------------------------------------------------------------------------
+# resolve
+# ---------------------------------------------------------------------------
+
+
+@main.command("resolve")
+@click.option(
+    "-c",
+    "--config",
+    required=True,
+    metavar="YAML",
+    help="Path to the project config file.",
+)
+@click.option(
+    "-o",
+    "--output",
+    default=None,
+    metavar="FILE",
+    help="Write the JSON here instead of stdout.",
+)
+def resolve_cmd(config: str, output: str | None) -> None:
+    """Emit the EFFECTIVE topology — defaults applied, with provenance.
+
+    The config understates the artifact: an implicit scoreboard and coverage collector
+    on the primary agent, the auto virtual sequence, the default `test1` and each
+    agent's `<agent>_seq` can all appear in a bench without appearing in the YAML. This
+    reports what the config actually MEANS, each entry marked `declared` (you wrote it)
+    or `inferred` (QuickUVM supplies it), plus the runtime `guards` it arms.
+
+    Distinct from `manifest`, which maps files to owning elements: that answers "which
+    files", this answers "what topology". Notably `manifest` is byte-identical with and
+    without an `analysis:` block, while the wiring it produces is not.
+
+    Read-only. Useful for reviewing a config, diffing what an edit really changed (a
+    mode switch can add or remove components you never named), and for tools that must
+    show the resolved bench without reimplementing these rules.
+    """
+    cfg = _load_config(config)
+    text = json.dumps(cfg.resolved(), indent=2)
+    if output:
+        Path(output).write_text(text + "\n", encoding="utf-8")
+        click.echo(f"resolved config written to {output}")
+    else:
+        click.echo(text)
+
+
+# ---------------------------------------------------------------------------
 # add-test
 # ---------------------------------------------------------------------------
 

@@ -4962,6 +4962,111 @@ class ProjectConfig(_SchemaModel):
         primary = self.agents[0].name
         return [] if primary in self.analysis.coverage else [primary]
 
+    def resolved(self) -> dict[str, object]:
+        """The EFFECTIVE topology: what this config actually produces, with provenance.
+
+        The config is a specification whose meaning includes defaults that live here, in
+        the generator — so the YAML on disk understates the artifact. Five component
+        kinds can appear in a bench without appearing anywhere in the file: the implicit
+        scoreboard and coverage collector on the primary agent, the auto virtual
+        sequence, the default `test1`, and each agent's `<agent>_seq`.
+
+        None of that is wrong (`unchecked_stimulus_agents` argues why refusing would
+        tax the simple case), but until now the only way to learn what a config MEANT
+        was to generate it and read the SystemVerilog. `manifest` cannot answer it
+        either: it is byte-identical with and without `analysis:`, because it maps
+        files to owners rather than describing topology.
+
+        Every entry carries `origin`: `declared` (written in the YAML) or `inferred`
+        (supplied here). That is the half that makes it reviewable — a resolved config
+        without provenance answers "what will I get" but not "what did I write".
+
+        `guards` lists the runtime warnings this config will arm, so the answer to "will
+        it complain, and why" needs no simulation.
+
+        Consumers: `quick-uvm resolve` (review, diffing a config change), and QuickUVM
+        Architect, which must draw inferred components without reimplementing these
+        rules — the drift `manifest` exists to prevent.
+        """
+        primary = self.agents[0].name if self.agents else None
+        declared = self.analysis is not None
+
+        scoreboards: list[dict[str, object]] = []
+        coverage: list[dict[str, object]] = []
+        if declared and self.analysis is not None:
+            for sb in self.analysis.scoreboards:
+                entry: dict[str, object] = {
+                    "name": sb.name,
+                    "source": sb.source,
+                    "origin": "declared",
+                }
+                if sb.monitor is not None:
+                    entry["monitor"] = sb.monitor
+                    entry["match"] = sb.match
+                scoreboards.append(entry)
+            coverage = [
+                {"agent": a, "origin": "declared"} for a in self.analysis.coverage
+            ]
+        elif primary is not None:
+            # the `{% else %}` branch of env.svh.j2: one scoreboard literally named
+            # `sbd`, plus `cov`, both on the primary agent
+            scoreboards = [{"name": "sbd", "source": primary, "origin": "inferred"}]
+            coverage = [{"agent": primary, "origin": "inferred"}]
+
+        # `tests` DEFAULTS to [test1]. Absent and an explicitly written
+        # `[{name: test1}]` are indistinguishable after validation — the same fence the
+        # VIP drop-check uses, and the same limitation.
+        default_tests = self.tests == [TestConfig(name="test1")]
+        tests = [
+            {
+                "name": t.name,
+                "origin": "inferred" if default_tests else "declared",
+            }
+            for t in self.tests
+        ]
+
+        vseqs: list[dict[str, object]] = [
+            {"name": v.name, "origin": "declared"} for v in self.virtual_sequences
+        ]
+        auto_vseq = self.auto_vseq_name
+        if auto_vseq is not None:
+            vseqs.append(
+                {"name": auto_vseq, "origin": "inferred", "mode": self.auto_vseq_mode}
+            )
+
+        guards: list[str] = [f"UNCOVERED_AGENT: {a}" for a in self.uncovered_agents] + [
+            f"UNCHECKED_AGENT: {a}" for a in self.unchecked_stimulus_agents
+        ]
+
+        # local import: models.py is imported BY the package __init__, so a
+        # module-level `from . import __version__` would be circular
+        from . import __version__
+
+        return {
+            "version": __version__,
+            "dut": self.dut.name,
+            "analysis": {
+                # the distinction that surprises people: the PRESENCE of the key, not
+                # its contents, decides whether anything is inferred at all
+                "mode": "declared" if declared else "implicit",
+                "scoreboards": scoreboards,
+                "coverage": coverage,
+            },
+            "tests": tests,
+            "virtual_sequences": vseqs,
+            "agents": [
+                {
+                    "name": a.name,
+                    "origin": "declared",
+                    # every agent gets one generated sequence it never asked for
+                    "sequences": [{"name": a.default_seq_name, "origin": "inferred"}]
+                    + [{"name": s.name, "origin": "declared"} for s in a.sequences],
+                }
+                for a in self.agents
+            ],
+            "guards": guards,
+        }
+
     @property
     def instance_views(self) -> list[InstanceView]:
         """C3 — the per-instantiation views (env/top/scoreboard) for agents that
