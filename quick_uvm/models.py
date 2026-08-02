@@ -5034,9 +5034,9 @@ class ProjectConfig(_SchemaModel):
                 {"name": auto_vseq, "origin": "inferred", "mode": self.auto_vseq_mode}
             )
 
-        guards: list[str] = [
-            f"UNCOVERED_AGENT: {a}" for a in self.uncovered_agents
-        ] + [f"UNCHECKED_AGENT: {a}" for a in self.unchecked_stimulus_agents]
+        guards: list[str] = [f"UNCOVERED_AGENT: {a}" for a in self.uncovered_agents] + [
+            f"UNCHECKED_AGENT: {a}" for a in self.unchecked_stimulus_agents
+        ]
 
         # local import: models.py is imported BY the package __init__, so a
         # module-level `from . import __version__` would be circular

@@ -107,7 +107,8 @@ def test_manifest_cannot_answer_this():
     declared = Generator(_cfg(analysis={"scoreboards": [_SB]})).manifest()
     assert implicit == declared
     assert (
-        _cfg().resolved()["analysis"] != _cfg(analysis={"scoreboards": [_SB]}).resolved()["analysis"]
+        _cfg().resolved()["analysis"]
+        != _cfg(analysis={"scoreboards": [_SB]}).resolved()["analysis"]
     )
 
 
@@ -129,7 +130,14 @@ def test_cli_emits_valid_json(tmp_path):
         encoding="utf-8",
     )
     r = subprocess.run(
-        [sys.executable, "-c", "from quick_uvm.cli import main; main()", "resolve", "-c", str(cfg)],
+        [
+            sys.executable,
+            "-c",
+            "from quick_uvm.cli import main; main()",
+            "resolve",
+            "-c",
+            str(cfg),
+        ],
         capture_output=True,
         text=True,
     )
@@ -156,8 +164,14 @@ def test_cli_writes_to_a_file(tmp_path):
     dest = tmp_path / "resolved.json"
     r = subprocess.run(
         [
-            sys.executable, "-c", "from quick_uvm.cli import main; main()",
-            "resolve", "-c", str(cfg), "-o", str(dest),
+            sys.executable,
+            "-c",
+            "from quick_uvm.cli import main; main()",
+            "resolve",
+            "-c",
+            str(cfg),
+            "-o",
+            str(dest),
         ],
         capture_output=True,
         text=True,
@@ -186,7 +200,14 @@ def test_resolve_generates_nothing(tmp_path):
     )
     before = set(p.name for p in tmp_path.iterdir())
     subprocess.run(
-        [sys.executable, "-c", "from quick_uvm.cli import main; main()", "resolve", "-c", str(cfg)],
+        [
+            sys.executable,
+            "-c",
+            "from quick_uvm.cli import main; main()",
+            "resolve",
+            "-c",
+            str(cfg),
+        ],
         capture_output=True,
         text=True,
         cwd=tmp_path,
