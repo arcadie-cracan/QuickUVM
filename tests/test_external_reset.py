@@ -85,8 +85,22 @@ def test_active_high_reset_polarity(tmp_path):
 # ---- external_reset = False is a no-op ------------------------------------
 
 
-def test_default_emits_no_external_reset_code(tmp_path):
-    Generator(_cfg(external_reset=False)).generate_all(tmp_path)
+def test_agent_driven_reset_emits_no_external_reset_code(tmp_path):
+    """`external: false` + the reset among an agent's ports: the agent-driven path —
+    no top generator, no interface reset port, no reset gate in the driver."""
+    ag = AgentConfig(
+        name="bus",
+        interface="bus_if",
+        sequence_item="bus_seq_item",
+        ports={
+            "inputs": [
+                PortConfig(name="rst_n_i"),
+                PortConfig(name="bus_addr", width=8),
+            ],
+            "outputs": [PortConfig(name="bus_data", width=8)],
+        },
+    )
+    Generator(_cfg(external_reset=False, agents=[ag])).generate_all(tmp_path)
     top = (tmp_path / "tb_top.sv").read_text()
     iface = (tmp_path / "bus_if.sv").read_text()
     drv = (tmp_path / "bus_driver.svh").read_text()
@@ -94,6 +108,14 @@ def test_default_emits_no_external_reset_code(tmp_path):
     assert "interface bus_if (input clk);" in iface
     assert "bus_if bus_if_inst (clk);" in top
     assert "wait (vif." not in drv
+
+
+def test_explicit_false_with_no_agent_port_is_refused():
+    """This test used to pin the DEFAULT output — which was a bench that does not
+    elaborate (`.rst_n_i(bus_if_inst.rst_n_i)` on an interface with no such signal).
+    See tests/test_undriven_reset.py."""
+    with pytest.raises(Exception, match="driven by nobody"):
+        _cfg(external_reset=False)
 
 
 # ---- validation ------------------------------------------------------------

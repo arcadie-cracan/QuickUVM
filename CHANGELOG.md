@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+A reset nobody drives. **Changes generated output** for configs in one shape —
+which did not elaborate before; every committed example regenerates
+byte-identically (none is in that shape).
+
+- **The shape.** A single-reset bench wires `dut.reset` one of two ways: the top
+  generates it (`reset: {external: true}`) or an agent drives it (the port is one
+  of that agent's ports). With NEITHER — and `dut.reset` defaults to `rst_n`,
+  `external` to false, so a config that said nothing about the reset was in it —
+  the config validated, `generate` exited 0, and `tb_top` connected the DUT to
+  `<first agent>_if_inst.<reset>`, a signal that interface does not have. Xcelium
+  rejects it at elaboration (`*E,CUVUNF`). In a composition the same leaf config
+  failed more quietly: the subsystem top gave the leaf's DUT no reset connection
+  at all.
+- **Inference.** An UNSET `reset.external` now resolves to the top-driven reset
+  when no agent declares the reset port (`_infer_reset_driver`): there is exactly
+  one way left to drive it. The same rule applies to every `kind`, so a `vip` and
+  the bench or `selftest` around it agree on whether the interfaces take the
+  reset. `quick-uvm resolve` gained a `reset` entry — `{name, driver: top |
+  agent:<name>, origin: declared | inferred}`. Never inferred for a combinational
+  DUT, a reset domain list, a subsystem top, or next to a `reset_port`.
+  **If you regenerate a bench in this shape:** its interfaces gain a reset input
+  and its drivers/monitors wait for the reset; regenerate a VIP together with the
+  benches that consume it by reference.
+- **A wall for the contradiction.** An explicit `external: false` with no agent
+  declaring the port, or an agent `reset_port` next to a `dut.reset` that names a
+  different, undeclared port, is a validation error that names the ways out.
+- **`kind: selftest` with a top-driven reset** now generates the reset in the
+  self-test top and passes it to the interfaces. It used to instantiate them with
+  the clock only: the reset was an unconnected input the drivers waited on
+  forever (exit 0, a self-test that hangs at time 0).
+- **Static gate.** `svcheck.find_dangling_dut_connections` checks, on the
+  generated (merged) top, that every signal the `dut_connections` pragma uses is
+  declared — in the top or in the interface it is taken from. It runs over every
+  example in `tests/test_undriven_reset.py`, next to the type-shadowing gate: the
+  check that stands in for a simulator on hosted CI.
+
 ## 1.1.0 — 2026-07-22
 
 Generation manifest + per-item incremental regeneration. Additive and
