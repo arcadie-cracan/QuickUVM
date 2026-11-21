@@ -1,10 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-11-21
 
-A reset nobody drives. **Changes generated output** for configs in one shape —
-which did not elaborate before; every committed example regenerates
-byte-identically (none is in that shape).
+Everything merged since 1.1.0: a reset nobody drives is now driven by the
+testbench top, `quick-uvm resolve`, opt-in multi-vendor simulation filelists
+(`sim:`), a runtime guard for coverage dropped by declaring `analysis:`, and two
+portability fixes. The schema additions are opt-in (`sim:`); no key was removed
+or changed its meaning. Two changes alter generated output — the monitor startup
+(every bench; the committed examples were regenerated with it) and the reset
+inference (configs in one shape, described below).
+
+### A reset nobody drives
+
+**Changes generated output** for configs in one shape — which did not elaborate
+before; every committed example regenerates byte-identically (none is in that
+shape).
 
 - **The shape.** A single-reset bench wires `dut.reset` one of two ways: the top
   generates it (`reset: {external: true}`) or an agent drives it (the port is one
@@ -37,6 +47,70 @@ byte-identically (none is in that shape).
   declared — in the top or in the interface it is taken from. It runs over every
   example in `tests/test_undriven_reset.py`, next to the type-shadowing gate: the
   check that stands in for a simulator on hosted CI.
+
+### `quick-uvm resolve` — the effective topology, with provenance
+
+- **`quick-uvm resolve -c <yaml> [-o file]`** (and the pure
+  `ProjectConfig.resolved()`) prints what a config MEANS, including the
+  components the generator supplies without the YAML naming them: the implicit
+  scoreboard and coverage collector on the primary agent, the auto virtual
+  sequence, the default `test1`, each agent's `<agent>_seq`. Every entry carries
+  `origin: declared | inferred`; `guards` lists the runtime warnings the config
+  arms (`UNCOVERED_AGENT`, `UNCHECKED_AGENT`). Read-only: it writes nothing.
+  `manifest` cannot answer this — it maps files to owners and is byte-identical
+  either side of the implicit/declared switch.
+- Known limit: a hand-written `tests: [{name: test1}]` is indistinguishable from
+  the default and is reported as `inferred`.
+
+### Checking
+
+- **`UNCOVERED_AGENT` warning.** `analysis:` is presence-switched: omit it and the
+  env wires a scoreboard AND a coverage collector to the primary agent; declare it
+  and only what is listed is wired. Declaring a first scoreboard therefore removed
+  a collector that was already there, with no signal anywhere. The env now emits a
+  `uvm_warning` naming the primary agent when that happens
+  (`ProjectConfig.uncovered_agents`). `coverage: []` written explicitly means
+  "measure nothing" and stays silent. No generated output changes for the
+  committed examples (`alert_array` and `nchan` now say `coverage: []`, which is
+  what they meant).
+
+### Simulation filelists (opt-in `sim:`)
+
+- **Portable `compile.f` + one run script per vendor.** A `sim:` block generates a
+  tool-neutral `compile.f` (TB sources, the real DUT RTL via `rtl_filelist`,
+  include dirs — no tool switches; a language server reads the same file) and a
+  thin `sim_<tool>.sh` per entry of `tools: [xcelium, vcs, questa]` that adds only
+  that vendor's UVM / timescale / access switches. Absent ⇒ byte-identical.
+  Validated on `examples/reqrsp` with Xcelium, Questa and VCS (0 UVM_ERROR,
+  30/30). The RTL is referenced with plain `-f` and run-dir-relative paths: `-F`
+  is not portable across the three. See `docs/filelist_generation_analysis.md`.
+- **`sim.bender: true`** additionally emits a `Bender.yml`, making the bench a
+  Bender package (`bender script vsim | vcs | verilator | flist-plus …`). The
+  referenced RTL filelist is inlined (nested `-f`/`-F` are not expanded). Flat
+  layout only; `packaged` is refused with an error.
+
+### Fixes
+
+- **Monitor startup is portable. Changes generated output** (every monitor; all
+  committed examples regenerated). The single-stream monitor primes one clock
+  before its first pairing, so a simulator that schedules the driver's first drive
+  after the monitor's first sample (Questa, VCS) no longer pairs the reset output
+  with the first stimulus — four examples reported exactly one spurious mismatch
+  there, which Xcelium's scheduling masked. Responder / request-fifo monitors are
+  exempt.
+- **Filelists use POSIX separators.** On Windows the referenced-VIP line came out
+  as `-F ..\..\f2_iovip\gen\io_pkg.f`: the byte-identity gate failed on any
+  Windows regeneration, and xrun/qrun/vcs read the backslash as an escape, so the
+  chained VIP package did not resolve.
+
+### Examples and repository
+
+- **`examples/yapp`** — a packet router (1→3 demux by a 2-bit address, one cycle
+  of latency, address 3 drops) checked by a single agent that drives the input and
+  observes all three outputs. Green on Xcelium and Questa; the backing bench of
+  the QuickUVM Architect walkthrough.
+- `.gitattributes` normalises line endings to LF, so a Windows checkout no longer
+  drifts from the committed `gen/` trees.
 
 ## 1.1.0 — 2026-07-22
 
