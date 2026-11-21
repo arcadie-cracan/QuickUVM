@@ -139,9 +139,165 @@ def find_type_shadowing(text: str, path: str = "<sv>") -> list[str]:
     return violations
 
 
+# --- dangling DUT connections -------------------------------------------------
+
+_DUT_PRAGMA_RE = re.compile(
+    r"pragma quickuvm custom dut_connections begin(.*?)"
+    r"pragma quickuvm custom dut_connections end",
+    re.S,
+)
+# `<type> <inst> (` at the start of a line — an instantiation in the top.
+_INSTANCE_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*\(", re.M)
+_CONNECTION_RE = re.compile(r"\.([A-Za-z_]\w*)\s*\(")
+# `8'hFF`, `'0`, `4'b1x0z` — sized literals are not names.
+_LITERAL_RE = re.compile(r"\d*'[sS]?[bBdDhHoO]?[0-9a-fA-F_xXzZ?]+")
+_NAME_RE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
+# Blocks that REFERENCE signals without declaring them.
+_CLOCKING_RE = re.compile(r"\bclocking\b.*?\bendclocking\b", re.S)
+_MODPORT_RE = re.compile(r"\bmodport\b[^;]*;")
+_RANGE_RE = re.compile(r"\[[^\]]*\]")
+_NET_KEYWORDS = r"(?:input|output|inout|logic|wire|bit|reg|var|tri\w*)"
+# Words that can start a line before `<name> ;` without being a user type.
+_NOT_A_NET_TYPE = (
+    r"(?:begin|end|else|assign|if|initial|final|always\w*|return|posedge|negedge|"
+    r"repeat|wait|forever|fork|join\w*|module|interface|import|typedef|parameter|"
+    r"localparam)"
+)
+
+
+def _close_paren(text: str, open_idx: int) -> int:
+    """Index just past the `)` closing the `(` at *open_idx*, or -1."""
+    depth = 0
+    for i in range(open_idx, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return -1
+
+
+def _strip_param_lists(text: str) -> str:
+    """Drop every balanced `#( ... )` group.
+
+    A DUT's `#(.W(WIDTH))` is not a list of port connections, and `clkgen #(10)
+    ck (clk)` must still read as an instantiation.
+    """
+    out: list[str] = []
+    i = 0
+    while True:
+        m = re.search(r"#\s*\(", text[i:])
+        if not m:
+            out.append(text[i:])
+            return "".join(out)
+        close = _close_paren(text, i + m.end() - 1)
+        if close < 0:
+            out.append(text[i:])
+            return "".join(out)
+        out.append(text[i : i + m.start()] + " ")
+        i = close
+
+
+def _declares(text: str, name: str) -> bool:
+    """True when *text* (a top or an interface) DECLARES the net/signal *name*.
+
+    Deliberately strict about what counts: a name that only appears in a clocking
+    block or a modport (a reference), in another declaration's range or
+    initialiser (a use), or as the target of an assignment after `begin` is NOT
+    declared — each of those passed a looser first cut of this check.
+    """
+    decl = _RANGE_RE.sub(
+        " ", _MODPORT_RE.sub(" ", _CLOCKING_RE.sub(" ", _strip_noise(text)))
+    )
+    n = re.escape(name)
+    if re.search(rf"\b{_NET_KEYWORDS}\b[^;)=]*\b{n}\b", decl):
+        return True
+    # A user-typed signal (`pkt_t pkt;`): type and name on ONE line.
+    return bool(
+        re.search(
+            rf"(?:^|[;\n])[ \t]*(?!{_NOT_A_NET_TYPE}\b)[A-Za-z_]\w*(?:::\w+)?"
+            rf"[ \t]+{n}\b[ \t]*[;,]",
+            decl,
+        )
+    )
+
+
+def find_dangling_dut_connections(
+    top_text: str, sources: dict[str, str], path: str = "<sv>"
+) -> list[str]:
+    """Find DUT port connections that refer to a signal nothing declares.
+
+    The defect this exists for — generated from a config that VALIDATED, with
+    `generate` exiting 0::
+
+        cmd_if cmd_if_inst (clk);
+        ...
+        yapp dut_inst (
+          ...
+          .rst_n(cmd_if_inst.rst_n)  );      // cmd_if has no `rst_n`
+
+    Xcelium rejects it at ELABORATION (``*E,CUVUNF: Hierarchical name component
+    lookup failed``); Verible parses it happily, so no linter closes the gap.
+
+    *top_text* is a generated top; *sources* maps a file's basename (``cmd_if.sv``)
+    to its text. Inside the ``dut_connections`` pragma, every name a connection
+    uses must be declared: a bare net in the top itself, ``<inst>.<signal>`` in
+    the interface ``<inst>`` is an instance of. The pragma is user-editable, so
+    this is run on the MERGED text and checks what is actually there.
+
+    Returns a list of human-readable violations (empty = clean).
+    """
+    violations: list[str] = []
+    top = _strip_noise(top_text)
+    type_of = {
+        m.group(2): m.group(1) for m in _INSTANCE_RE.finditer(_strip_param_lists(top))
+    }
+    # the pragma markers are comments: find them in the RAW text, then strip
+    for block in _DUT_PRAGMA_RE.finditer(top_text):
+        body = _strip_param_lists(_strip_noise(block.group(1)))
+        for conn in _CONNECTION_RE.finditer(body):
+            close = _close_paren(body, conn.end() - 1)
+            if close < 0:
+                continue
+            port = conn.group(1)
+            expr = body[conn.end() : close - 1].strip()
+            for ref in _NAME_RE.findall(_LITERAL_RE.sub(" ", expr)):
+                head, _, rest = ref.partition(".")
+                if not rest:
+                    if not _declares(top, head):
+                        violations.append(
+                            f"{path}: .{port}({expr}) — net `{head}` is not declared "
+                            f"in the top."
+                        )
+                    continue
+                signal = rest.split(".")[0]
+                iface = type_of.get(head)
+                if iface is None:
+                    violations.append(
+                        f"{path}: .{port}({expr}) — `{head}` is not an instance of "
+                        f"the top."
+                    )
+                    continue
+                src = sources.get(f"{iface}.sv")
+                if src is None:
+                    # an interface generated elsewhere (a VIP consumed by
+                    # reference): nothing to read it from here
+                    continue
+                if not _declares(src, signal):
+                    violations.append(
+                        f"{path}: .{port}({expr}) — `{iface}` declares no signal "
+                        f"`{signal}`. Xcelium fails to elaborate this (*E,CUVUNF)."
+                    )
+    return violations
+
+
 def check_paths(paths: list[Path]) -> list[str]:
     """Run every static check over each file. Returns all violations."""
     out: list[str] = []
+    texts = {p.name: p.read_text() for p in paths}
     for p in paths:
-        out.extend(find_type_shadowing(p.read_text(), str(p)))
+        out.extend(find_type_shadowing(texts[p.name], str(p)))
+        if "pragma quickuvm custom dut_connections begin" in texts[p.name]:
+            out.extend(find_dangling_dut_connections(texts[p.name], texts, str(p)))
     return out

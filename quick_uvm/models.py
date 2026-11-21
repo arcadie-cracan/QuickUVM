@@ -2948,6 +2948,10 @@ class ProjectConfig(_SchemaModel):
     # its true unprefixed module name however many prefixes stack. "" = never
     # prefixed (dut_module falls through to dut.name).
     original_dut_name: str = Field(default="", exclude=True, repr=False)
+    # Runtime: True when `reset.external` was not written and QuickUVM inferred that
+    # the top drives the reset (see `_infer_reset_driver`). Provenance for
+    # `resolved()` — it never changes rendering (`dut.external_reset` does).
+    reset_driver_inferred: bool = Field(default=False, exclude=True, repr=False)
 
     @model_validator(mode="before")
     @classmethod
@@ -2982,6 +2986,10 @@ class ProjectConfig(_SchemaModel):
                 "subenv_configs": "child configs are loaded from `subenvs:` entries",
                 "subenv_namespaces": "namespaces are derived from `subenvs:` reuse",
                 "original_dut_name": "set internally by H1 namespacing",
+                "reset_driver_inferred": (
+                    "set internally — write `reset: {external: true}` to make the "
+                    "top drive the reset"
+                ),
                 "resets": (
                     "declare reset config under the top-level `reset:` key — a "
                     "MAPPING for the single reset ({active_low, external}) or a "
@@ -3097,6 +3105,45 @@ class ProjectConfig(_SchemaModel):
         return clock.model_dump()
 
     # ---- M1 multi-clock / multi-reset — resolvers (single-domain → byte-identical) --
+
+    @model_validator(mode="after")
+    def _infer_reset_driver(self) -> ProjectConfig:
+        """A reset NOBODY drives is driven by the top — unless the config says no.
+
+        A single-reset bench wires `dut.reset` one of two ways: the top generates it
+        (`reset: {external: true}`) or an agent drives it (the port is one of that
+        agent's ports). `external` defaults to false and `dut.reset` to `rst_n`, so a
+        config that says NOTHING about the reset used to land on neither: tb_top
+        connected the DUT to `<first agent>_if_inst.<reset>`, a signal that interface
+        does not have. It validated, `generate` exited 0, and the bench failed at
+        ELABORATION (Xcelium *E,CUVUNF).
+
+        With no agent declaring the port there is exactly one way left to drive it,
+        so an UNSET `external` resolves to the top-driven reset (`resolved()` reports
+        it as `inferred`). An EXPLICIT `external: false` is a statement that an agent
+        drives the reset; with no agent declaring the port that statement is false,
+        and `undriven_reset` refuses it rather than second-guess it.
+
+        Runs FIRST among the after-validators: every later rule reads
+        `dut.external_reset` / `effective_resets`. Applies to every `kind` — a `vip`
+        and the bench (or `selftest`) built around it must agree on whether the
+        interfaces take the reset, and the same rule on both sides is what makes
+        them agree by default.
+
+        Never inferred: a combinational DUT (no reset is wired at all), a reset
+        domain LIST (the top already drives every domain), a subsystem top (its
+        leaves carry their own reset), and next to a `reset_port` (an agent-driven
+        reset under another port name — `external: true` is refused there).
+        """
+        if not self._reset_has_no_driver or self.subenvs:
+            return self
+        if "external_reset" in self.dut.model_fields_set:
+            return self
+        if any(a.reset_port for a in self.agents):
+            return self
+        self.dut.external_reset = True
+        self.reset_driver_inferred = True
+        return self
 
     @model_validator(mode="after")
     def _check_observed_clocks(self) -> ProjectConfig:
@@ -3224,6 +3271,54 @@ class ProjectConfig(_SchemaModel):
                 )
             ]
         return []
+
+    @property
+    def _reset_has_no_driver(self) -> bool:
+        """`dut.reset` names a port that neither the top nor an agent drives — the
+        shape `_infer_reset_driver` resolves and `undriven_reset` refuses."""
+        d = self.dut
+        if not d.reset or d.external_reset or d.combinational or self.resets:
+            return False
+        return not any(p.name == d.reset for a in self.agents for _, p in a.all_ports)
+
+    @property
+    def undriven_reset(self) -> str | None:
+        """Why the DUT's reset port is driven by NOBODY — or None when it is fine.
+
+        What is left of the shape after `_infer_reset_driver`: the config SAID the
+        top does not drive the reset (`external: false`, written), or an agent
+        drives it through `reset_port` under another name — and no agent declares
+        the port `dut.reset` names. tb_top would connect the DUT to
+        `<first agent>_if_inst.<reset>`, a signal that interface does not have.
+
+        Only a bench with a DUT of its own can dangle: a `vip` has no top, a
+        `selftest` no DUT, and a subsystem top instantiates its leaves' DUTs (each
+        checked through its own config).
+        """
+        if not self._reset_has_no_driver:
+            return None
+        if self.kind != "bench" or not self.agents or self.subenvs:
+            return None
+        d = self.dut
+        via_port = next((a for a in self.agents if a.reset_port), None)
+        if via_port is not None:
+            return (
+                f"dut.reset '{d.reset}' is driven by nobody: agent "
+                f"'{via_port.name}' drives the reset through reset_port "
+                f"'{via_port.reset_port}', but dut.reset names a different port that "
+                f"no agent declares — tb_top would connect it to a signal that does "
+                f"not exist. Set `dut.reset: {via_port.reset_port}` (or `dut.reset: "
+                f"''` if '{via_port.reset_port}' is the only reset)."
+            )
+        return (
+            f"dut.reset '{d.reset}' is driven by nobody: `reset: {{external: "
+            f"false}}` says an agent drives it, but no agent declares it as a port "
+            f"— tb_top would connect the DUT to a signal that does not exist (it "
+            f"does not elaborate). Choose who drives it: drop `external: false` "
+            f"(the testbench top generates the reset), add '{d.reset}' to an "
+            f"agent's ports.inputs (that agent's sequences drive it), or `dut.reset: "
+            f"''` if the DUT has no reset port."
+        )
 
     @property
     def has_probes(self) -> bool:
@@ -4326,6 +4421,9 @@ class ProjectConfig(_SchemaModel):
                 "dut.combinational and `reset: {external: true}` are mutually "
                 "exclusive (a combinational DUT has no reset)."
             )
+        undriven = self.undriven_reset
+        if undriven:
+            raise ValueError(undriven)
         # M1 — multi-clock / multi-reset validation. A scalar `clock:` with no `resets:`
         # list is single-domain — the checks below run but pass trivially (one clock,
         # the synthesized/absent reset); the legacy tb_top path renders byte-identical.
@@ -5045,6 +5143,7 @@ class ProjectConfig(_SchemaModel):
         return {
             "version": __version__,
             "dut": self.dut.name,
+            "reset": self._resolved_reset(),
             "analysis": {
                 # the distinction that surprises people: the PRESENCE of the key, not
                 # its contents, decides whether anything is inferred at all
@@ -5066,6 +5165,38 @@ class ProjectConfig(_SchemaModel):
             ],
             "guards": guards,
         }
+
+    def _resolved_reset(self) -> dict[str, object] | None:
+        """Who drives the DUT's reset — `resolved()`'s answer to the one default
+        that changes the generated INTERFACES (a top-driven reset is an input port
+        of every interface, and every driver and monitor waits for it)."""
+        d = self.dut
+        if not d.reset or d.combinational:
+            return None
+        if self.resets:
+            return {
+                "name": d.reset,
+                "driver": "top",
+                "origin": "declared",
+                "domains": [r.name for r in self.resets],
+            }
+        if d.external_reset:
+            return {
+                "name": d.reset,
+                "driver": "top",
+                "origin": "inferred" if self.reset_driver_inferred else "declared",
+            }
+        owner = next(
+            (
+                a.name
+                for a in self.agents
+                if any(p.name == d.reset for _, p in a.all_ports)
+            ),
+            None,
+        )
+        if owner is None:
+            return None
+        return {"name": d.reset, "driver": f"agent:{owner}", "origin": "declared"}
 
     @property
     def instance_views(self) -> list[InstanceView]:

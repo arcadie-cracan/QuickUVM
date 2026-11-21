@@ -137,8 +137,13 @@ clock:
 # domains (multi-reset). dut.reset above is just the PORT name, like dut.clock.
 reset:
   active_low: true
-  external: false   # opt-in: reset driven by a generated top-level reset
-                    # generator (not the agent); reset-gates driver + monitor.
+  external: false   # WHO DRIVES THE RESET. true: a generated top-level reset
+                    # generator (every interface takes the reset as an input;
+                    # reset-gates driver + monitor). false: an agent — the port
+                    # must be one of its ports (as `rst_n` is below). UNSET: the
+                    # top drives it unless an agent declares the port, and
+                    # `quick-uvm resolve` reports the choice as `inferred`.
+                    # `false` with no agent declaring the port is an error.
 
 agents:
   - name: reg
