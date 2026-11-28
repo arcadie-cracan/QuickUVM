@@ -1,6 +1,6 @@
 # QuickUVM
 
-**v1.2.0** — stable; the schema is frozen since 1.0.0 with a teaching-error
+**v1.3.0** — stable; the schema is frozen since 1.0.0 with a teaching-error
 deprecation policy. See [CHANGELOG.md](CHANGELOG.md).
 
 A Python/Jinja2 UVM testbench generator based on the

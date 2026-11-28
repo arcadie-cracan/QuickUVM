@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 — 2026-11-28
+
+One change since 1.2.0: `quick-uvm resolve` now answers by the bench's shape. Its
+JSON gains two keys (`instances`, `wired`) and reports less on three shapes, so a
+tool that reads it should be checked against this section; two details of the
+generated env change, neither met by a committed example. The schema is
+untouched — no key was added, removed or changed its meaning.
 
 ### `resolve` follows the bench's shape (#121)
 
