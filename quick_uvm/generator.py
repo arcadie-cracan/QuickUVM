@@ -832,18 +832,8 @@ class Generator:
             "boundary_agents": cfg.agents,
             # Boundary stimulus agents no cross-block scoreboard touches: the
             # driven-but-unchecked shape — the env raises UNCHECKED_AGENT for each.
-            "unchecked_boundary": [
-                a.name
-                for a in cfg.agents
-                if a.active
-                and not any(
-                    x["src_agent"] == a.name
-                    and not x["src_handle"]
-                    or x["mon_agent"] == a.name
-                    and not x["mon_handle"]
-                    for x in xsbs
-                )
-            ],
+            # ONE rule, in the model, read here and by `resolved()` (#121).
+            "unchecked_boundary": cfg.unchecked_boundary_agents,
             # env_vseq_base.svh.j2 (reused) reads these; a top vseq is virtual-only.
             "virtual_sequences": [],
             "auto_vseq": f"{name}_vseq",

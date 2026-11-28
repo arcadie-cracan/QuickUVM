@@ -326,6 +326,17 @@ def resolve_cmd(config: str, output: str | None) -> None:
     reports what the config actually MEANS, each entry marked `declared` (you wrote it)
     or `inferred` (QuickUVM supplies it), plus the runtime `guards` it arms.
 
+    The answer follows the bench's shape. An agent with `replicas` / `instances` has
+    no implicit pair: its per-instance scoreboards are listed under `instances`. A
+    composition (`subenvs`) has no implicit pair either; it always has its top
+    virtual sequence, and its guards name the active boundary agents no scoreboard
+    names. Only the top level of a composition is described -- resolve a block's own
+    config for the block. `kind: vip` has no tests, virtual sequences or guards.
+
+    An entry that is in the YAML, accepted, and rendered as no component is marked
+    `wired: false`: a scoreboard declared next to `replicas`, a virtual sequence
+    declared on a composition, a coverage entry on a VIP.
+
     Distinct from `manifest`, which maps files to owning elements: that answers "which
     files", this answers "what topology". Notably `manifest` is byte-identical with and
     without an `analysis:` block, while the wiring it produces is not.

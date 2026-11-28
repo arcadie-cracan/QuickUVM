@@ -26,9 +26,12 @@ agents:
         - {name: last_adata, width: 4}
 analysis:
   # this example demonstrates replica independence, not measurement: no coverage
-  # collector is wanted. Written explicitly so the UNCOVERED_AGENT warning knows it
-  # is deliberate rather than a default lost by declaring an analysis block.
+  # collector is wanted -- and a `replicas` bench has none (a coverage entry is
+  # refused here). `coverage: []` says so in the YAML; it is not required.
   coverage: []
+  # The env holds one scoreboard per replica, whatever is listed here: this entry
+  # adds no component of its own (`quick-uvm resolve` marks it `wired: false` and
+  # lists the per-replica scoreboards under `instances`).
   scoreboards:
     - {name: sb, source: sndr}
 tests:

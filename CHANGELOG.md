@@ -1,5 +1,79 @@
 # Changelog
 
+## Unreleased
+
+### `resolve` follows the bench's shape (#121)
+
+**Changes the output of `quick-uvm resolve`** on three bench shapes. Generated
+testbenches change in TWO cases, both in the env and both marked below ("The
+guard", "The env's advice"); every committed example regenerates
+byte-identically.
+
+`resolve` mirrors the templates, and nothing compared the two. It applied the
+plain bench's rules everywhere, so on an agent with `replicas` / `instances`, on
+`kind: vip` and on a composition (`subenvs`, with or without a boundary agent)
+the answer to "what will I get" was wrong in several ways at once.
+
+- **The implicit pair.** Without an `analysis:` key `resolve` reported scoreboard
+  `sbd` and a coverage collector on the first agent, `origin: inferred`,
+  whenever there was an agent. The env renders that pair only on a plain bench
+  (and a `selftest`). On the three shapes neither component is generated, and a
+  consumer that wrote the reported entries back into the config — the natural
+  way to keep them — got a config that is refused: the collector on `replicas`,
+  any analysis next to `instances`, both entries on a VIP and on a composition.
+  `resolve` now reports the pair only where it is rendered
+  (`ProjectConfig.implicit_analysis_wired`); `analysis.mode` is still `implicit`
+  there — the key is absent, nothing is inferred for it.
+- **New: `instances`.** A bench with `replicas` / `instances` DOES hold
+  components nobody declared — one scoreboard per instance. They are reported
+  under a new top-level key, present only on such a bench:
+  `instances: [{name, agent, origin, scoreboard: {name, origin, owner}}]`. The
+  instance's `origin` is `inferred` for a replica (its name is derived) and
+  `declared` for an `instances` entry; the scoreboard's is always `inferred`;
+  `owner` is the element that owns its files in `manifest`
+  (`scoreboard:<instance>`). Kept out of `analysis` on purpose: they cannot be
+  declared there, and `analysis` stays "what the YAML could say".
+- **New: `wired: false`.** Marks an entry that is in the YAML, is accepted, and
+  is rendered as no component — it was reported like any declared entry. Three
+  places: a scoreboard declared on a `replicas` bench (the env holds only the
+  per-instance ones; on the default flat layout the bench is byte-identical with
+  the entry, without it, or with it renamed), a virtual sequence declared on a
+  composition (only `<top>_vseq` is generated), and a coverage entry on a VIP
+  (its covergroup ships in the agent package; there is no env to hold a
+  collector). The key appears only on such entries.
+- **A composition's guards and virtual sequence.** A subsystem top always
+  generates `<top>_vseq`, which drives every active boundary agent, and its env
+  raises `UNCHECKED_AGENT` for each one no scoreboard names. `resolve` applied
+  the flat rules instead (a virtual sequence from two stimulus agents up, the
+  primary agent excused) and so reported no virtual sequence and, for a top with
+  one boundary agent, no guard — for a bench that warns at every run. It now
+  reports both; the rule lives in one place
+  (`ProjectConfig.unchecked_boundary_agents`), read by the template and the
+  report.
+- **A VIP.** `kind: vip` emits agent packages and a manifest. `resolve` reported
+  the default `test1`, an auto virtual sequence and `UNCHECKED_AGENT` guards for
+  it; `tests`, `virtual_sequences` and `guards` are now empty there. The agents'
+  sequences are still listed — they ship in the packages.
+- **Scope, stated.** On a composition `resolve` describes the top level only:
+  each block's env, guards and virtual sequences are its own config's answer.
+  Still not reported, on any shape: the tests a `register_model` generates
+  (`<dut>_reg_test` and one per `csr_tests` kind).
+- **The guard (changes generated output).** `UNCOVERED_AGENT` — "declaring this
+  scoreboard cost you the implicit collector" — also fired on a `replicas` bench
+  that declared a scoreboard without a `coverage` key, where there never was a
+  collector and none can be asked for. It is no longer rendered or reported
+  there. `alert_array` and `nchan` carry `coverage: []` from when it was needed
+  to quiet that warning; it is harmless and no longer required.
+- **The env's advice (changes generated output).** The `UNCHECKED_AGENT` comment
+  in a composition's env told the user to add a `subenv_scoreboards:` entry, a
+  key that is rejected; it now names `analysis.scoreboards`. A comment only, in
+  the env of a composition with an unchecked boundary agent.
+- **Locked against the output.** Each shape has a test that compares the report
+  with what the generator writes. Scoreboards and collectors are compared in
+  both directions (everything the env declares is reported, and the reverse),
+  on generated fixtures and on every committed example; tests and virtual
+  sequences in one (what is reported is shipped).
+
 ## 1.2.0 — 2026-11-21
 
 Everything merged since 1.1.0: a reset nobody drives is now driven by the
