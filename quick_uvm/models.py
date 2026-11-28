@@ -5045,20 +5045,100 @@ class ProjectConfig(_SchemaModel):
           - no scoreboards are declared (nothing was traded for it);
           - the primary agent has a coverage entry (nothing was lost);
           - `coverage:` was written explicitly, even as `[]` -- "measure nothing" on
-            purpose, the escape hatch that keeps this from being permanent noise.
+            purpose, the escape hatch that keeps this from being permanent noise;
+          - the bench is a shape that never had the implicit collector
+            (`implicit_pair_shape`): a composition, a VIP, or an agent with `replicas`
+            / `instances` -- nothing was there to lose.
 
-        Byte-identical for all 51 committed examples. NOT because they all declare
-        `coverage` -- `alert_array` and `nchan` did not, and this correctly flagged
-        both: each declares a scoreboard and had silently traded away its collector.
-        They now say `coverage: []`, which is what they meant (they demonstrate replica
-        independence, not measurement) and is the escape hatch working on real configs.
+        Byte-identical for all 51 committed examples.
+
+        The last "silent when" was missing until #121, and the guard fired on a
+        `replicas` bench that declared a scoreboard without a `coverage` key: it told
+        the user they had traded away a collector that the per-instance env never
+        wires (and that `analysis.coverage` cannot even ask for there -- "does not yet
+        wire coverage"). `alert_array` and `nchan` met exactly that and were given
+        `coverage: []` to quiet it; the key is no longer needed there.
         """
-        if self.analysis is None or not self.agents or self.subenvs:
+        if self.analysis is None or not self.implicit_pair_shape:
             return []
         if not self.analysis.scoreboards or self.analysis.coverage_declared:
             return []
         primary = self.agents[0].name
         return [] if primary in self.analysis.coverage else [primary]
+
+    @property
+    def implicit_pair_shape(self) -> bool:
+        """Whether this bench is a SHAPE whose env has the implicit branch at all.
+
+        The implicit pair -- `sbd` + `cov` on the primary agent -- exists only where
+        `env.svh.j2` can reach its `{% else %}` branch, and three shapes never do,
+        whatever `analysis:` says:
+
+          - a composition (`subenvs`) renders `subenv_top_env.svh.j2`, which has no
+            implicit branch -- it wires the blocks' envs;
+          - `kind: vip` emits agent packages and a manifest: no env at all;
+          - an agent with `replicas` / `instances` takes the `{% if has_instances %}`
+            branch: one scoreboard per instance, no collector.
+
+        The shape half of `implicit_analysis_wired`, on its own because
+        `uncovered_agents` asks the same question from the other side: a collector
+        can only be LOST by declaring `analysis:` where one would have been wired.
+        """
+        return (
+            bool(self.agents)
+            and not self.subenvs
+            and not self.is_vip
+            and not self.instance_views
+        )
+
+    @property
+    def implicit_analysis_wired(self) -> bool:
+        """Whether the implicit pair, `sbd` + `cov` on the primary agent, is rendered.
+
+        `analysis:` absent means implicit MODE; the pair is rendered only if the
+        bench is also a shape that has it (`implicit_pair_shape`).
+
+        `resolved()` reported the pair on the three shapes that do not (#121). A
+        consumer drew two components that are not in the bench, and writing them into
+        `analysis:` -- the obvious way to keep them -- gave a config the validators
+        refuse: the collector on a `replicas` bench ("does not yet wire coverage"),
+        any analysis at all next to `instances`, both entries on a VIP ("would be
+        silently dropped"), and on a composition the collector ("a `subenvs` top
+        does not wire `analysis.coverage`") and the single-stream scoreboard ("a
+        composition scoreboard is two-stream"). The one entry that IS accepted --
+        the scoreboard alone on a `replicas` bench -- renders no component.
+
+        ONE predicate, read by `resolved()` and locked against the generated env in
+        test_resolved_config.py: the report and the templates must not drift, since
+        agreeing with them is the whole point of the command.
+        """
+        return self.analysis is None and self.implicit_pair_shape
+
+    @property
+    def unchecked_boundary_agents(self) -> list[str]:
+        """`UNCHECKED_AGENT` on a composition: the top's own stimulus agents that no
+        cross-block scoreboard names.
+
+        The composition's rule, not the flat bench's (`unchecked_stimulus_agents`):
+        the top virtual sequence drives EVERY active boundary agent, and nothing is
+        wired by default -- so each one is driven and unchecked until a scoreboard
+        references it, the primary included, a lone agent included. A BARE endpoint
+        (no dot) is a boundary agent of this level; a dotted one reaches into a
+        block and does not check the boundary stream.
+
+        Read by `subenv_top_env.svh.j2` (through the generator's level context) and
+        by `resolved()`. They used to disagree: the report applied the flat rule to
+        a hybrid top and said nothing about a bench that warns at every run (#121).
+        """
+        if not self.subenvs:
+            return []
+        touched = {
+            ref
+            for sb in self.subenv_scoreboards
+            for ref in (sb.source, sb.monitor)
+            if "." not in ref
+        }
+        return [a.name for a in self.agents if a.active and a.name not in touched]
 
     def resolved(self) -> dict[str, object]:
         """The EFFECTIVE topology: what this config actually produces, with provenance.
@@ -5067,7 +5147,38 @@ class ProjectConfig(_SchemaModel):
         the generator — so the YAML on disk understates the artifact. Five component
         kinds can appear in a bench without appearing anywhere in the file: the implicit
         scoreboard and coverage collector on the primary agent, the auto virtual
-        sequence, the default `test1`, and each agent's `<agent>_seq`.
+        sequence, the default `test1`, and each agent's `<agent>_seq`. A sixth exists
+        on a bench with `replicas` / `instances`: one scoreboard per instance,
+        reported under `instances` (the implicit pair is NOT generated there).
+
+        The answer follows the SHAPE, because the templates do:
+
+          - `replicas` / `instances`: no implicit pair; `instances` lists the
+            per-instance scoreboards, each with the `owner` its files have in
+            `manifest`.
+          - a composition (`subenvs`): no implicit pair; the top virtual sequence
+            `<top>_vseq` is always generated, so it is always reported; `guards` are
+            the composition's (`unchecked_boundary_agents`). Only the TOP level is
+            described: each block's env, guards and virtual sequences are its own
+            config's answer, and a nested cluster's `<cluster>_vseq` is not listed.
+          - `kind: vip`: agent packages and a manifest, nothing else -- no tests, no
+            virtual sequence, no guards. The agents' sequences stay: they ship in
+            the packages.
+
+        `wired: false` marks an entry that IS in the YAML, is accepted, and for which
+        no component of that name is rendered -- reported because it was written,
+        marked because presenting it as part of the bench would be the #121 lie
+        told about a declared entry. Three places, each read off the templates:
+
+          - a scoreboard declared on a `replicas` bench (the env holds only the
+            per-instance ones);
+          - a virtual sequence declared on a composition (the level's templates are
+            given none; only `<top>_vseq` exists);
+          - a coverage entry on a VIP (its covergroup ships in the agent package;
+            there is no env to hold a collector).
+
+        NOT covered, known: the tests a `register_model` generates (`<dut>_reg_test`
+        and one per `csr_tests` kind) are not listed under `tests`.
 
         None of that is wrong (`unchecked_stimulus_agents` argues why refusing would
         tax the simple case), but until now the only way to learn what a config MEANT
@@ -5092,6 +5203,12 @@ class ProjectConfig(_SchemaModel):
         scoreboards: list[dict[str, object]] = []
         coverage: list[dict[str, object]] = []
         if declared and self.analysis is not None:
+            # `replicas`: validate_replicas accepts plain single-stream scoreboards,
+            # and the per-instance env then renders none by that name (on the default
+            # flat layout the bench is byte-identical with the entries, without them,
+            # or with them renamed). Reported, because they ARE in the YAML, and
+            # marked: the components are `instances`'.
+            unrendered = self.shared_dut
             for sb in self.analysis.scoreboards:
                 entry: dict[str, object] = {
                     "name": sb.name,
@@ -5101,15 +5218,49 @@ class ProjectConfig(_SchemaModel):
                 if sb.monitor is not None:
                     entry["monitor"] = sb.monitor
                     entry["match"] = sb.match
+                if unrendered:
+                    entry["wired"] = False
                 scoreboards.append(entry)
+            # a VIP accepts a RICH coverage entry -- its covergroup renders into the
+            # agent package's <agent>_cov.svh -- and has no env to hold the collector
+            unwired: dict[str, object] = {"wired": False} if self.is_vip else {}
             coverage = [
-                {"agent": a, "origin": "declared"} for a in self.analysis.coverage
+                {"agent": a, "origin": "declared", **unwired}
+                for a in self.analysis.coverage
             ]
-        elif primary is not None:
+        elif primary is not None and self.implicit_analysis_wired:
             # the `{% else %}` branch of env.svh.j2: one scoreboard literally named
-            # `sbd`, plus `cov`, both on the primary agent
+            # `sbd`, plus `cov`, both on the primary agent -- and ONLY where that
+            # branch is rendered (`implicit_analysis_wired`, #121)
             scoreboards = [{"name": "sbd", "source": primary, "origin": "inferred"}]
             coverage = [{"agent": primary, "origin": "inferred"}]
+
+        # `replicas` / `instances`: the env holds one scoreboard PER INSTANCE that
+        # nobody declared -- and that cannot be declared (an `analysis.scoreboards`
+        # entry renders nothing there, or is refused). So it is reported apart:
+        # `analysis` keeps meaning "what the YAML could say", and a consumer that
+        # writes inferred analysis entries back into the config never writes these.
+        instances: list[dict[str, object]] = (
+            []
+            if self.is_vip
+            else [
+                {
+                    "name": v.name,
+                    "agent": v.agent.name,
+                    # a replica's name is derived (`<agent>_<i>`); an `instances`
+                    # entry carries the name the user gave it
+                    "origin": "inferred" if v.shared else "declared",
+                    "scoreboard": {
+                        "name": v.sb_handle,
+                        "origin": "inferred",
+                        # how `manifest` names the element that owns its files: by
+                        # INSTANCE (`scoreboard:ch_0`), not by handle
+                        "owner": f"scoreboard:{v.name}",
+                    },
+                }
+                for v in self.instance_views
+            ]
+        )
 
         # `tests` DEFAULTS to [test1]. Absent and an explicitly written
         # `[{name: test1}]` are indistinguishable after validation — the same fence the
@@ -5126,15 +5277,35 @@ class ProjectConfig(_SchemaModel):
         vseqs: list[dict[str, object]] = [
             {"name": v.name, "origin": "declared"} for v in self.virtual_sequences
         ]
-        auto_vseq = self.auto_vseq_name
-        if auto_vseq is not None:
-            vseqs.append(
-                {"name": auto_vseq, "origin": "inferred", "mode": self.auto_vseq_mode}
-            )
-
-        guards: list[str] = [f"UNCOVERED_AGENT: {a}" for a in self.uncovered_agents] + [
-            f"UNCHECKED_AGENT: {a}" for a in self.unchecked_stimulus_agents
-        ]
+        guards: list[str]
+        if self.is_vip:
+            # agent packages + a manifest: no test, no virtual sequence, no env to
+            # warn from. (A declared test list or virtual sequence is refused on a
+            # VIP, so the only test there could be is the default one -- not emitted.)
+            tests, vseqs, guards = [], [], []
+        elif self.subenvs:
+            # the composition's own rules: `<top>_vseq` is generated at every level
+            # (with or without boundary agents), and the env warns about every
+            # active boundary agent no scoreboard names. A DECLARED virtual sequence
+            # is accepted here and not rendered: `_subenv_level_ctx` hands the
+            # templates an empty list.
+            for declared_vseq in vseqs:
+                declared_vseq["wired"] = False
+            vseqs.append({"name": f"{self.dut.name}_vseq", "origin": "inferred"})
+            guards = [f"UNCHECKED_AGENT: {a}" for a in self.unchecked_boundary_agents]
+        else:
+            auto_vseq = self.auto_vseq_name
+            if auto_vseq is not None:
+                vseqs.append(
+                    {
+                        "name": auto_vseq,
+                        "origin": "inferred",
+                        "mode": self.auto_vseq_mode,
+                    }
+                )
+            guards = [f"UNCOVERED_AGENT: {a}" for a in self.uncovered_agents] + [
+                f"UNCHECKED_AGENT: {a}" for a in self.unchecked_stimulus_agents
+            ]
 
         # local import: models.py is imported BY the package __init__, so a
         # module-level `from . import __version__` would be circular
@@ -5163,6 +5334,9 @@ class ProjectConfig(_SchemaModel):
                 }
                 for a in self.agents
             ],
+            # present only on a bench that has instances: every other config's
+            # answer stays byte-identical
+            **({"instances": instances} if instances else {}),
             "guards": guards,
         }
 

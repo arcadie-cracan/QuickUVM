@@ -102,7 +102,7 @@ class {{ dut.name }}_env extends uvm_env;
     super.end_of_elaboration_phase(phase);
     // Checking has not scaled with stimulus: these boundary agents are driven by
     // the top virtual sequence but no cross-block scoreboard references them —
-    // their streams are driven and never checked. Add a `subenv_scoreboards:`
+    // their streams are driven and never checked. Add an `analysis.scoreboards`
     // entry using the bare agent name as source (or monitor) to silence this.
 {% for ag in unchecked_boundary %}
     `uvm_warning("UNCHECKED_AGENT",
